@@ -1,16 +1,19 @@
 use crate::core::EntityManager;
+use crate::core::SystemManager;
 
 pub mod core;
 
 pub struct NSE {
     pub entity_manager: EntityManager,
+    pub system_manager: SystemManager,
 }
 
 impl NSE {
 
     pub fn new() -> NSE {
         NSE {
-            entity_manager: EntityManager::new()
+            entity_manager: EntityManager::new(),
+            system_manager: SystemManager::new()
         }
     }
 

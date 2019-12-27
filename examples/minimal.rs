@@ -5,14 +5,14 @@ use nse::core::Entity;
 fn main() {
     let mut engine: NSE = NSE::new();
 
-    let mut e1: Entity = Entity::new();
+    let mut e1 = Box::new(Entity::new());
     e1.name = String::from("Entity 1");
 
-    let mut e2: Entity = Entity::new();
-    e2.name = String::from("Entity 2");
-
-    engine.entity_manager.add_entity(&e1);
-    engine.entity_manager.add_entity(&e2);
+    for i in 1 .. 10 {
+        let mut e= Box::new(Entity::new());
+        e.name = String::from(format!("Entity {}", e.id));
+        engine.entity_manager.add_entity(&e);
+    }
 
     engine.entity_manager.list_entities();
 
