@@ -1,32 +1,66 @@
-use crate::core::EntityManager;
+use std::any::TypeId;
+use std::iter::FromIterator;
+
+use crate::core::{Entity, EntityManager, ExitMessage, Message};
+use crate::core::MessageManager;
 use crate::core::SystemManager;
 
 pub mod core;
 
 pub struct NSE {
+    pub message_manager: MessageManager,
     pub entity_manager: EntityManager,
     pub system_manager: SystemManager,
 }
 
 impl NSE {
-
-    pub fn new() -> NSE {
-        NSE {
+    pub fn new() -> Self {
+        let nse = NSE {
+            message_manager: MessageManager::new(),
             entity_manager: EntityManager::new(),
-            system_manager: SystemManager::new()
-        }
+            system_manager: SystemManager::new(),
+        };
+
+        nse
     }
 
     pub fn init() {
         println!("Initializing...")
     }
 
-    pub fn run() {
-        println!("Running...")
+    pub fn run(&mut self) {
+        loop {
+            let v: Vec<_> = self.message_manager.receiver.try_iter().collect();
+            for msg in v.iter() {
+                if msg.code == TypeId::of::<ExitMessage>() {
+                    return;
+                }
+            }
+
+            let iter = self.system_manager.systems.iter_mut();
+            let mut msgs: Vec<Message> = vec![];
+
+            let entities: Vec<&Box<Entity>> = Vec::from_iter(self.entity_manager.entities.iter());
+
+            for (_, sys) in iter {
+                sys.consume_messages(&v);
+
+                sys.execute(&entities);
+
+                msgs.append(&mut sys.get_messages());
+            }
+
+            self.send_messages(&msgs)
+        }
+    }
+
+    fn send_messages(&mut self, msgs: &Vec<Message>) {
+        for msg in msgs.iter() {
+            let result = self.message_manager.sender.send(*msg);
+            result.expect("wat");
+        }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
