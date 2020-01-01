@@ -1,7 +1,6 @@
 use nse;
 use nse::NSE;
-use nse::core::{Entity, System, Message, ExitMessage};
-use std::any::TypeId;
+use nse::core::{Entity, System, Message, Exit};
 
 #[derive(Debug)]
 struct NoopSystem {
@@ -28,7 +27,7 @@ impl System for NoopSystem {
 
     fn get_messages(&mut self) -> Vec<Message> {
         if self.counter == 0 {
-            return vec![Message{ code: TypeId::of::<ExitMessage>() }];
+            return vec![Message::new(Exit {})];
         } else {
             return vec![];
         }

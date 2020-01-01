@@ -1,9 +1,11 @@
-use std::any::TypeId;
 use std::iter::FromIterator;
 
-use crate::core::{Entity, EntityManager, ExitMessage, Message};
+use crate::core::{Entity, EntityManager, Exit, Message};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
+
+#[macro_use]
+extern crate mopa;
 
 pub mod core;
 
@@ -32,7 +34,8 @@ impl NSE {
         loop {
             let v: Vec<_> = self.message_manager.receiver.try_iter().collect();
             for msg in v.iter() {
-                if msg.code == TypeId::of::<ExitMessage>() {
+                if msg.is_type::<Exit>() {
+                    println!("Exiting NSE");
                     return;
                 }
             }
@@ -44,9 +47,7 @@ impl NSE {
 
             for (_, sys) in iter {
                 sys.consume_messages(&v);
-
                 sys.execute(&entities);
-
                 msgs.append(&mut sys.get_messages());
             }
 
@@ -56,8 +57,8 @@ impl NSE {
 
     fn send_messages(&mut self, msgs: &Vec<Message>) {
         for msg in msgs.iter() {
-            let result = self.message_manager.sender.send(*msg);
-            result.expect("wat");
+            let result = self.message_manager.sender.send(msg.clone());
+            result.expect("Sending message failed");
         }
     }
 }

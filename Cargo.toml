@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 crossbeam = "0.7" # multithreading library
+mopa = "0.2.2"
