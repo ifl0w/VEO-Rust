@@ -27,7 +27,7 @@ impl System for NoopSystem {
 
     fn get_messages(&mut self) -> Vec<Message> {
         if self.counter == 0 {
-            return vec![Message::new(Exit {})];
+            return vec![Message::new(Box::new(Exit {}))];
         } else {
             return vec![];
         }

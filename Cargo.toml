@@ -9,3 +9,7 @@ edition = "2018"
 [dependencies]
 crossbeam = "0.7" # multithreading library
 mopa = "0.2.2"
+
+winit = "0.20.0-alpha5"
+ash = "0.29.0"
+ash-window = "0.1.0"
