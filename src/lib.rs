@@ -36,7 +36,7 @@ impl NSE {
         println!("Initializing...")
     }
 
-    pub fn run(mut self) {
+    pub fn run(self) {
         let mm = self.message_manager;
         let mut sm = self.system_manager;
         let em = self.entity_manager;

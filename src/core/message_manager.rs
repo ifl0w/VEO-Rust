@@ -1,6 +1,7 @@
-use crossbeam::crossbeam_channel::unbounded;
+use std::any::TypeId;
 use std::fmt::Debug;
-use std::any::{TypeId};
+
+use crossbeam::crossbeam_channel::unbounded;
 
 pub trait Payload: Debug + PayloadClone + mopa::Any {}
 mopafy!(Payload);
@@ -19,7 +20,7 @@ impl<T> PayloadClone for T where T: 'static + Payload + Clone {
 #[derive(Debug, Clone)]
 pub struct Message {
     pub code: TypeId,
-    pub data: Box<dyn Payload>
+    pub data: Box<dyn Payload>,
 }
 
 impl Clone for Box<dyn Payload> {
@@ -32,7 +33,7 @@ impl Message {
     pub fn new<T: 'static + Payload>(payload: Box<T>) -> Self {
         Message {
             code: TypeId::of::<T>(),
-            data: payload
+            data: payload,
         }
     }
 
@@ -54,7 +55,7 @@ impl Message {
 pub struct MessageManager {
     // maps message type to listener objects
     pub sender: crossbeam::crossbeam_channel::Sender<Message>,
-    pub receiver: crossbeam::crossbeam_channel::Receiver<Message>
+    pub receiver: crossbeam::crossbeam_channel::Receiver<Message>,
 }
 
 impl MessageManager {
@@ -63,7 +64,7 @@ impl MessageManager {
 
         MessageManager {
             sender: send,
-            receiver: receive
+            receiver: receive,
         }
     }
 }
@@ -71,14 +72,17 @@ impl MessageManager {
 
 #[derive(Debug, Clone)]
 pub struct Empty {}
+
 impl Payload for Empty {}
 
 #[derive(Debug, Clone)]
 pub struct Exit {}
-impl Payload for Exit { }
+
+impl Payload for Exit {}
 
 #[derive(Debug, Clone)]
 pub struct Text {
     pub text: String
 }
+
 impl Payload for Text {}

@@ -1,3 +1,4 @@
+pub use renderer::RenderSystem;
+
 mod renderer;
 
-pub use renderer::RenderSystem;

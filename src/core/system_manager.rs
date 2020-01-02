@@ -1,12 +1,12 @@
 use std::any::TypeId;
+use std::collections::HashMap;
 use std::fmt::Debug;
 
-use crate::core::{Message, Entity};
-use std::collections::HashMap;
+use crate::core::{Entity, Message};
 
 pub trait System: Debug {
-    fn consume_messages(&mut self, _: &Vec<Message>) { }
-    fn execute(&mut self, _: &Vec<&Box<Entity>>) { }
+    fn consume_messages(&mut self, _: &Vec<Message>) {}
+    fn execute(&mut self, _: &Vec<&Box<Entity>>) {}
     fn get_messages(&mut self) -> Vec<Message> { vec![] }
 }
 
@@ -19,7 +19,7 @@ impl SystemManager {
         SystemManager { systems: HashMap::new() }
     }
 
-    pub fn add_system<T: 'static + System >(&mut self, sys_box: Box<T>)
+    pub fn add_system<T: 'static + System>(&mut self, sys_box: Box<T>)
         where T: 'static + System {
         self.systems.insert(TypeId::of::<T>(), sys_box);
     }

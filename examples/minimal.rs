@@ -1,6 +1,6 @@
 use nse;
+use nse::core::{Entity, Exit, Message, System};
 use nse::NSE;
-use nse::core::{Entity, System, Message, Exit};
 
 #[derive(Debug)]
 struct NoopSystem {
@@ -26,11 +26,11 @@ impl System for NoopSystem {
     }
 
     fn get_messages(&mut self) -> Vec<Message> {
-        if self.counter == 0 {
-            return vec![Message::new(Box::new(Exit {}))];
+        return if self.counter == 0 {
+            vec![Message::new(Box::new(Exit {}))]
         } else {
-            return vec![];
-        }
+            vec![]
+        };
     }
 }
 
@@ -45,8 +45,8 @@ fn main() {
     e1.name = String::from("Entity 1");
     engine.entity_manager.remove_entity(&e1);
 
-    for _i in 1 .. 10 {
-        let mut e= Box::new(Entity::new());
+    for _i in 1..10 {
+        let mut e = Box::new(Entity::new());
         e.name = String::from(format!("Entity {}", e.id));
         engine.entity_manager.add_entity(&e);
     }

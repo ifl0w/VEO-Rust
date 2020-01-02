@@ -1,6 +1,5 @@
 use std::collections::HashSet;
-
-use std::sync::atomic::{AtomicU64};
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
 
 type EntityID = u64;
@@ -11,7 +10,7 @@ static mut LAST_ENTITY: AtomicU64 = AtomicU64::new(0);
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub struct Entity {
     pub id: EntityID,
-    pub name: String
+    pub name: String,
 }
 
 impl Entity {
@@ -22,14 +21,14 @@ impl Entity {
         }
         Entity {
             id: val,
-            name: String::from("unnamed")
+            name: String::from("unnamed"),
         }
     }
 }
 
 pub struct EntityManager {
     pub entities: HashSet<Box<Entity>>,
-    _last_id: u64
+    _last_id: u64,
 }
 
 impl EntityManager {
