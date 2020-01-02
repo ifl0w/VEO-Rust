@@ -4,7 +4,27 @@ use std::fmt::Debug;
 
 use crate::core::{Entity, Message};
 
+#[macro_export]
+macro_rules! filter {
+    ( $( $x: ty ), * ) => {
+        {
+            let mut temp_vec = Vec::new();
+            $(
+                temp_vec.push(std::any::TypeId::of::<$x>());
+            )*
+            Some(Filter{
+                types: temp_vec
+            })
+        }
+    }
+}
+
+pub struct Filter {
+    pub types: Vec<TypeId>
+}
+
 pub trait System: Debug {
+    fn get_filter(&mut self) -> Option<Filter> { None }
     fn consume_messages(&mut self, _: &Vec<Message>) {}
     fn execute(&mut self, _: &Vec<&Box<Entity>>) {}
     fn get_messages(&mut self) -> Vec<Message> { vec![] }
