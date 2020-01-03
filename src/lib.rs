@@ -1,10 +1,15 @@
+extern crate cgmath;
 #[macro_use]
 extern crate mopa;
+#[macro_use]
+extern crate vulkano;
+extern crate vulkano_win;
+extern crate winit;
+
 
 use std::iter::FromIterator;
 
-use winit::event::{Event, WindowEvent};
-use winit::event_loop::ControlFlow;
+use winit::{Event, EventsLoop, WindowEvent};
 
 use crate::core::{EntityManager, Exit, Message};
 use crate::core::MessageManager;
@@ -17,7 +22,7 @@ pub struct NSE {
     pub message_manager: MessageManager,
     pub entity_manager: EntityManager,
     pub system_manager: SystemManager,
-    pub event_loop: winit::event_loop::EventLoop<()>,
+    pub event_loop: EventsLoop,
 }
 
 impl NSE {
@@ -26,7 +31,7 @@ impl NSE {
             message_manager: MessageManager::new(),
             entity_manager: EntityManager::new(),
             system_manager: SystemManager::new(),
-            event_loop: winit::event_loop::EventLoop::new(),
+            event_loop: EventsLoop::new(),
         };
 
         nse
@@ -36,55 +41,17 @@ impl NSE {
         println!("Initializing...")
     }
 
-    pub fn run(self) {
-        let mm = self.message_manager;
-        let mut sm = self.system_manager;
-        let em = self.entity_manager;
+    pub fn run(&mut self) {
+        loop {
+            let mut exit = false;
 
-        self.event_loop.run(move |event, _, control_flow| {
-            let v: Vec<_> = mm.receiver.try_iter().collect();
-            for msg in v.iter() {
-                if msg.is_type::<Exit>() {
-                    println!("Exiting NSE");
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
-            }
-
-            let iter = sm.systems.iter_mut();
-            let mut msgs: Vec<Message> = vec![];
-
-//            let entities = em.entities.iter();
-
-            for (_, sys) in iter {
-                let sys_entities;
-                match sys.get_filter() {
-                    Some(f) => {
-                        sys_entities = em.entities.iter()
-                            .filter(|e| e.match_filter(&f))
-                            .collect::<Vec<_>>();
-                    }
-                    None => {
-                        sys_entities = Vec::from_iter(em.entities.iter());
-                    }
-                };
-
-                sys.consume_messages(&v);
-                sys.execute(&sys_entities);
-                msgs.append(&mut sys.get_messages());
-            }
-
-            for msg in msgs.iter() {
-                let result = mm.sender.send(msg.clone());
-                result.expect("Sending message failed");
-            }
-
-            match event {
-                | Event::WindowEvent { event, .. } => {
-                    match event {
-                        | WindowEvent::CloseRequested => {
-                            *control_flow = ControlFlow::Exit
-                        }
+            self.event_loop.poll_events(|event| {
+                match event {
+                    | Event::WindowEvent { event, .. } => {
+                        match event {
+                            | WindowEvent::CloseRequested => {
+                                exit = true;
+                            }
 //                        | WindowEvent::KeyboardInput { input, .. } => {
 //                            match input {
 //                                | KeyboardInput { virtual_keycode, state, .. } => {
@@ -98,12 +65,55 @@ impl NSE {
 //                                },
 //                            }
 //                        },
-                        | _ => {}
+                            | _ => {}
+                        }
                     }
+                    _ => (),
                 }
-                _ => (),
+            });
+
+            let v: Vec<_> = self.message_manager.receiver.try_iter().collect();
+            for msg in v.iter() {
+                if msg.is_type::<Exit>() {
+//                *control_flow = ControlFlow::Exit;
+                    exit = true;
+                }
             }
-        });
+
+            if exit {
+                println!("Exiting NSE");
+                return;
+            }
+
+
+            let iter = self.system_manager.systems.iter_mut();
+            let mut msgs: Vec<Message> = vec![];
+
+//            let entities = em.entities.iter();
+
+            for (_, sys) in iter {
+                let sys_entities;
+                match sys.get_filter() {
+                    Some(f) => {
+                        sys_entities = self.entity_manager.entities.iter()
+                            .filter(|e| e.match_filter(&f))
+                            .collect::<Vec<_>>();
+                    }
+                    None => {
+                        sys_entities = Vec::from_iter(self.entity_manager.entities.iter());
+                    }
+                };
+
+                sys.consume_messages(&v);
+                sys.execute(&sys_entities);
+                msgs.append(&mut sys.get_messages());
+            }
+
+            for msg in msgs.iter() {
+                let result = self.message_manager.sender.send(msg.clone());
+                result.expect("Sending message failed");
+            }
+        }
     }
 }
 

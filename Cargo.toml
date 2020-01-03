@@ -10,6 +10,14 @@ edition = "2018"
 crossbeam = "0.7" # multithreading library
 mopa = "0.2.2"
 
-winit = "0.20.0-alpha5"
+#winit = "0.20.0-alpha5"
+winit = "0.19"
+
 ash = "0.29.0"
 ash-window = "0.1.0"
+
+vulkano = "0.16.0"
+vulkano-win = "0.16.0"
+vulkano-shaders = "0.16.0"
+
+cgmath = "0.17.0"

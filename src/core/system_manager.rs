@@ -1,6 +1,5 @@
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::fmt::Debug;
 
 use crate::core::{Entity, Message};
 
@@ -23,7 +22,7 @@ pub struct Filter {
     pub types: Vec<TypeId>
 }
 
-pub trait System: Debug {
+pub trait System {
     fn get_filter(&mut self) -> Option<Filter> { None }
     fn consume_messages(&mut self, _: &Vec<Message>) {}
     fn execute(&mut self, _: &Vec<&Box<Entity>>) {}
