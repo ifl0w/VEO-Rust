@@ -8,10 +8,9 @@ use std::sync::atomic::Ordering::Relaxed;
 use mopa::Any;
 
 use crate::core::system_manager::Filter;
+use std::sync::{Arc, Mutex};
 
-type EntityID = u64;
-
-pub trait Component: Debug + mopa::Any + ComponentClone {}
+pub trait Component: mopa::Any + ComponentClone {}
 mopafy!(Component);
 
 // src: https://www.howtobuildsoftware.com/index.php/how-do/vk6/struct-clone-rust-traits-cloneable-how-to-clone-a-struct-storing-a-trait-object
@@ -27,7 +26,10 @@ impl<T> ComponentClone for T where T: 'static + Component + Clone {
 
 static mut LAST_ENTITY: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Eq, PartialEq, Clone, Debug)]
+pub type EntityID = u64;
+pub type EntityRef = Arc<Mutex<Entity>>;
+
+#[derive(Eq, PartialEq, Clone)]
 pub struct Entity {
     pub id: EntityID,
     pub name: String,
@@ -99,21 +101,21 @@ impl Entity {
 }
 
 pub struct EntityManager {
-    pub entities: HashSet<Box<Entity>>,
-    _last_id: u64,
+    pub entities: HashMap<EntityID, EntityRef>,
+    _last_id: EntityID,
 }
 
 impl EntityManager {
     pub fn new() -> EntityManager {
-        EntityManager { entities: std::collections::HashSet::new(), _last_id: 0 }
+        EntityManager { entities: std::collections::HashMap::new(), _last_id: 0 }
     }
 
-    pub fn add_entity(&mut self, e: &Box<Entity>) {
-        self.entities.insert(e.clone());
+    pub fn add_entity(&mut self, e: EntityRef) {
+        self.entities.insert(e.lock().unwrap().id, e.clone());
     }
 
-    pub fn remove_entity(&mut self, e: &Box<Entity>) {
-        self.entities.remove(e);
+    pub fn remove_entity(&mut self, e: EntityRef) {
+        self.entities.remove(&e.lock().unwrap().id);
     }
 }
 

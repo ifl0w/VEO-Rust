@@ -1,7 +1,8 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
-use crate::core::{Entity, Message};
+use crate::core::{Entity, Message, EntityRef};
+use std::sync::Arc;
 
 #[macro_export]
 macro_rules! filter {
@@ -25,7 +26,7 @@ pub struct Filter {
 pub trait System {
     fn get_filter(&mut self) -> Option<Filter> { None }
     fn consume_messages(&mut self, _: &Vec<Message>) {}
-    fn execute(&mut self, _: &Vec<&Box<Entity>>) {}
+    fn execute(&mut self, _: &Vec<EntityRef>) {}
     fn get_messages(&mut self) -> Vec<Message> { vec![] }
 }
 

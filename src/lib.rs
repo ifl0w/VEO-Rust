@@ -11,9 +11,11 @@ use std::iter::FromIterator;
 
 use winit::{Event, EventsLoop, WindowEvent};
 
-use crate::core::{EntityManager, Exit, Message};
+use crate::core::{EntityManager, Exit, Message, EntityRef};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
+use std::sync::Arc;
+use std::ops::Deref;
 
 pub mod core;
 pub mod rendering;
@@ -95,12 +97,12 @@ impl NSE {
                 let sys_entities;
                 match sys.get_filter() {
                     Some(f) => {
-                        sys_entities = self.entity_manager.entities.iter()
-                            .filter(|e| e.match_filter(&f))
+                        sys_entities = self.entity_manager.entities.values().cloned()
+                            .filter(|e| e.lock().ok().unwrap().match_filter(&f))
                             .collect::<Vec<_>>();
                     }
                     None => {
-                        sys_entities = Vec::from_iter(self.entity_manager.entities.iter());
+                        sys_entities = Vec::from_iter(self.entity_manager.entities.values().cloned());
                     }
                 };
 

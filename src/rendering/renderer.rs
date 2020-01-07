@@ -33,8 +33,14 @@ use vulkano_win::VkSurfaceBuild;
 use winit::{EventsLoop, Window, WindowBuilder};
 use winit::dpi::LogicalSize;
 
-use crate::core::{Entity, System};
+use crate::core::{Entity, System, Filter, EntityRef};
 use crate::NSE;
+
+use crate::rendering::{
+    Vertex,
+    Mesh
+};
+
 use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSetsPool, FixedSizeDescriptorSet};
 
 // Constants
@@ -74,20 +80,6 @@ impl QueueFamilyIndices {
     }
 }
 
-#[derive(Copy, Clone, Default)]
-struct Vertex {
-    pos: [f32; 2],
-    color: [f32; 3],
-}
-impl Vertex {
-    fn new(pos: [f32; 2], color: [f32; 3]) -> Self {
-        Self { pos, color }
-    }
-}
-
-#[allow(clippy: ref_in_deref)]
-vulkano::impl_vertex!(Vertex, pos, color);
-
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 struct UniformBufferObject {
@@ -95,20 +87,6 @@ struct UniformBufferObject {
     view: Matrix4<f32>,
     proj: Matrix4<f32>,
 }
-
-fn vertices() -> [Vertex; 4] {
-    [
-        Vertex::new([-0.5, -0.5], [1.0, 0.0, 0.0]),
-        Vertex::new([0.5, -0.5], [0.0, 1.0, 0.0]),
-        Vertex::new([0.5, 0.5], [0.0, 0.0, 1.0]),
-        Vertex::new([-0.5, 0.5], [1.0, 1.0, 1.0])
-    ]
-}
-
-fn indices() -> [u16; 6] {
-    [0, 1, 2, 2, 3, 0]
-}
-
 
 pub struct RenderSystem {
     instance: Arc<Instance>,
@@ -132,9 +110,6 @@ pub struct RenderSystem {
 
     swap_chain_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
-    vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
-    index_buffer: Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>,
-
     #[allow(dead_code)]
     uniform_buffers: Vec<Arc<CpuAccessibleBuffer<UniformBufferObject>>>,
 
@@ -150,8 +125,13 @@ pub struct RenderSystem {
 }
 
 impl System for RenderSystem {
-    fn execute(&mut self, _: &Vec<&Box<Entity>>) {
-        self.create_command_buffers();
+
+    fn get_filter(&mut self) -> Option<Filter> { crate::filter!(Mesh) }
+
+    fn execute(&mut self, entities: &Vec<EntityRef>) {
+//        for mut e in entities {
+//            self.create_command_buffers(e.lock().unwrap().get_component::<Mesh>().ok().unwrap());
+//        }
         self.draw_frame();
     }
 }
@@ -177,8 +157,6 @@ impl RenderSystem {
 
         let start_time = Instant::now();
 
-        let vertex_buffer = Self::create_vertex_buffer(&graphics_queue);
-        let index_buffer = Self::create_index_buffer(&graphics_queue);
         let uniform_buffers = Self::create_uniform_buffers(&device, swap_chain_images.len(), start_time, swap_chain.dimensions());
 
         let descriptor_sets_pool = Self::create_descriptor_pool(&graphics_pipeline);
@@ -206,8 +184,6 @@ impl RenderSystem {
 
             swap_chain_framebuffers,
 
-            vertex_buffer,
-            index_buffer,
             uniform_buffers,
 
             descriptor_sets,
@@ -486,24 +462,6 @@ impl RenderSystem {
             ).collect::<Vec<_>>()
     }
 
-    fn create_vertex_buffer(graphics_queue: &Arc<Queue>) -> Arc<dyn BufferAccess + Send + Sync> {
-        let (buffer, future) = ImmutableBuffer::from_iter(
-            vertices().iter().cloned(), BufferUsage::vertex_buffer(),
-            graphics_queue.clone())
-            .unwrap();
-        future.flush().unwrap();
-        buffer
-    }
-
-    fn create_index_buffer(graphics_queue: &Arc<Queue>) -> Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync> {
-        let (buffer, future) = ImmutableBuffer::from_iter(
-            indices().iter().cloned(), BufferUsage::index_buffer(),
-            graphics_queue.clone())
-            .unwrap();
-        future.flush().unwrap();
-        buffer
-    }
-
     fn create_uniform_buffers(
         device: &Arc<Device>,
         num_buffers: usize,
@@ -571,14 +529,14 @@ impl RenderSystem {
                     .unwrap()
                     .begin_render_pass(framebuffer.clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()])
                     .unwrap()
-                    .draw_indexed(
+                    /*.draw_indexed(
                         self.graphics_pipeline.clone(),
                         &DynamicState::none(),
-                        vec![self.vertex_buffer.clone()],
-                        self.index_buffer.clone(),
+                        vec![mesh.vertex_buffer.clone()],
+                        mesh.index_buffer.clone(),
                         self.descriptor_sets[i].clone(),
                         ())
-                    .unwrap()
+                    .unwrap()*/
                     .end_render_pass()
                     .unwrap()
                     .build()
