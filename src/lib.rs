@@ -95,7 +95,7 @@ impl NSE {
 
             for (_, sys) in iter {
                 let sys_entities;
-                match sys.get_filter() {
+                match sys.lock().unwrap().get_filter() {
                     Some(f) => {
                         sys_entities = self.entity_manager.entities.values().cloned()
                             .filter(|e| e.lock().ok().unwrap().match_filter(&f))
@@ -106,9 +106,9 @@ impl NSE {
                     }
                 };
 
-                sys.consume_messages(&v);
-                sys.execute(&sys_entities);
-                msgs.append(&mut sys.get_messages());
+                sys.lock().unwrap().consume_messages(&v);
+                sys.lock().unwrap().execute(&sys_entities);
+                msgs.append(&mut sys.lock().unwrap().get_messages());
             }
 
             for msg in msgs.iter() {

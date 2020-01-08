@@ -8,21 +8,24 @@ use vulkano::buffer::{
 };
 use vulkano::device::Queue;
 use vulkano::sync::GpuFuture;
+
 use crate::core::Component;
+use crate::rendering::RenderSystem;
 
 #[derive(Copy, Clone, Default)]
 pub struct Vertex {
-    pos: [f32; 2],
+    position: [f32; 3],
+    normal: [f32; 3],
     color: [f32; 3],
 }
 impl Vertex {
-    fn new(pos: [f32; 2], color: [f32; 3]) -> Self {
-        Self { pos, color }
+    fn new(position: [f32; 3], normal: [f32; 3], color: [f32; 3]) -> Self {
+        Self { position, normal, color }
     }
 }
 
 #[allow(clippy: ref_in_deref)]
-vulkano::impl_vertex!(Vertex, pos, color);
+vulkano::impl_vertex!(Vertex, position, normal, color);
 
 pub trait MeshGenerator {
     fn get_vertices() -> Vec<Vertex>;
@@ -38,9 +41,9 @@ pub struct Mesh {
 impl Component for Mesh {}
 
 impl Mesh {
-    fn new<T: MeshGenerator>(graphics_queue: &Arc<Queue>) -> Self {
-        let vertex_buffer = Self::create_vertex_buffer::<T>(graphics_queue);
-        let index_buffer = Self::create_index_buffer::<T>(graphics_queue);
+    pub fn new<T: MeshGenerator>(render_system: &RenderSystem) -> Self {
+        let vertex_buffer = Self::create_vertex_buffer::<T>(&render_system.graphics_queue);
+        let index_buffer = Self::create_index_buffer::<T>(&render_system.graphics_queue);
 
         Mesh {
             vertex_buffer,
@@ -67,20 +70,69 @@ impl Mesh {
     }
 }
 
-pub struct Plane {
-}
+pub struct Plane { }
 
 impl MeshGenerator for Plane {
     fn get_vertices() -> Vec<Vertex> {
-            vec![
-                Vertex::new([-0.5, -0.5], [1.0, 0.0, 0.0]),
-                Vertex::new([0.5, -0.5], [0.0, 1.0, 0.0]),
-                Vertex::new([0.5, 0.5], [0.0, 0.0, 1.0]),
-                Vertex::new([-0.5, 0.5], [1.0, 1.0, 1.0])
-            ]
+        vec![
+            Vertex::new([-0.5, 0.0, -0.5], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
+            Vertex::new([-0.5, 0.0, 0.5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+            Vertex::new([0.5, 0.0, 0.5], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0]),
+            Vertex::new([0.5, 0.0, -0.5], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0])
+        ]
     }
 
     fn get_indices() -> Vec<u16> {
         vec![0, 1, 2, 2, 3, 0]
+    }
+}
+
+pub struct Cube { }
+
+impl MeshGenerator for Cube {
+    fn get_vertices() -> Vec<Vertex> {
+        vec![
+            // top
+            Vertex::new([-0.5, 0.5, 0.5], [0.0, 1.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, 0.5, 0.5], [0.0, 1.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, 0.5, -0.5], [0.0, 1.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, 0.5, -0.5], [0.0, 1.0, 0.0],[1.0, 1.0, 1.0]),
+            // bottom
+            Vertex::new([0.5, -0.5, 0.5], [0.0, -1.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, -0.5, 0.5], [0.0, -1.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, -0.5, -0.5], [0.0, -1.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, -0.5, -0.5], [0.0, -1.0, 0.0],[1.0, 1.0, 1.0]),
+            // left
+            Vertex::new([-0.5, 0.5, 0.5], [-1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, 0.5, -0.5], [-1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, -0.5, 0.5], [-1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, -0.5, -0.5], [-1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            // right
+            Vertex::new([0.5, 0.5, -0.5], [1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, 0.5, 0.5], [1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, -0.5, -0.5], [1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, -0.5, 0.5], [1.0, 0.0, 0.0],[1.0, 1.0, 1.0]),
+            // front
+            Vertex::new([-0.5, -0.5, 0.5], [0.0, 0.0, 1.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, -0.5, 0.5], [0.0, 0.0, 1.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, 0.5, 0.5], [0.0, 0.0, 1.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, 0.5, 0.5], [0.0, 0.0, 1.0],[1.0, 1.0, 1.0]),
+            // back
+            Vertex::new([0.5, -0.5, -0.5], [0.0, 0.0, -1.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, -0.5, -0.5], [0.0, 0.0, -1.0],[1.0, 1.0, 1.0]),
+            Vertex::new([0.5, 0.5, -0.5], [0.0, 0.0, -1.0],[1.0, 1.0, 1.0]),
+            Vertex::new([-0.5, 0.5, -0.5], [0.0, 0.0, -1.0],[1.0, 1.0, 1.0]),
+        ]
+    }
+
+    fn get_indices() -> Vec<u16> {
+        vec![
+            0, 1, 2, 1, 3, 2,
+            4, 5, 6, 5, 7, 6,
+            8, 9, 10, 9, 11, 10,
+            12, 13, 14, 13, 15, 14,
+            16, 17, 18, 17, 19, 18,
+            20, 21, 22, 21, 23, 22,
+        ]
     }
 }

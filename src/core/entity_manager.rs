@@ -58,16 +58,16 @@ impl Hash for Entity {
 }
 
 impl Entity {
-    pub fn new() -> Self {
+    pub fn new() -> EntityRef {
         let val;
         unsafe {
             val = LAST_ENTITY.fetch_add(1, Relaxed);
         }
-        Entity {
+        Arc::new(Mutex::new(Entity {
             id: val,
             name: String::from("unnamed"),
             components: HashMap::new(),
-        }
+        }))
     }
 
     pub fn get_component<T: Component>(&mut self) -> Result<&mut T, &str> {
@@ -82,11 +82,13 @@ impl Entity {
         };
     }
 
-    pub fn add_component<T: Component>(&mut self, component: T) {
+    pub fn add_component<T: Component>(&mut self, component: T) -> &mut Self {
         match self.components.insert(TypeId::of::<T>(), Box::new(component)) {
             Some(_) => (),
             None => ()
         }
+
+        self
     }
 
     pub fn has_component<T: Component>(&self) -> bool {

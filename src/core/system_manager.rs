@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 
 use crate::core::{Entity, Message, EntityRef};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[macro_export]
 macro_rules! filter {
@@ -31,7 +31,7 @@ pub trait System {
 }
 
 pub struct SystemManager {
-    pub systems: HashMap<TypeId, Box<dyn System>>,
+    pub systems: HashMap<TypeId, Arc<Mutex<dyn System>>>,
 }
 
 impl SystemManager {
@@ -39,8 +39,8 @@ impl SystemManager {
         SystemManager { systems: HashMap::new() }
     }
 
-    pub fn add_system<T: 'static + System>(&mut self, sys_box: Box<T>)
+    pub fn add_system<T: 'static + System>(&mut self, sys: Arc<Mutex<T>>)
         where T: 'static + System {
-        self.systems.insert(TypeId::of::<T>(), sys_box);
+        self.systems.insert(TypeId::of::<T>(), sys);
     }
 }

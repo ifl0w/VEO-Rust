@@ -1,54 +1,53 @@
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cgmath::{Deg, Matrix4, Point3, Rad, Vector3};
 use vulkano::buffer::{
-    immutable::ImmutableBuffer,
-    BufferUsage,
     BufferAccess,
-    TypedBufferAccess,
+    BufferUsage,
     CpuAccessibleBuffer,
+    immutable::ImmutableBuffer,
+    TypedBufferAccess,
 };
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
+use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool};
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
+use vulkano::format::Format;
+use vulkano::framebuffer::{
+    Framebuffer,
+    FramebufferAbstract,
+    RenderPassAbstract,
+    Subpass,
+};
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::instance::{ApplicationInfo, Instance, InstanceExtensions, layers_list, PhysicalDevice, Version};
 use vulkano::instance::debug::{DebugCallback, MessageSeverity, MessageType};
-use vulkano::sync::{self, SharingMode, GpuFuture};
 use vulkano::pipeline::{
     GraphicsPipeline,
     GraphicsPipelineAbstract,
     viewport::Viewport,
 };
-use vulkano::framebuffer::{
-    RenderPassAbstract,
-    Subpass,
-    FramebufferAbstract,
-    Framebuffer,
-};
-use vulkano::swapchain::{acquire_next_image, AcquireError, Surface, Swapchain, CompositeAlpha, Capabilities, SupportedPresentModes, PresentMode, ColorSpace};
-use vulkano::format::Format;
+use vulkano::swapchain::{acquire_next_image, AcquireError, Capabilities, ColorSpace, CompositeAlpha, PresentMode, SupportedPresentModes, Surface, Swapchain};
+use vulkano::sync::{self, GpuFuture, SharingMode};
 use vulkano_win::VkSurfaceBuild;
 use winit::{EventsLoop, Window, WindowBuilder};
 use winit::dpi::LogicalSize;
 
-use crate::core::{Entity, System, Filter, EntityRef};
+use crate::core::{Entity, EntityRef, Filter, System};
 use crate::NSE;
-
 use crate::rendering::{
+    Mesh,
     Vertex,
-    Mesh
 };
-
-use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSetsPool, FixedSizeDescriptorSet};
 
 // Constants
 const WINDOW_TITLE: &'static str = "NSE";
 const WINDOW_WIDTH: u32 = 800;
 const WINDOW_HEIGHT: u32 = 600;
 
-const VALIDATION_LAYERS: &[&str] =  &[
+const VALIDATION_LAYERS: &[&str] = &[
     "VK_LAYER_LUNARG_standard_validation"
 ];
 
@@ -56,7 +55,7 @@ const VALIDATION_LAYERS: &[&str] =  &[
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
-        .. vulkano::device::DeviceExtensions::none()
+        ..vulkano::device::DeviceExtensions::none()
     }
 }
 
@@ -99,7 +98,7 @@ pub struct RenderSystem {
     // can't store PhysicalDevice directly (lifetime issues)
     device: Arc<Device>,
 
-    graphics_queue: Arc<Queue>,
+    pub(in crate::rendering) graphics_queue: Arc<Queue>,
     present_queue: Arc<Queue>,
 
     swap_chain: Arc<Swapchain<Window>>,
@@ -125,19 +124,16 @@ pub struct RenderSystem {
 }
 
 impl System for RenderSystem {
-
     fn get_filter(&mut self) -> Option<Filter> { crate::filter!(Mesh) }
 
     fn execute(&mut self, entities: &Vec<EntityRef>) {
-//        for mut e in entities {
-//            self.create_command_buffers(e.lock().unwrap().get_component::<Mesh>().ok().unwrap());
-//        }
+        self.forward_pass_command_buffer(entities);
         self.draw_frame();
     }
 }
 
 impl RenderSystem {
-    pub fn new(nse: &NSE) -> Self {
+    pub fn new(nse: &NSE) -> Arc<Mutex<Self>> {
         let instance = Self::create_instance();
         let debug_callback = Self::setup_debug_callback(&instance);
         let surface = Self::create_surface(&instance, &nse.event_loop);
@@ -197,7 +193,8 @@ impl RenderSystem {
         };
 
         rs.create_command_buffers();
-        rs
+
+        Arc::new(Mutex::new(rs));
     }
 
     fn create_instance() -> Arc<Instance> {
@@ -515,6 +512,50 @@ impl RenderSystem {
             .collect()
     }
 
+    fn forward_pass_command_buffer(&mut self, entities: &Vec<EntityRef>) {
+        let queue_family = self.graphics_queue.family();
+        let dimensions = [self.swap_chain.dimensions()[0] as f32, self.swap_chain.dimensions()[1] as f32];
+
+        self.command_buffers = self.swap_chain_framebuffers
+            .iter()
+            .enumerate()
+            .map(|(i, framebuffer)| {
+                let mut builder =
+                    AutoCommandBufferBuilder::primary_simultaneous_use(
+                        self.device.clone(),
+                        queue_family)
+                    .unwrap()
+                    .update_buffer(
+                        self.uniform_buffers[i].clone(),
+                        Self::update_uniform_buffer(self.start_time, dimensions))
+                    .unwrap()
+                    .begin_render_pass(
+                        framebuffer.clone(),
+                        false,
+                        vec![[0.0, 0.0, 0.0, 1.0].into()])
+                    .unwrap();
+
+                for e in entities {
+                    let mut entity = e.lock().unwrap();
+                    let mesh = entity.get_component::<Mesh>().ok().unwrap();
+                    builder = builder.draw_indexed(
+                        self.graphics_pipeline.clone(),
+                        &DynamicState::none(),
+                        vec![mesh.vertex_buffer.clone()],
+                        mesh.index_buffer.clone(),
+                        self.descriptor_sets[i].clone(),
+                        (),
+                    ).unwrap();
+                }
+
+                Arc::new(builder.end_render_pass()
+                    .unwrap()
+                    .build()
+                    .unwrap())
+            })
+            .collect();
+    }
+
     fn create_command_buffers(&mut self) {
         let queue_family = self.graphics_queue.family();
         let dimensions = [self.swap_chain.dimensions()[0] as f32, self.swap_chain.dimensions()[1] as f32];
@@ -529,14 +570,6 @@ impl RenderSystem {
                     .unwrap()
                     .begin_render_pass(framebuffer.clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()])
                     .unwrap()
-                    /*.draw_indexed(
-                        self.graphics_pipeline.clone(),
-                        &DynamicState::none(),
-                        vec![mesh.vertex_buffer.clone()],
-                        mesh.index_buffer.clone(),
-                        self.descriptor_sets[i].clone(),
-                        ())
-                    .unwrap()*/
                     .end_render_pass()
                     .unwrap()
                     .build()
@@ -656,12 +689,12 @@ impl RenderSystem {
         let duration = Instant::now().duration_since(start_time);
         let elapsed = (duration.as_secs() * 1000) + u64::from(duration.subsec_millis());
 
-        let model = Matrix4::from_angle_z(Rad::from(Deg(elapsed as f32 * 0.180)));
+        let model = Matrix4::from_angle_y(Rad::from(Deg(elapsed as f32 * 0.180)));
 
         let view = Matrix4::look_at(
-            Point3::new(2.0, 2.0, 2.0),
+            Point3::new(0.0, 2.0, 2.0),
             Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
         );
 
         let mut proj = cgmath::perspective(
