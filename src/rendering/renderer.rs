@@ -40,6 +40,8 @@ use crate::NSE;
 use crate::rendering::{
     Mesh,
     Vertex,
+    Camera,
+    Position
 };
 
 // Constants
@@ -124,10 +126,11 @@ pub struct RenderSystem {
 }
 
 impl System for RenderSystem {
-    fn get_filter(&mut self) -> Option<Filter> { crate::filter!(Mesh) }
 
-    fn execute(&mut self, entities: &Vec<EntityRef>) {
-        self.forward_pass_command_buffer(entities);
+    fn get_filter(&mut self) -> Vec<Filter> { vec![crate::filter!(Mesh), crate::filter!(Camera, Position)] }
+
+    fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>) {
+        self.forward_pass_command_buffer(&filter[0].lock().unwrap().entities);
         self.draw_frame();
     }
 }
@@ -194,7 +197,7 @@ impl RenderSystem {
 
         rs.create_command_buffers();
 
-        Arc::new(Mutex::new(rs));
+        Arc::new(Mutex::new(rs))
     }
 
     fn create_instance() -> Arc<Instance> {

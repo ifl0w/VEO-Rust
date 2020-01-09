@@ -10,3 +10,7 @@ pub use mesh::Cube;
 
 mod mesh;
 
+mod camera;
+
+pub use camera::Position;
+pub use camera::Camera;

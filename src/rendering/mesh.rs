@@ -11,6 +11,7 @@ use vulkano::sync::GpuFuture;
 
 use crate::core::Component;
 use crate::rendering::RenderSystem;
+use cgmath::Vector3;
 
 #[derive(Copy, Clone, Default)]
 pub struct Vertex {

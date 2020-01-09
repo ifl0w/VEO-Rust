@@ -11,11 +11,12 @@ use std::iter::FromIterator;
 
 use winit::{Event, EventsLoop, WindowEvent};
 
-use crate::core::{EntityManager, Exit, Message, EntityRef};
+use crate::core::{EntityManager, Exit, Message, EntityRef, Entity, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::ops::Deref;
+use std::rc::Rc;
 
 pub mod core;
 pub mod rendering;
@@ -88,26 +89,17 @@ impl NSE {
             }
 
 
-            let iter = self.system_manager.systems.iter_mut();
+            let sysIterator = self.system_manager.systems.iter();
             let mut msgs: Vec<Message> = vec![];
 
-//            let entities = em.entities.iter();
+            let entities = self.entity_manager.entities.values().cloned().collect();
 
-            for (_, sys) in iter {
-                let sys_entities;
-                match sys.lock().unwrap().get_filter() {
-                    Some(f) => {
-                        sys_entities = self.entity_manager.entities.values().cloned()
-                            .filter(|e| e.lock().ok().unwrap().match_filter(&f))
-                            .collect::<Vec<_>>();
-                    }
-                    None => {
-                        sys_entities = Vec::from_iter(self.entity_manager.entities.values().cloned());
-                    }
-                };
+            for (typeid, sys) in sysIterator {
+                let filter = self.system_manager.get_filter(&typeid).unwrap();
+                filter.iter().for_each(|f| f.lock().unwrap().update(&entities));
 
                 sys.lock().unwrap().consume_messages(&v);
-                sys.lock().unwrap().execute(&sys_entities);
+                sys.lock().unwrap().execute(filter);
                 msgs.append(&mut sys.lock().unwrap().get_messages());
             }
 
