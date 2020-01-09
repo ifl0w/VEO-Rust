@@ -1,5 +1,6 @@
-use crate::core::Component;
 use cgmath::Vector3;
+
+use crate::core::Component;
 
 #[derive(Clone)]
 pub struct Camera {

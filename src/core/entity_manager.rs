@@ -2,13 +2,13 @@ use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
 
 use mopa::Any;
 
 use crate::core::system_manager::Filter;
-use std::sync::{Arc, Mutex};
 
 pub trait Component: mopa::Any + ComponentClone {}
 mopafy!(Component);

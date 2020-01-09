@@ -1,4 +1,3 @@
-
 pub trait InputHandler {
     fn handle_input();
 }

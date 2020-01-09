@@ -38,10 +38,10 @@ use winit::dpi::LogicalSize;
 use crate::core::{Entity, EntityRef, Filter, System};
 use crate::NSE;
 use crate::rendering::{
-    Mesh,
-    Vertex,
     Camera,
-    Position
+    Mesh,
+    Position,
+    Vertex,
 };
 
 // Constants
@@ -126,7 +126,6 @@ pub struct RenderSystem {
 }
 
 impl System for RenderSystem {
-
     fn get_filter(&mut self) -> Vec<Filter> { vec![crate::filter!(Mesh), crate::filter!(Camera, Position)] }
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>) {
@@ -527,16 +526,16 @@ impl RenderSystem {
                     AutoCommandBufferBuilder::primary_simultaneous_use(
                         self.device.clone(),
                         queue_family)
-                    .unwrap()
-                    .update_buffer(
-                        self.uniform_buffers[i].clone(),
-                        Self::update_uniform_buffer(self.start_time, dimensions))
-                    .unwrap()
-                    .begin_render_pass(
-                        framebuffer.clone(),
-                        false,
-                        vec![[0.0, 0.0, 0.0, 1.0].into()])
-                    .unwrap();
+                        .unwrap()
+                        .update_buffer(
+                            self.uniform_buffers[i].clone(),
+                            Self::update_uniform_buffer(self.start_time, dimensions))
+                        .unwrap()
+                        .begin_render_pass(
+                            framebuffer.clone(),
+                            false,
+                            vec![[0.0, 0.0, 0.0, 1.0].into()])
+                        .unwrap();
 
                 for e in entities {
                     let mut entity = e.lock().unwrap();

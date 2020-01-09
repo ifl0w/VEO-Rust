@@ -1,9 +1,9 @@
 use std::any::TypeId;
 use std::collections::HashMap;
-
-use crate::core::{Entity, Message, EntityRef};
-use std::sync::{Arc, Mutex};
 use std::ops::Deref;
+use std::sync::{Arc, Mutex};
+
+use crate::core::{Entity, EntityRef, Message};
 
 #[macro_export]
 macro_rules! filter {
@@ -24,7 +24,7 @@ macro_rules! filter {
 #[derive(Clone)]
 pub struct Filter {
     pub types: Vec<TypeId>,
-    pub entities: Vec<EntityRef>
+    pub entities: Vec<EntityRef>,
 }
 
 impl Filter {
@@ -38,8 +38,8 @@ impl Filter {
 
 pub trait System {
     fn get_filter(&mut self) -> Vec<Filter> { vec![] }
-    fn consume_messages(&mut self, _: &Vec<Message>) { }
-    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>) { }
+    fn consume_messages(&mut self, _: &Vec<Message>) {}
+    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>) {}
     fn get_messages(&mut self) -> Vec<Message> { vec![] }
 }
 

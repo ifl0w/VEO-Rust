@@ -1,8 +1,7 @@
 use nse;
+use nse::core::{Entity};
 use nse::NSE;
-use nse::rendering::{RenderSystem, Plane, Mesh, Cube};
-use nse::core::{EntityRef, Entity};
-use std::sync::{Mutex, Arc};
+use nse::rendering::{Cube, Mesh, RenderSystem};
 
 fn main() {
     let mut engine: NSE = NSE::new();

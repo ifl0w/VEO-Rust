@@ -8,15 +8,15 @@ extern crate winit;
 
 
 use std::iter::FromIterator;
+use std::ops::Deref;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use winit::{Event, EventsLoop, WindowEvent};
 
-use crate::core::{EntityManager, Exit, Message, EntityRef, Entity, System};
+use crate::core::{Entity, EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
-use std::sync::{Arc, Mutex};
-use std::ops::Deref;
-use std::rc::Rc;
 
 pub mod core;
 pub mod rendering;
