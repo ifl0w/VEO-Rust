@@ -1,5 +1,6 @@
 pub use camera::Camera;
-pub use camera::Position;
+pub use camera::CameraDataUbo;
+pub use camera::Transformation;
 pub use mesh::Cube;
 pub use mesh::Mesh;
 pub use mesh::MeshGenerator;

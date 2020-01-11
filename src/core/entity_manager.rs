@@ -70,13 +70,12 @@ impl Entity {
         }))
     }
 
-    pub fn get_component<T: Component>(&mut self) -> Result<&mut T, &str> {
+    pub fn get_component<T: Component>(&self) -> Result<&T, &str> {
         let contains = self.components.contains_key(&TypeId::of::<T>());
         return if contains {
-            let tmp = self.components.get_mut(&TypeId::of::<T>())
-                .expect("Corrupt component")
-                .as_mut();
-            Ok(tmp.downcast_mut::<T>().expect("Corrupt component"))
+            let tmp = self.components.get(&TypeId::of::<T>())
+                .expect("Corrupt component");
+            Ok(tmp.downcast_ref::<T>().expect("Corrupt component"))
         } else {
             Err("Component not contained.")
         };

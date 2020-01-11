@@ -4,6 +4,8 @@ use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
 use crate::core::{Entity, EntityRef, Message};
+use winit::Event;
+use std::time::Duration;
 
 #[macro_export]
 macro_rules! filter {
@@ -38,8 +40,9 @@ impl Filter {
 
 pub trait System {
     fn get_filter(&mut self) -> Vec<Filter> { vec![] }
+    fn handle_input(&mut self, event: &Event) {}
     fn consume_messages(&mut self, _: &Vec<Message>) {}
-    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>) {}
+    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, delta_time: Duration) {}
     fn get_messages(&mut self) -> Vec<Message> { vec![] }
 }
 

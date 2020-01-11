@@ -2,7 +2,6 @@
 #extension GL_ARB_separate_shader_objects : enable
 
 layout(binding = 0) uniform UniformBufferObject {
-    mat4 model;
     mat4 view;
     mat4 proj;
 } ubo;
@@ -19,6 +18,6 @@ out gl_PerVertex {
 };
 
 void main() {
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(position, 1.0);
-    fragColor = color;
+    gl_Position = ubo.proj * ubo.view * vec4(position, 1.0);
+    fragColor = (normal);
 }

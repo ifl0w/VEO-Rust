@@ -17,6 +17,7 @@ use winit::{Event, EventsLoop, WindowEvent};
 use crate::core::{Entity, EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
+use std::time::{Duration, Instant};
 
 pub mod core;
 pub mod rendering;
@@ -26,6 +27,8 @@ pub struct NSE {
     pub entity_manager: EntityManager,
     pub system_manager: SystemManager,
     pub event_loop: EventsLoop,
+
+    delta_time: Duration,
 }
 
 impl NSE {
@@ -35,6 +38,8 @@ impl NSE {
             entity_manager: EntityManager::new(),
             system_manager: SystemManager::new(),
             event_loop: EventsLoop::new(),
+
+            delta_time: Duration::new(0, 0),
         };
 
         nse
@@ -46,9 +51,14 @@ impl NSE {
 
     pub fn run(&mut self) {
         loop {
+            let frame_start = Instant::now();
             let mut exit = false;
+            let systems = &self.system_manager.systems.values().cloned().collect::<Vec<Arc<Mutex<dyn System>>>>();
 
             self.event_loop.poll_events(|event| {
+                for sys in systems {
+                    sys.lock().unwrap().handle_input(&event);
+                }
                 match event {
                     | Event::WindowEvent { event, .. } => {
                         match event {
@@ -99,7 +109,7 @@ impl NSE {
                 filter.iter().for_each(|f| f.lock().unwrap().update(&entities));
 
                 sys.lock().unwrap().consume_messages(&v);
-                sys.lock().unwrap().execute(filter);
+                sys.lock().unwrap().execute(filter, self.delta_time);
                 msgs.append(&mut sys.lock().unwrap().get_messages());
             }
 
@@ -107,6 +117,9 @@ impl NSE {
                 let result = self.message_manager.sender.send(msg.clone());
                 result.expect("Sending message failed");
             }
+
+            let frame_end = Instant::now();
+            self.delta_time = frame_end - frame_start;
         }
     }
 }

@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, Duration};
 
 use cgmath::{Deg, Matrix4, Point3, Rad, Vector3};
 use vulkano::buffer::{
@@ -12,7 +12,7 @@ use vulkano::buffer::{
     TypedBufferAccess,
 };
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
-use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool};
+use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSetBuf};
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
 use vulkano::format::Format;
 use vulkano::framebuffer::{
@@ -39,8 +39,9 @@ use crate::core::{Entity, EntityRef, Filter, System};
 use crate::NSE;
 use crate::rendering::{
     Camera,
+    CameraDataUbo,
     Mesh,
-    Position,
+    Transformation,
     Vertex,
 };
 
@@ -81,13 +82,15 @@ impl QueueFamilyIndices {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Copy, Clone)]
-struct UniformBufferObject {
-    model: Matrix4<f32>,
-    view: Matrix4<f32>,
-    proj: Matrix4<f32>,
+#[derive(Default, Debug, Copy, Clone)]
+struct InstanceData {
+    model_matrix: [f32; 16]
 }
+
+type MainDescriptorSet = ((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<CameraDataUbo>>>);
+
+//type MainDescriptorSet = (((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<CameraDataUbo>>>),
+//                          PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<InstanceData>>>);
 
 pub struct RenderSystem {
     instance: Arc<Instance>,
@@ -112,9 +115,11 @@ pub struct RenderSystem {
     swap_chain_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
     #[allow(dead_code)]
-    uniform_buffers: Vec<Arc<CpuAccessibleBuffer<UniformBufferObject>>>,
+    camera_ubo: Vec<Arc<CpuAccessibleBuffer<CameraDataUbo>>>,
+    instance_ubo: Vec<Arc<CpuAccessibleBuffer<InstanceData>>>,
 
-    descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, ((), vulkano::descriptor::descriptor_set::PersistentDescriptorSetBuf<std::sync::Arc<vulkano::buffer::CpuAccessibleBuffer<UniformBufferObject>>>)>>>,
+    camera_descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, MainDescriptorSet>>>,
+    instance_descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, ((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<InstanceData>>>)>>>,
 
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
 
@@ -126,10 +131,21 @@ pub struct RenderSystem {
 }
 
 impl System for RenderSystem {
-    fn get_filter(&mut self) -> Vec<Filter> { vec![crate::filter!(Mesh), crate::filter!(Camera, Position)] }
+    fn get_filter(&mut self) -> Vec<Filter> { vec![crate::filter!(Mesh), crate::filter!(Camera, Transformation)] }
 
-    fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>) {
-        self.forward_pass_command_buffer(&filter[0].lock().unwrap().entities);
+    fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _: Duration) {
+        let mut mutex = filter[1].lock().unwrap();
+        if mutex.entities.is_empty() {
+            println!("No camera provided.");
+            return;
+        }
+        let camera_entity = mutex.entities[0].lock().unwrap();
+        let cam_cam_comp = camera_entity.get_component::<Camera>().ok().unwrap();
+        let cam_trans_comp = camera_entity.get_component::<Transformation>().ok().unwrap();
+        let cameraUBO = CameraDataUbo::new(cam_cam_comp, cam_trans_comp);
+
+        self.forward_pass_command_buffer(&filter[0].lock().unwrap().entities, cameraUBO);
+
         self.draw_frame();
     }
 }
@@ -155,10 +171,13 @@ impl RenderSystem {
 
         let start_time = Instant::now();
 
-        let uniform_buffers = Self::create_uniform_buffers(&device, swap_chain_images.len(), start_time, swap_chain.dimensions());
+        let camera_ubo =
+            Self::create_uniform_buffers(&device, swap_chain_images.len(), CameraDataUbo { ..Default::default() });
+        let model_matrix_ubo =
+            Self::create_uniform_buffers(&device, swap_chain_images.len(), InstanceData { ..Default::default() });
 
         let descriptor_sets_pool = Self::create_descriptor_pool(&graphics_pipeline);
-        let descriptor_sets = Self::create_descriptor_sets(&descriptor_sets_pool, &uniform_buffers);
+        let camera_descriptor_sets = Self::create_descriptor_sets(&descriptor_sets_pool, &camera_ubo, &model_matrix_ubo);
 
         let previous_frame_end = Some(Self::create_sync_objects(&device));
 
@@ -182,9 +201,11 @@ impl RenderSystem {
 
             swap_chain_framebuffers,
 
-            uniform_buffers,
+            camera_ubo,
+            instance_ubo: model_matrix_ubo,
 
-            descriptor_sets,
+            camera_descriptor_sets,
+            instance_descriptor_sets: vec![],
 
             command_buffers: vec![],
 
@@ -193,8 +214,6 @@ impl RenderSystem {
 
             start_time,
         };
-
-        rs.create_command_buffers();
 
         Arc::new(Mutex::new(rs))
     }
@@ -461,23 +480,18 @@ impl RenderSystem {
             ).collect::<Vec<_>>()
     }
 
-    fn create_uniform_buffers(
+    fn create_uniform_buffers<T: 'static + Copy>(
         device: &Arc<Device>,
         num_buffers: usize,
-        start_time: Instant,
-        dimensions_u32: [u32; 2],
-    ) -> Vec<Arc<CpuAccessibleBuffer<UniformBufferObject>>> {
+        data: T,
+    ) -> Vec<Arc<CpuAccessibleBuffer<T>>> {
         let mut buffers = Vec::new();
-
-        let dimensions = [dimensions_u32[0] as f32, dimensions_u32[1] as f32];
-
-        let uniform_buffer = Self::update_uniform_buffer(start_time, dimensions);
 
         for _ in 0..num_buffers {
             let buffer = CpuAccessibleBuffer::from_data(
                 device.clone(),
                 BufferUsage::uniform_buffer_transfer_destination(),
-                uniform_buffer,
+                data,
             ).unwrap();
 
             buffers.push(buffer);
@@ -494,27 +508,34 @@ impl RenderSystem {
 
     fn create_descriptor_sets(
         pool: &Mutex<FixedSizeDescriptorSetsPool<Arc<dyn GraphicsPipelineAbstract + Send + Sync>>>,
-        uniform_buffers: &[Arc<CpuAccessibleBuffer<UniformBufferObject>>],
-    ) -> Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, ((), vulkano::descriptor::descriptor_set::PersistentDescriptorSetBuf<std::sync::Arc<vulkano::buffer::CpuAccessibleBuffer<UniformBufferObject>>>)>>>
+        camera_ubo: &[Arc<CpuAccessibleBuffer<CameraDataUbo>>],
+        instance_ubo: &[Arc<CpuAccessibleBuffer<InstanceData>>],
+    ) -> Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, MainDescriptorSet>>>
     {
-        uniform_buffers
+        if camera_ubo.len() != instance_ubo.len() {
+            panic!("Incorrect number of uniform buffers.")
+        }
+        camera_ubo
             .iter()
-            .map(|uniform_buffer|
+            .enumerate()
+            .map(|(idx, camera_buff)| {
+                println!("{:?}", instance_ubo[idx]);
+
                 Arc::new(
                     pool
                         .lock()
                         .unwrap()
                         .next()
-                        .add_buffer(uniform_buffer.clone())
+                        .add_buffer(camera_buff.clone())
                         .unwrap()
                         .build()
                         .unwrap()
                 )
-            )
+            })
             .collect()
     }
 
-    fn forward_pass_command_buffer(&mut self, entities: &Vec<EntityRef>) {
+    fn forward_pass_command_buffer(&mut self, entities: &Vec<EntityRef>, camera_ubo: CameraDataUbo) {
         let queue_family = self.graphics_queue.family();
         let dimensions = [self.swap_chain.dimensions()[0] as f32, self.swap_chain.dimensions()[1] as f32];
 
@@ -527,9 +548,7 @@ impl RenderSystem {
                         self.device.clone(),
                         queue_family)
                         .unwrap()
-                        .update_buffer(
-                            self.uniform_buffers[i].clone(),
-                            Self::update_uniform_buffer(self.start_time, dimensions))
+                        .update_buffer(self.camera_ubo[i].clone(), camera_ubo)
                         .unwrap()
                         .begin_render_pass(
                             framebuffer.clone(),
@@ -545,7 +564,7 @@ impl RenderSystem {
                         &DynamicState::none(),
                         vec![mesh.vertex_buffer.clone()],
                         mesh.index_buffer.clone(),
-                        self.descriptor_sets[i].clone(),
+                        self.camera_descriptor_sets[i].clone(),
                         (),
                     ).unwrap();
                 }
@@ -568,7 +587,9 @@ impl RenderSystem {
             .map(|(i, framebuffer)| {
                 Arc::new(AutoCommandBufferBuilder::primary_simultaneous_use(self.device.clone(), queue_family)
                     .unwrap()
-                    .update_buffer(self.uniform_buffers[i].clone(), Self::update_uniform_buffer(self.start_time, dimensions))
+                    .update_buffer(self.camera_ubo[i].clone(), CameraDataUbo { ..Default::default() })
+                    .unwrap()
+                    .update_buffer(self.instance_ubo[i].clone(), InstanceData { ..Default::default() })
                     .unwrap()
                     .begin_render_pass(framebuffer.clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()])
                     .unwrap()
@@ -685,30 +706,6 @@ impl RenderSystem {
                     = Some(Box::new(vulkano::sync::now(self.device.clone())) as Box<_>);
             }
         }
-    }
-
-    fn update_uniform_buffer(start_time: Instant, dimensions: [f32; 2]) -> UniformBufferObject {
-        let duration = Instant::now().duration_since(start_time);
-        let elapsed = (duration.as_secs() * 1000) + u64::from(duration.subsec_millis());
-
-        let model = Matrix4::from_angle_y(Rad::from(Deg(elapsed as f32 * 0.180)));
-
-        let view = Matrix4::look_at(
-            Point3::new(0.0, 2.0, 2.0),
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 1.0, 0.0),
-        );
-
-        let mut proj = cgmath::perspective(
-            Rad::from(Deg(45.0)),
-            dimensions[0] as f32 / dimensions[1] as f32,
-            0.1,
-            10.0,
-        );
-
-        proj.y.y *= -1.0;
-
-        UniformBufferObject { model, view, proj }
     }
 
     fn recreate_swap_chain(&mut self) {
