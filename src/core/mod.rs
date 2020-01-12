@@ -15,5 +15,3 @@ mod entity_manager;
 mod message_manager;
 
 mod system_manager;
-
-mod input_manager;

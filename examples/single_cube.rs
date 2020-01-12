@@ -1,17 +1,9 @@
-use cgmath::{Angle, Deg, Euler, Matrix4, Quaternion, Vector3, Rad, Vector4, Transform, Matrix3};
-use winit::{ElementState, Event, VirtualKeyCode, WindowEvent};
-use winit::dpi::LogicalPosition;
-use winit::WindowEvent::{
-    KeyboardInput,
-    CursorMoved
-};
+use cgmath::{Deg, Euler, Quaternion, Vector3};
 
 use nse;
-use nse::core::{Entity, System, Filter};
+use nse::core::{Entity};
 use nse::NSE;
 use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation};
-use std::sync::{Mutex, Arc};
-use std::time::Duration;
 
 mod shared;
 

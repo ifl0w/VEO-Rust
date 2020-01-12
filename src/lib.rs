@@ -6,18 +6,14 @@ extern crate vulkano;
 extern crate vulkano_win;
 extern crate winit;
 
-
-use std::iter::FromIterator;
-use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use winit::{Event, EventsLoop, WindowEvent};
 
-use crate::core::{Entity, EntityManager, EntityRef, Exit, Message, System};
+use crate::core::{EntityManager, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
-use std::time::{Duration, Instant};
 
 pub mod core;
 pub mod rendering;
@@ -87,12 +83,12 @@ impl NSE {
             }
 
 
-            let sysIterator = self.system_manager.systems.iter();
+            let sys_iterator = self.system_manager.systems.iter();
             let mut msgs: Vec<Message> = vec![];
 
             let entities = self.entity_manager.entities.values().cloned().collect();
 
-            for (typeid, sys) in sysIterator {
+            for (typeid, sys) in sys_iterator {
                 let filter = self.system_manager.get_filter(&typeid).unwrap();
                 filter.iter().for_each(|f| f.lock().unwrap().update(&entities));
 

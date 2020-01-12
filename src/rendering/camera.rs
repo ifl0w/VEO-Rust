@@ -15,7 +15,7 @@ impl Component for Camera {}
 impl Camera {
     pub fn new(near: f32, far: f32, fov: f32, resolution: [f32; 2]) -> Self {
         let aspect = resolution[0] as f32 / resolution[1] as f32;
-        let mut proj = cgmath::perspective(
+        let proj = cgmath::perspective(
             Rad::from(Deg(fov / aspect)),
             aspect,
             near,

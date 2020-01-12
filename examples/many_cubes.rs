@@ -1,17 +1,9 @@
-use cgmath::{Angle, Deg, Euler, Matrix4, Quaternion, Vector3, Rad, Vector4, Transform, Matrix3};
-use winit::{ElementState, Event, VirtualKeyCode, WindowEvent};
-use winit::dpi::LogicalPosition;
-use winit::WindowEvent::{
-    KeyboardInput,
-    CursorMoved
-};
+use cgmath::{Vector3};
 
 use nse;
-use nse::core::{Entity, System, Filter};
+use nse::core::{Entity};
 use nse::NSE;
 use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation};
-use std::sync::{Mutex, Arc};
-use std::time::Duration;
 
 mod shared;
 
@@ -47,7 +39,7 @@ fn main() {
                 let mut position = Vector3::new(x as f32 * 2.0, y as f32 * 2.0, z as f32 * 2.0);
                 position += offset;
 
-                let mut entity = Entity::new();
+                let entity = Entity::new();
                 entity.lock().unwrap()
                     .add_component(cube_mesh.clone())
                     .add_component(Transformation {

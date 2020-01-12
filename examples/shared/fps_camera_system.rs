@@ -7,7 +7,7 @@ use winit::dpi::LogicalPosition;
 use cgmath::{Vector3, Deg, Matrix3, Quaternion};
 
 use nse::core::{System, Filter};
-use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation};
+use nse::rendering::{Camera, Transformation};
 
 pub struct FPSCameraSystem {
     mouse_delta_x: f32,
@@ -122,7 +122,7 @@ impl System for FPSCameraSystem {
         }
 
         match self.last_position {
-            Some(last) => {
+            Some(_) => {
                 let angle_x = Deg(- self.mouse_delta_y * self.mouse_speed);
                 let angle_y = Deg(- self.mouse_delta_x * self.mouse_speed);
 

@@ -1,6 +1,8 @@
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::Relaxed;
 
-use cgmath::Vector3;
 use vulkano::buffer::{
     BufferAccess,
     BufferUsage,
@@ -12,11 +14,6 @@ use vulkano::sync::GpuFuture;
 
 use crate::core::Component;
 use crate::rendering::RenderSystem;
-
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering::Relaxed;
-
-use std::hash::{Hash, Hasher};
 
 #[derive(Copy, Clone, Default)]
 pub struct Vertex {
