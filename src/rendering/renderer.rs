@@ -4,13 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Instant, Duration};
 
 use cgmath::{Deg, Matrix4, Point3, Rad, Vector3};
-use vulkano::buffer::{
-    BufferAccess,
-    BufferUsage,
-    CpuAccessibleBuffer,
-    immutable::ImmutableBuffer,
-    TypedBufferAccess,
-};
+use vulkano::buffer::{BufferAccess, BufferUsage, CpuAccessibleBuffer, immutable::ImmutableBuffer, TypedBufferAccess, CpuBufferPool};
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
 use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSetBuf};
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
@@ -37,13 +31,10 @@ use winit::dpi::LogicalSize;
 
 use crate::core::{Entity, EntityRef, Filter, System};
 use crate::NSE;
-use crate::rendering::{
-    Camera,
-    CameraDataUbo,
-    Mesh,
-    Transformation,
-    Vertex,
-};
+use crate::rendering::{Camera, CameraDataUbo, Mesh, Transformation, Vertex, InstanceData};
+use vulkano::pipeline::vertex::OneVertexOneInstanceDefinition;
+use mopa::Any;
+use crate::rendering::mesh::MeshID;
 
 // Constants
 const WINDOW_TITLE: &'static str = "NSE";
@@ -82,11 +73,6 @@ impl QueueFamilyIndices {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone)]
-struct InstanceData {
-    model_matrix: [f32; 16]
-}
-
 type MainDescriptorSet = ((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<CameraDataUbo>>>);
 
 //type MainDescriptorSet = (((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<CameraDataUbo>>>),
@@ -117,6 +103,8 @@ pub struct RenderSystem {
     #[allow(dead_code)]
     camera_ubo: Vec<Arc<CpuAccessibleBuffer<CameraDataUbo>>>,
     instance_ubo: Vec<Arc<CpuAccessibleBuffer<InstanceData>>>,
+    instance_buffer_pool: CpuBufferPool<InstanceData>,
+    instance_info: HashMap<Mesh, Vec<InstanceData>>,
 
     camera_descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, MainDescriptorSet>>>,
     instance_descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, ((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<InstanceData>>>)>>>,
@@ -131,7 +119,12 @@ pub struct RenderSystem {
 }
 
 impl System for RenderSystem {
-    fn get_filter(&mut self) -> Vec<Filter> { vec![crate::filter!(Mesh), crate::filter!(Camera, Transformation)] }
+    fn get_filter(&mut self) -> Vec<Filter> {
+        vec![
+            crate::filter!(Mesh, Transformation),
+            crate::filter!(Camera, Transformation),
+        ]
+    }
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _: Duration) {
         let mut mutex = filter[1].lock().unwrap();
@@ -143,6 +136,26 @@ impl System for RenderSystem {
         let cam_cam_comp = camera_entity.get_component::<Camera>().ok().unwrap();
         let cam_trans_comp = camera_entity.get_component::<Transformation>().ok().unwrap();
         let cameraUBO = CameraDataUbo::new(cam_cam_comp, cam_trans_comp);
+
+        self.instance_info
+            .iter_mut()
+            .for_each(|(key, val)| val.clear());
+
+        for mesh_entity in &filter[0].lock().unwrap().entities {
+            let mutex = mesh_entity.lock().unwrap();
+            let mesh = mutex.get_component::<Mesh>().ok().unwrap();
+            let trans = mutex.get_component::<Transformation>().ok().unwrap();
+
+            match self.instance_info.get_mut(&mesh) {
+                Some(vec) => {
+                    vec.push(InstanceData { model_matrix: trans.get_model_matrix().into() });
+                },
+                None => {
+                    let data = InstanceData { model_matrix: trans.get_model_matrix().into() };
+                    self.instance_info.insert(mesh.clone(), vec![data]);
+                }
+            }
+        }
 
         self.forward_pass_command_buffer(&filter[0].lock().unwrap().entities, cameraUBO);
 
@@ -176,6 +189,8 @@ impl RenderSystem {
         let model_matrix_ubo =
             Self::create_uniform_buffers(&device, swap_chain_images.len(), InstanceData { ..Default::default() });
 
+        let instance_buffer_pool: CpuBufferPool<InstanceData> = CpuBufferPool::vertex_buffer(device.clone());
+
         let descriptor_sets_pool = Self::create_descriptor_pool(&graphics_pipeline);
         let camera_descriptor_sets = Self::create_descriptor_sets(&descriptor_sets_pool, &camera_ubo, &model_matrix_ubo);
 
@@ -203,6 +218,8 @@ impl RenderSystem {
 
             camera_ubo,
             instance_ubo: model_matrix_ubo,
+            instance_buffer_pool,
+            instance_info: HashMap::new(),
 
             camera_descriptor_sets,
             instance_descriptor_sets: vec![],
@@ -447,7 +464,8 @@ impl RenderSystem {
         };
 
         Arc::new(GraphicsPipeline::start()
-            .vertex_input_single_buffer::<Vertex>()
+            .vertex_input(OneVertexOneInstanceDefinition::<Vertex, InstanceData>::new())
+//            .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(vert_shader_module.main_entry_point(), ())
             .triangle_list()
             .primitive_restart(false)
@@ -556,18 +574,31 @@ impl RenderSystem {
                             vec![[0.0, 0.0, 0.0, 1.0].into()])
                         .unwrap();
 
-                for e in entities {
-                    let mut entity = e.lock().unwrap();
-                    let mesh = entity.get_component::<Mesh>().ok().unwrap();
+                for (mesh, model_matrices) in self.instance_info.iter() {
+                    let instance_buffer = self.instance_buffer_pool.chunk(model_matrices.clone()).unwrap();
+
                     builder = builder.draw_indexed(
                         self.graphics_pipeline.clone(),
                         &DynamicState::none(),
-                        vec![mesh.vertex_buffer.clone()],
+                        vec![mesh.vertex_buffer.clone(), Arc::new(instance_buffer)],
                         mesh.index_buffer.clone(),
                         self.camera_descriptor_sets[i].clone(),
                         (),
                     ).unwrap();
                 }
+
+//                for e in entities {
+//                    let mut entity = e.lock().unwrap();
+//                    let mesh = entity.get_component::<Mesh>().ok().unwrap();
+//                    builder = builder.draw_indexed(
+//                        self.graphics_pipeline.clone(),
+//                        &DynamicState::none(),
+//                        vec![mesh.vertex_buffer.clone()],
+//                        mesh.index_buffer.clone(),
+//                        self.camera_descriptor_sets[i].clone(),
+//                        (),
+//                    ).unwrap();
+//                }
 
                 Arc::new(builder.end_render_pass()
                     .unwrap()

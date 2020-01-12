@@ -26,25 +26,38 @@ fn main() {
     engine.system_manager.add_system(render_system.clone());
     engine.system_manager.add_system(fps_camera_system.clone());
 
-    let entity = Entity::new();
-    entity.lock().unwrap()
-        .add_component(Mesh::new::<Cube>(&render_system.lock().unwrap()))
-        .add_component(Transformation{ .. Default::default() });
-    engine.entity_manager.add_entity(entity);
-
+    // add camera
     let camera = Entity::new();
     camera.lock().unwrap()
         .add_component(Camera::new(0.1, 1000.0, 90.0, [800.0, 600.0]))
         .add_component(Transformation {
             position: Vector3::new(0.0, 0.0, 3.0),
-            scale: Vector3::new(1.0, 1.0, 1.0),
-            rotation: Quaternion::from(Euler {
-                x: Deg(0.0),
-                y: Deg(0.0),
-                z: Deg(0.0),
-            }),
+            ..Default::default()
         });
     engine.entity_manager.add_entity(camera);
+
+    // add cubes
+    let cube_mesh = Mesh::new::<Cube>(&render_system.lock().unwrap());
+
+    let num_cubes = 0..50;
+    let offset = Vector3::new(-num_cubes.end as f32, -num_cubes.end as f32, -num_cubes.end as f32 * 4.0);
+    for x in num_cubes.clone() {
+        for y in num_cubes.clone() {
+            for z in num_cubes.clone() {
+                let mut position = Vector3::new(x as f32 * 2.0, y as f32 * 2.0, z as f32 * 2.0);
+                position += offset;
+
+                let mut entity = Entity::new();
+                entity.lock().unwrap()
+                    .add_component(cube_mesh.clone())
+                    .add_component(Transformation {
+                        position,
+                        ..Default::default()
+                    });
+                engine.entity_manager.add_entity(entity);
+            }
+        }
+    }
 
     engine.run();
 }

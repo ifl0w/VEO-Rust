@@ -1,4 +1,4 @@
-use cgmath::{Deg, Rad, Matrix4, Quaternion, SquareMatrix, Vector3, Transform};
+use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector3};
 
 use crate::core::Component;
 
@@ -38,10 +38,23 @@ pub struct Transformation {
     pub rotation: Quaternion<f32>,
 }
 
+impl Default for Transformation {
+    fn default() -> Self {
+        Transformation {
+            position: Vector3::new(0.0, 0.0, 0.0),
+            scale: Vector3::new(1.0, 1.0, 1.0),
+            rotation: Quaternion::from(Euler {
+                x: Deg(0.0),
+                y: Deg(0.0),
+                z: Deg(0.0),
+            }),
+        }
+    }
+}
+
 impl Component for Transformation {}
 
 impl Transformation {
-
     pub fn get_model_matrix(&self) -> Matrix4<f32> {
         let mut ret = Matrix4::identity();
         ret = ret * Matrix4::from_translation(self.position);
@@ -60,7 +73,6 @@ pub struct CameraDataUbo {
 
 impl CameraDataUbo {
     pub fn new(camera: &Camera, transform: &Transformation) -> Self {
-
         let mut p = camera.projection;
         p.y.y *= -1.0;
 

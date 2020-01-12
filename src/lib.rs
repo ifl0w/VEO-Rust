@@ -65,19 +65,6 @@ impl NSE {
                             | WindowEvent::CloseRequested => {
                                 exit = true;
                             }
-//                        | WindowEvent::KeyboardInput { input, .. } => {
-//                            match input {
-//                                | KeyboardInput { virtual_keycode, state, .. } => {
-//                                    match (virtual_keycode, state) {
-//                                        | (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
-//                                            dbg!();
-//                                            *control_flow = ControlFlow::Exit
-//                                        },
-//                                        | _ => {},
-//                                    }
-//                                },
-//                            }
-//                        },
                             | _ => {}
                         }
                     }
@@ -86,6 +73,7 @@ impl NSE {
             });
 
             let v: Vec<_> = self.message_manager.receiver.try_iter().collect();
+
             for msg in v.iter() {
                 if msg.is_type::<Exit>() {
 //                *control_flow = ControlFlow::Exit;
@@ -120,6 +108,8 @@ impl NSE {
 
             let frame_end = Instant::now();
             self.delta_time = frame_end - frame_start;
+
+//            println!("Frame time: {} ", self.delta_time.as_millis())
         }
     }
 }

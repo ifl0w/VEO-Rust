@@ -13,6 +13,11 @@ use vulkano::sync::GpuFuture;
 use crate::core::Component;
 use crate::rendering::RenderSystem;
 
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::Relaxed;
+
+use std::hash::{Hash, Hasher};
+
 #[derive(Copy, Clone, Default)]
 pub struct Vertex {
     position: [f32; 3],
@@ -29,25 +34,56 @@ impl Vertex {
 #[allow(clippy: ref_in_deref)]
 vulkano::impl_vertex!(Vertex, position, normal, color);
 
+#[derive(Default, Debug, Copy, Clone)]
+pub struct InstanceData {
+    pub model_matrix: [[f32; 4]; 4]
+}
+vulkano::impl_vertex!(InstanceData, model_matrix);
+
 pub trait MeshGenerator {
     fn get_vertices() -> Vec<Vertex>;
     fn get_indices() -> Vec<u16>;
 }
 
+static mut LAST_MESH_ID: AtomicU64 = AtomicU64::new(0);
+
+pub type MeshID = u64;
+
 #[derive(Clone)]
 pub struct Mesh {
+    pub id: MeshID,
     pub vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
     pub index_buffer: Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>,
 }
 
 impl Component for Mesh {}
 
+impl Hash for Mesh {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl PartialEq for Mesh {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Mesh {}
+
 impl Mesh {
     pub fn new<T: MeshGenerator>(render_system: &RenderSystem) -> Self {
         let vertex_buffer = Self::create_vertex_buffer::<T>(&render_system.graphics_queue);
         let index_buffer = Self::create_index_buffer::<T>(&render_system.graphics_queue);
 
+        let id;
+        unsafe {
+            id = LAST_MESH_ID.fetch_add(1, Relaxed);
+        }
+
         Mesh {
+            id,
             vertex_buffer,
             index_buffer,
         }
