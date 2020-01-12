@@ -36,6 +36,25 @@ impl Filter {
             .filter(|e| e.lock().ok().unwrap().match_filter(&self))
             .collect::<Vec<_>>();
     }
+
+    pub fn add(&mut self, e: EntityRef) {
+        if e.lock().unwrap().match_filter(&self) {
+            self.entities.push(e);
+        }
+    }
+
+    pub fn remove(&mut self, e: EntityRef) {
+        let index = self.entities.iter().position(|x| {
+            x.lock().unwrap().id == e.lock().unwrap().id
+        });
+
+        match index {
+            Some(idx) => {
+                self.entities.remove(idx);
+            },
+            None => ()
+        }
+    }
 }
 
 pub trait System {

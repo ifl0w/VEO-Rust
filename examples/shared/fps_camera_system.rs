@@ -39,6 +39,14 @@ impl FPSCameraSystem {
             mouse_speed: 0.25
         }))
     }
+
+    pub fn set_mouse_speed(&mut self, mouse_speed: f32) {
+        self.mouse_speed = mouse_speed;
+    }
+
+    pub fn set_movement_speed(&mut self, movement_speed: f32) {
+        self.movement_speed = movement_speed;
+    }
 }
 
 impl System for FPSCameraSystem {

@@ -15,14 +15,14 @@ fn main() {
     let render_system = RenderSystem::new(&engine);
     let fps_camera_system = FPSCameraSystem::new();
 
-    engine.system_manager.add_system(render_system.clone());
-    engine.system_manager.add_system(fps_camera_system.clone());
+    engine.add_system(render_system.clone());
+    engine.add_system(fps_camera_system.clone());
 
     let entity = Entity::new();
     entity.lock().unwrap()
         .add_component(Mesh::new::<Cube>(&render_system.lock().unwrap()))
         .add_component(Transformation{ .. Default::default() });
-    engine.entity_manager.add_entity(entity);
+    engine.add_entity(entity);
 
     let camera = Entity::new();
     camera.lock().unwrap()
@@ -36,7 +36,7 @@ fn main() {
                 z: Deg(0.0),
             }),
         });
-    engine.entity_manager.add_entity(camera);
+    engine.add_entity(camera);
 
     engine.run();
 }

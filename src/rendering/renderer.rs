@@ -131,22 +131,25 @@ impl System for RenderSystem {
         let cam_trans_comp = camera_entity.get_component::<Transformation>().ok().unwrap();
         let camera_ubo = CameraDataUbo::new(cam_cam_comp, cam_trans_comp);
 
-        self.instance_info
-            .iter_mut()
-            .for_each(|(_, val)| val.clear());
+//        self.instance_info
+//            .iter_mut()
+//            .for_each(|(_, val)| val.clear());
 
-        for mesh_entity in &filter[0].lock().unwrap().entities {
-            let mutex = mesh_entity.lock().unwrap();
-            let mesh = mutex.get_component::<Mesh>().ok().unwrap();
-            let trans = mutex.get_component::<Transformation>().ok().unwrap();
+        // TODO: this is a temporary and hacky performance improvement.
+        if self.instance_info.is_empty() {
+            for mesh_entity in &filter[0].lock().unwrap().entities {
+                let mutex = mesh_entity.lock().unwrap();
+                let mesh = mutex.get_component::<Mesh>().ok().unwrap();
+                let trans = mutex.get_component::<Transformation>().ok().unwrap();
 
-            match self.instance_info.get_mut(&mesh) {
-                Some(vec) => {
-                    vec.push(InstanceData { model_matrix: trans.get_model_matrix().into() });
-                }
-                None => {
-                    let data = InstanceData { model_matrix: trans.get_model_matrix().into() };
-                    self.instance_info.insert(mesh.clone(), vec![data]);
+                match self.instance_info.get_mut(&mesh) {
+                    Some(vec) => {
+                        vec.push(InstanceData { model_matrix: trans.get_model_matrix().into() });
+                    }
+                    None => {
+                        let data = InstanceData { model_matrix: trans.get_model_matrix().into() };
+                        self.instance_info.insert(mesh.clone(), vec![data]);
+                    }
                 }
             }
         }

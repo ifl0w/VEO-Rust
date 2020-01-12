@@ -14,9 +14,11 @@ fn main() {
 
     let render_system = RenderSystem::new(&engine);
     let fps_camera_system = FPSCameraSystem::new();
+    fps_camera_system.lock().unwrap().set_mouse_speed(1.0);
+    fps_camera_system.lock().unwrap().set_movement_speed(30.0);
 
-    engine.system_manager.add_system(render_system.clone());
-    engine.system_manager.add_system(fps_camera_system.clone());
+    engine.add_system(render_system.clone());
+    engine.add_system(fps_camera_system.clone());
 
     // add camera
     let camera = Entity::new();
@@ -26,12 +28,12 @@ fn main() {
             position: Vector3::new(0.0, 0.0, 3.0),
             ..Default::default()
         });
-    engine.entity_manager.add_entity(camera);
+    engine.add_entity(camera);
 
     // add cubes
     let cube_mesh = Mesh::new::<Cube>(&render_system.lock().unwrap());
 
-    let num_cubes = 0..50;
+    let num_cubes = 0..25;
     let offset = Vector3::new(-num_cubes.end as f32, -num_cubes.end as f32, -num_cubes.end as f32 * 4.0);
     for x in num_cubes.clone() {
         for y in num_cubes.clone() {
@@ -46,7 +48,7 @@ fn main() {
                         position,
                         ..Default::default()
                     });
-                engine.entity_manager.add_entity(entity);
+                engine.add_entity(entity);
             }
         }
     }
