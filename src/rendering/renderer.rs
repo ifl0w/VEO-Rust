@@ -6,14 +6,14 @@ use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool};
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
 use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSetBuf};
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
-use vulkano::format::Format;
+use vulkano::format::{Format, ClearValue};
 use vulkano::framebuffer::{
     Framebuffer,
     FramebufferAbstract,
     RenderPassAbstract,
     Subpass,
 };
-use vulkano::image::{ImageUsage, SwapchainImage};
+use vulkano::image::{ImageUsage, SwapchainImage, AttachmentImage};
 use vulkano::instance::{ApplicationInfo, Instance, InstanceExtensions, layers_list, PhysicalDevice, Version};
 use vulkano::instance::debug::{DebugCallback, MessageSeverity, MessageType};
 use vulkano::pipeline::{
@@ -31,6 +31,7 @@ use winit::dpi::LogicalSize;
 use crate::core::{Filter, System};
 use crate::NSE;
 use crate::rendering::{Camera, CameraDataUbo, InstanceData, Mesh, Transformation, Vertex};
+use vulkano::pipeline::depth_stencil::DepthStencil;
 
 // Constants
 const WINDOW_TITLE: &'static str = "NSE";
@@ -105,6 +106,8 @@ pub struct RenderSystem {
 
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
 
+    depth_format: Format,
+
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 
@@ -173,11 +176,14 @@ impl RenderSystem {
         let (swap_chain, swap_chain_images) = Self::create_swap_chain(&instance, &surface, physical_device_index,
                                                                       &device, &graphics_queue, &present_queue, None);
 
-        let render_pass = Self::create_render_pass(&device, swap_chain.format());
+        let depth_format = Self::find_depth_format();
+        let depth_image = Self::create_depth_image(&device, swap_chain.dimensions(), depth_format);
+
+        let render_pass = Self::create_render_pass(&device, swap_chain.format(), depth_format);
 
         let graphics_pipeline = Self::create_graphics_pipeline(&device, swap_chain.dimensions(), &render_pass);
 
-        let swap_chain_framebuffers = Self::create_framebuffers(&swap_chain_images, &render_pass);
+        let swap_chain_framebuffers = Self::create_framebuffers(&swap_chain_images, &render_pass, &depth_image);
 
         let start_time = Instant::now();
 
@@ -218,6 +224,8 @@ impl RenderSystem {
             camera_descriptor_sets,
 
             command_buffers: vec![],
+
+            depth_format,
 
             previous_frame_end,
             recreate_swap_chain: false,
@@ -408,7 +416,23 @@ impl RenderSystem {
         (swap_chain, images)
     }
 
-    fn create_render_pass(device: &Arc<Device>, color_format: Format) -> Arc<dyn RenderPassAbstract + Send + Sync> {
+    fn find_depth_format() -> Format {
+        // this format is guaranteed to be supported by vulkano and as it stands now, I can't figure
+        // how to do the queries performed in the original tutorial in vulkano...
+        //Format::D16Unorm
+        Format::D24Unorm_S8Uint
+    }
+
+    fn create_depth_image(device: &Arc<Device>, dimensions: [u32; 2], format: Format) -> Arc<AttachmentImage<Format>> {
+        AttachmentImage::with_usage(
+            device.clone(),
+            dimensions,
+            format,
+            ImageUsage { depth_stencil_attachment: true, ..ImageUsage::none() }
+        ).unwrap()
+    }
+
+    fn create_render_pass(device: &Arc<Device>, color_format: Format, depth_format: Format) -> Arc<dyn RenderPassAbstract + Send + Sync> {
         Arc::new(single_pass_renderpass!(device.clone(),
             attachments: {
                 color: {
@@ -416,11 +440,19 @@ impl RenderSystem {
                     store: Store,
                     format: color_format,
                     samples: 1,
+                },
+                depth: {
+                    load: Clear,
+                    store: DontCare,
+                    format: depth_format,
+                    samples: 1,
+                    initial_layout: ImageLayout::Undefined,
+                    final_layout: ImageLayout::DepthStencilAttachmentOptimal,
                 }
             },
             pass: {
                 color: [color],
-                depth_stencil: {}
+                depth_stencil: {depth}
             }
         ).unwrap())
     }
@@ -472,6 +504,7 @@ impl RenderSystem {
             .front_face_counter_clockwise()
             // NOTE: no depth_bias here, but on pipeline::raster::Rasterization
             .blend_pass_through() // = default
+            .depth_stencil(DepthStencil::simple_depth_test())
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(device.clone())
             .unwrap())
@@ -480,11 +513,13 @@ impl RenderSystem {
     fn create_framebuffers(
         swap_chain_images: &[Arc<SwapchainImage<Window>>],
         render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
+        depth_image: &Arc<AttachmentImage<Format>>,
     ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
         swap_chain_images.iter()
             .map(|image| {
                 let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(Framebuffer::start(render_pass.clone())
                     .add(image.clone()).unwrap()
+                    .add(depth_image.clone()).unwrap()
                     .build().unwrap());
                 fba
             }
@@ -556,7 +591,7 @@ impl RenderSystem {
                         .begin_render_pass(
                             framebuffer.clone(),
                             false,
-                            vec![[0.0, 0.0, 0.0, 1.0].into()])
+                            vec![[0.0, 0.0, 0.0, 1.0].into(), ClearValue::DepthStencil((1.0, 0))])
                         .unwrap();
 
                 for (mesh, model_matrices) in self.instance_info.iter() {
@@ -604,7 +639,10 @@ impl RenderSystem {
                     .unwrap()
                     .update_buffer(self.camera_ubo[i].clone(), CameraDataUbo { ..Default::default() })
                     .unwrap()
-                    .begin_render_pass(framebuffer.clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()])
+                    .begin_render_pass(
+                        framebuffer.clone(),
+                        false,
+                        vec![[0.0, 0.0, 0.0, 1.0].into(), ClearValue::DepthStencil((1.0, 0))])
                     .unwrap()
                     .end_render_pass()
                     .unwrap()
@@ -724,13 +762,16 @@ impl RenderSystem {
     fn recreate_swap_chain(&mut self) {
         let (swap_chain, images) = Self::create_swap_chain(&self.instance, &self.surface, self.physical_device_index,
                                                            &self.device, &self.graphics_queue, &self.present_queue, Some(self.swap_chain.clone()));
+
+        let depth_image = Self::create_depth_image(&self.device, swap_chain.dimensions(), self.depth_format);
+
         self.swap_chain = swap_chain;
         self.swap_chain_images = images;
 
-        self.render_pass = Self::create_render_pass(&self.device, self.swap_chain.format());
+        self.render_pass = Self::create_render_pass(&self.device, self.swap_chain.format(), self.depth_format);
         self.graphics_pipeline = Self::create_graphics_pipeline(&self.device, self.swap_chain.dimensions(),
                                                                 &self.render_pass);
-        self.swap_chain_framebuffers = Self::create_framebuffers(&self.swap_chain_images, &self.render_pass);
+        self.swap_chain_framebuffers = Self::create_framebuffers(&self.swap_chain_images, &self.render_pass, &depth_image);
         self.create_command_buffers();
     }
 }
