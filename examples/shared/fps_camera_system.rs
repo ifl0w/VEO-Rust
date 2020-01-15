@@ -140,12 +140,12 @@ impl System for FPSCameraSystem {
                 let x = Quaternion::from(Matrix3::from_axis_angle(camera_x, angle_x));
                 let y = Quaternion::from(Matrix3::from_axis_angle(camera_y, angle_y));
 
-                transform.rotation = x * y * transform.rotation;
+                transform = transform.rotation(x * y * transform.rotation);
             }
             None => ()
         }
 
-        transform.position += transform.rotation * axis_aligned_translation;
+        transform = transform.position(transform.position + transform.rotation * axis_aligned_translation);
 
         camera.add_component(transform);
 

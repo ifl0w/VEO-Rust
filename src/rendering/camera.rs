@@ -31,13 +31,18 @@ impl Camera {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Transformation {
     pub position: Vector3<f32>,
     pub scale: Vector3<f32>,
     pub rotation: Quaternion<f32>,
+
+    pub model_matrix: Matrix4<f32>
 }
 
+impl Transformation {
+
+}
 impl Default for Transformation {
     fn default() -> Self {
         Transformation {
@@ -48,6 +53,8 @@ impl Default for Transformation {
                 y: Deg(0.0),
                 z: Deg(0.0),
             }),
+
+            model_matrix: Matrix4::identity(),
         }
     }
 }
@@ -55,13 +62,43 @@ impl Default for Transformation {
 impl Component for Transformation {}
 
 impl Transformation {
-    pub fn get_model_matrix(&self) -> Matrix4<f32> {
+
+    pub fn new() -> Self {
+        Transformation {
+            .. Default::default()
+        }
+    }
+
+    pub fn position(mut self, position: Vector3<f32>) -> Self {
+        self.position = position;
+        self.update()
+    }
+    pub fn scale(mut self, scale: Vector3<f32>) -> Self {
+        self.scale = scale;
+        self.update()
+    }
+    pub fn rotation(mut self, rotation: Quaternion<f32>) -> Self {
+        self.rotation = rotation;
+        self.update()
+    }
+
+    pub fn update(mut self) -> Self {
+        self.model_matrix = self.calculate_model_matrix();
+
+        self
+    }
+
+    fn calculate_model_matrix(&self) -> Matrix4<f32> {
         let mut ret = Matrix4::identity();
         ret = ret * Matrix4::from_translation(self.position);
         ret = ret * Matrix4::from(self.rotation);
         ret = ret * Matrix4::from_nonuniform_scale(self.scale.x, self.scale.y, self.scale.z);
 
         ret
+    }
+
+    pub fn get_model_matrix(&self) -> Matrix4<f32> {
+        return self.model_matrix;
     }
 }
 

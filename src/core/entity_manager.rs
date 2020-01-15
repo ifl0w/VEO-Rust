@@ -1,5 +1,5 @@
 use std::any::TypeId;
-use std::collections::{HashMap};
+use std::collections::{HashMap, BTreeMap};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
@@ -32,7 +32,7 @@ pub type EntityRef = Arc<Mutex<Entity>>;
 pub struct Entity {
     pub id: EntityID,
     pub name: String,
-    pub components: HashMap<TypeId, Box<dyn Component>>,
+    components: BTreeMap<TypeId, Box<dyn Component>>,
 }
 
 impl PartialEq for Box<dyn Component> {
@@ -65,19 +65,16 @@ impl Entity {
         Arc::new(Mutex::new(Entity {
             id: val,
             name: String::from("unnamed"),
-            components: HashMap::new(),
+            components: BTreeMap::new(),
         }))
     }
 
     pub fn get_component<T: Component>(&self) -> Result<&T, &str> {
-        let contains = self.components.contains_key(&TypeId::of::<T>());
-        return if contains {
-            let tmp = self.components.get(&TypeId::of::<T>())
-                .expect("Corrupt component");
-            Ok(tmp.downcast_ref::<T>().expect("Corrupt component"))
-        } else {
-            Err("Component not contained.")
-        };
+        let opt = self.components.get(&TypeId::of::<T>());
+        match opt {
+            Some(val) => Ok(val.downcast_ref::<T>().expect("Corrupt component")),
+            None => Err("Component not contained.")
+        }
     }
 
     pub fn add_component<T: Component>(&mut self, component: T) -> &mut Self {

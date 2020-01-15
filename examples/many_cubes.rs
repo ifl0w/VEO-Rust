@@ -24,10 +24,7 @@ fn main() {
     let camera = Entity::new();
     camera.lock().unwrap()
         .add_component(Camera::new(0.1, 1000.0, 90.0, [800.0, 600.0]))
-        .add_component(Transformation {
-            position: Vector3::new(0.0, 0.0, 3.0),
-            ..Default::default()
-        });
+        .add_component(Transformation::new().position(Vector3::new(0.0, 0.0, 3.0)));
     engine.add_entity(camera);
 
     // add cubes
@@ -44,10 +41,7 @@ fn main() {
                 let entity = Entity::new();
                 entity.lock().unwrap()
                     .add_component(cube_mesh.clone())
-                    .add_component(Transformation {
-                        position,
-                        ..Default::default()
-                    });
+                    .add_component(Transformation::new().position(position));
                 engine.add_entity(entity);
             }
         }
