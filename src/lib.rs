@@ -104,7 +104,7 @@ impl NSE {
             let frame_end = Instant::now();
             self.delta_time = frame_end - frame_start;
 
-//            println!("Frame time: {} ", self.delta_time.as_millis())
+            println!("Frame time: {} ", self.delta_time.as_millis())
         }
     }
 

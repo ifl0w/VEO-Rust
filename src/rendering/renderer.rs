@@ -30,7 +30,7 @@ use winit::dpi::LogicalSize;
 
 use crate::core::{Filter, System};
 use crate::NSE;
-use crate::rendering::{Camera, CameraDataUbo, InstanceData, Mesh, Transformation, Vertex};
+use crate::rendering::{Camera, Octree, CameraDataUbo, InstanceData, Mesh, Transformation, Vertex};
 use vulkano::pipeline::depth_stencil::DepthStencil;
 
 // Constants
@@ -120,6 +120,7 @@ impl System for RenderSystem {
         vec![
             crate::filter!(Mesh, Transformation),
             crate::filter!(Camera, Transformation),
+            crate::filter!(Octree, Transformation),
         ]
     }
 
@@ -152,6 +153,10 @@ impl System for RenderSystem {
                     self.instance_info.insert(mesh.clone(), vec![data]);
                 }
             }
+        }
+
+        for octree in &filter[2].lock().unwrap().entities {
+            // handle octree
         }
 
         self.forward_pass_command_buffer(camera_ubo);

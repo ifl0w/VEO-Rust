@@ -8,10 +8,10 @@ pub use mesh::MeshGenerator;
 pub use mesh::Plane;
 pub use mesh::Vertex;
 pub use renderer::RenderSystem;
+pub use octree::Octree;
+pub use octree::OctreeSystem;
 
 mod renderer;
-
 mod mesh;
-
 mod camera;
-
+mod octree;
