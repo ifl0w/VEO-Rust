@@ -35,7 +35,8 @@ fn main() {
     let size = Vector3::new(50.0, 50.0, 50.0);
     octree.lock().unwrap()
         .add_component(Octree::new(size))
-        .add_component(Transformation::new().position(size / 2.0));
+        .add_component(Transformation::new().position(size / 2.0))
+        .add_component(Mesh::new::<Cube>(&render_system.lock().unwrap()));
     engine.add_entity(octree);
 
     engine.run();

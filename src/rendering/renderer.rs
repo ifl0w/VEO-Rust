@@ -32,6 +32,8 @@ use crate::core::{Filter, System};
 use crate::NSE;
 use crate::rendering::{Camera, Octree, CameraDataUbo, InstanceData, Mesh, Transformation, Vertex};
 use vulkano::pipeline::depth_stencil::DepthStencil;
+use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
+use vulkano::memory::pool::StdMemoryPool;
 
 // Constants
 const WINDOW_TITLE: &'static str = "NSE";
@@ -99,7 +101,7 @@ pub struct RenderSystem {
 
     #[allow(dead_code)]
     camera_ubo: Vec<Arc<CpuAccessibleBuffer<CameraDataUbo>>>,
-    instance_buffer_pool: CpuBufferPool<InstanceData>,
+    pub(in crate::rendering) instance_buffer_pool: CpuBufferPool<InstanceData>,
     instance_info: HashMap<Mesh, Vec<InstanceData>>,
 
     camera_descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, MainDescriptorSet>>>,
@@ -120,7 +122,7 @@ impl System for RenderSystem {
         vec![
             crate::filter!(Mesh, Transformation),
             crate::filter!(Camera, Transformation),
-            crate::filter!(Octree, Transformation),
+            crate::filter!(Octree, Mesh, Transformation),
         ]
     }
 
@@ -139,6 +141,8 @@ impl System for RenderSystem {
             .iter_mut()
             .for_each(|(_, val)| val.clear());
 
+        let mut instanced_meshes: Vec<(Mesh, Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>)> = vec![];
+
         for mesh_entity in &filter[0].lock().unwrap().entities {
             let mutex = mesh_entity.lock().unwrap();
             let mesh = mutex.get_component::<Mesh>().unwrap();
@@ -156,10 +160,17 @@ impl System for RenderSystem {
         }
 
         for octree in &filter[2].lock().unwrap().entities {
-            // handle octree
+            let mutex = octree.lock().unwrap();
+            let mesh = mutex.get_component::<Mesh>().unwrap();
+            let trans = mutex.get_component::<Transformation>().unwrap();
+            let octree = mutex.get_component::<Octree>().unwrap();
+
+            if octree.instance_data_buffer.is_some() {
+                instanced_meshes.push((mesh.clone(), octree.instance_data_buffer.as_ref().unwrap().clone()))
+            }
         }
 
-        self.forward_pass_command_buffer(camera_ubo);
+        self.forward_pass_command_buffer(camera_ubo, instanced_meshes);
 
         self.draw_frame();
     }
@@ -500,7 +511,8 @@ impl RenderSystem {
             .fragment_shader(frag_shader_module.main_entry_point(), ())
             .depth_clamp(false)
             // NOTE: there's an outcommented .rasterizer_discard() in Vulkano...
-            .polygon_mode_fill() // = default
+//            .polygon_mode_fill() // = default
+            .polygon_mode_line()
             .line_width(1.0) // = default
             .cull_mode_back()
             .front_face_counter_clockwise()
@@ -576,7 +588,10 @@ impl RenderSystem {
             .collect()
     }
 
-    fn forward_pass_command_buffer(&mut self, camera_ubo: CameraDataUbo) {
+    fn forward_pass_command_buffer(&mut self,
+                                   camera_ubo: CameraDataUbo,
+                                   instanced_meshes: Vec<(Mesh, Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>)>)
+    {
         let queue_family = self.graphics_queue.family();
 
         self.command_buffers = self.swap_chain_framebuffers
@@ -603,6 +618,17 @@ impl RenderSystem {
                         self.graphics_pipeline.clone(),
                         &DynamicState::none(),
                         vec![mesh.vertex_buffer.clone(), Arc::new(instance_buffer)],
+                        mesh.index_buffer.clone(),
+                        self.camera_descriptor_sets[i].clone(),
+                        (),
+                    ).unwrap();
+                }
+
+                for (mesh, instance_buffer) in instanced_meshes.iter() {
+                    builder = builder.draw_indexed(
+                        self.graphics_pipeline.clone(),
+                        &DynamicState::none(),
+                        vec![mesh.vertex_buffer.clone(), instance_buffer.clone()],
                         mesh.index_buffer.clone(),
                         self.camera_descriptor_sets[i].clone(),
                         (),
@@ -699,7 +725,13 @@ impl RenderSystem {
         // for legacy reasons (if ENABLE_VALIDATION_LAYERS is true). Vulkano handles that
         // for us internally.
 
-        let (device, mut queues) = Device::new(physical_device, &Features::none(),
+        let minimal_features = Features {
+            fill_mode_non_solid: true,
+            .. Features::none()
+        };
+
+        let (device, mut queues) = Device::new(physical_device,
+                                               &minimal_features,
                                                &device_extensions(), queue_families)
             .expect("failed to create logical device!");
 
