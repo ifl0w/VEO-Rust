@@ -8,11 +8,14 @@ use cgmath::{Vector3, Deg, Matrix3, Quaternion};
 
 use nse::core::{System, Filter};
 use nse::rendering::{Camera, Transformation};
+use crate::main;
+use winit::ElementState::Pressed;
 
 pub struct FPSCameraSystem {
     mouse_delta_x: f32,
     mouse_delta_y: f32,
     last_position: Option<LogicalPosition>,
+    active: bool,
 
     move_left: bool,
     move_right: bool,
@@ -29,6 +32,7 @@ impl FPSCameraSystem {
             mouse_delta_x: 0.0,
             mouse_delta_y: 0.0,
             last_position: None,
+            active: false,
 
             move_left: false,
             move_right: false,
@@ -101,6 +105,13 @@ impl System for FPSCameraSystem {
 
                         self.last_position = Option::Some(*position);
                     }
+                    | WindowEvent::MouseInput { button, state, ..} => {
+                        match button {
+                            Left => {
+                                self.active = *state == Pressed
+                            }
+                        }
+                    }
                     _ => ()
                 }
             }
@@ -129,20 +140,22 @@ impl System for FPSCameraSystem {
             axis_aligned_translation.x += self.movement_speed * delta_time.as_secs_f32();
         }
 
-        match self.last_position {
-            Some(_) => {
-                let angle_x = Deg(- self.mouse_delta_y * self.mouse_speed);
-                let angle_y = Deg(- self.mouse_delta_x * self.mouse_speed);
+        if self.active {
+            match self.last_position {
+                Some(_) => {
+                    let angle_x = Deg(- self.mouse_delta_y * self.mouse_speed);
+                    let angle_y = Deg(- self.mouse_delta_x * self.mouse_speed);
 
-                let camera_y = Vector3{ x: 0.0, y:1.0, z:0.0 };
-                let camera_x = transform.rotation * Vector3{ x: 1.0, y:0.0, z:0.0 };
+                    let camera_y = Vector3{ x: 0.0, y:1.0, z:0.0 };
+                    let camera_x = transform.rotation * Vector3{ x: 1.0, y:0.0, z:0.0 };
 
-                let x = Quaternion::from(Matrix3::from_axis_angle(camera_x, angle_x));
-                let y = Quaternion::from(Matrix3::from_axis_angle(camera_y, angle_y));
+                    let x = Quaternion::from(Matrix3::from_axis_angle(camera_x, angle_x));
+                    let y = Quaternion::from(Matrix3::from_axis_angle(camera_y, angle_y));
 
-                transform = transform.rotation(x * y * transform.rotation);
+                    transform = transform.rotation(x * y * transform.rotation);
+                }
+                None => ()
             }
-            None => ()
         }
 
         transform = transform.position(transform.position + transform.rotation * axis_aligned_translation);
