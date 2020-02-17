@@ -14,7 +14,7 @@ fn main() {
 
     let render_system = RenderSystem::new(&engine);
     let fps_camera_system = FPSCameraSystem::new();
-    fps_camera_system.lock().unwrap().set_mouse_speed(0.5);
+    fps_camera_system.lock().unwrap().set_mouse_speed(3.0);
     fps_camera_system.lock().unwrap().set_movement_speed(5.0);
 
     let octree_sys = OctreeSystem::new(render_system.clone());

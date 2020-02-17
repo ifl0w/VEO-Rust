@@ -1,20 +1,20 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use winit::{Event, WindowEvent, VirtualKeyCode, ElementState};
+use cgmath::{Deg, Matrix3, Quaternion, Vector3};
+use winit::{ElementState, Event, VirtualKeyCode, WindowEvent};
+use winit::DeviceEvent::MouseMotion;
 use winit::dpi::LogicalPosition;
-
-use cgmath::{Vector3, Deg, Matrix3, Quaternion};
-
-use nse::core::{System, Filter};
-use nse::rendering::{Camera, Transformation};
-use crate::main;
 use winit::ElementState::Pressed;
+use winit::Event::DeviceEvent;
+
+use nse::core::{Filter, System};
+use nse::rendering::{Camera, Transformation};
+
+use crate::main;
 
 pub struct FPSCameraSystem {
-    mouse_delta_x: f32,
-    mouse_delta_y: f32,
-    last_position: Option<LogicalPosition>,
+    mouse_delta: (f32, f32),
     active: bool,
 
     move_left: bool,
@@ -29,9 +29,7 @@ pub struct FPSCameraSystem {
 impl FPSCameraSystem {
     pub fn new() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(FPSCameraSystem {
-            mouse_delta_x: 0.0,
-            mouse_delta_y: 0.0,
-            last_position: None,
+            mouse_delta: (0.0, 0.0),
             active: false,
 
             move_left: false,
@@ -40,7 +38,7 @@ impl FPSCameraSystem {
             move_back: false,
 
             movement_speed: 3.0,
-            mouse_speed: 0.25
+            mouse_speed: 0.25,
         }))
     }
 
@@ -54,7 +52,6 @@ impl FPSCameraSystem {
 }
 
 impl System for FPSCameraSystem {
-
     fn get_filter(&mut self) -> Vec<Filter> { vec![nse::filter!(Camera, Transformation)] }
 
     fn handle_input(&mut self, event: &Event) {
@@ -94,23 +91,23 @@ impl System for FPSCameraSystem {
                             }
                         }
                     }
-                    | WindowEvent::CursorMoved { position, .. } => {
-                        match self.last_position {
-                            Some(last) => {
-                                self.mouse_delta_x = (position.x - last.x) as f32;
-                                self.mouse_delta_y = (position.y - last.y) as f32;
-                            }
-                            None => ()
-                        }
-
-                        self.last_position = Option::Some(*position);
-                    }
-                    | WindowEvent::MouseInput { button, state, ..} => {
+                    | WindowEvent::MouseInput { button, state, .. } => {
                         match button {
                             Left => {
-                                self.active = *state == Pressed
+                                self.active = *state == Pressed;
+                                self.mouse_delta = (0.0, 0.0);
                             }
                         }
+                    }
+                    _ => ()
+                }
+            }
+            | Event::DeviceEvent { event, .. } => {
+                match event {
+                    | MouseMotion { delta, .. } => {
+                        // sum up delta. Per frame there might be more than one MouseMotion event
+                        self.mouse_delta = (self.mouse_delta.0 + delta.0 as f32,
+                                            self.mouse_delta.1 + delta.1 as f32);
                     }
                     _ => ()
                 }
@@ -126,7 +123,7 @@ impl System for FPSCameraSystem {
 
         let mut transform = camera.get_component::<Transformation>().ok().unwrap().clone();
 
-        let mut axis_aligned_translation = Vector3 {x: 0.0, y: 0.0, z: 0.0};
+        let mut axis_aligned_translation = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
         if self.move_forward {
             axis_aligned_translation.z -= self.movement_speed * delta_time.as_secs_f32();
         }
@@ -141,29 +138,22 @@ impl System for FPSCameraSystem {
         }
 
         if self.active {
-            match self.last_position {
-                Some(_) => {
-                    let angle_x = Deg(- self.mouse_delta_y * self.mouse_speed);
-                    let angle_y = Deg(- self.mouse_delta_x * self.mouse_speed);
+            let angle_x = Deg(-self.mouse_delta.1 / 10.0 * self.mouse_speed);
+            let angle_y = Deg(-self.mouse_delta.0 / 10.0 * self.mouse_speed);
 
-                    let camera_y = Vector3{ x: 0.0, y:1.0, z:0.0 };
-                    let camera_x = transform.rotation * Vector3{ x: 1.0, y:0.0, z:0.0 };
+            let camera_y = Vector3 { x: 0.0, y: 1.0, z: 0.0 };
+            let camera_x = transform.rotation * Vector3 { x: 1.0, y: 0.0, z: 0.0 };
 
-                    let x = Quaternion::from(Matrix3::from_axis_angle(camera_x, angle_x));
-                    let y = Quaternion::from(Matrix3::from_axis_angle(camera_y, angle_y));
+            let x = Quaternion::from(Matrix3::from_axis_angle(camera_x, angle_x));
+            let y = Quaternion::from(Matrix3::from_axis_angle(camera_y, angle_y));
 
-                    transform = transform.rotation(x * y * transform.rotation);
-                }
-                None => ()
-            }
+            transform = transform.rotation(y * x * transform.rotation);
+
+            self.mouse_delta = (0.0, 0.0);
         }
 
         transform = transform.position(transform.position + transform.rotation * axis_aligned_translation);
 
         camera.add_component(transform);
-
-        self.mouse_delta_x = 0.0;
-        self.mouse_delta_y = 0.0;
     }
-
 }
