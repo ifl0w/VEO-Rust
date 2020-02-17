@@ -2,16 +2,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Deg, Matrix3, Quaternion, Vector3};
-use winit::{ElementState, Event, VirtualKeyCode, WindowEvent};
+use winit::{ElementState, Event, VirtualKeyCode, WindowEvent, MouseButton};
 use winit::DeviceEvent::MouseMotion;
-use winit::dpi::LogicalPosition;
 use winit::ElementState::Pressed;
-use winit::Event::DeviceEvent;
 
 use nse::core::{Filter, System};
 use nse::rendering::{Camera, Transformation};
-
-use crate::main;
 
 pub struct FPSCameraSystem {
     mouse_delta: (f32, f32),
@@ -93,10 +89,11 @@ impl System for FPSCameraSystem {
                     }
                     | WindowEvent::MouseInput { button, state, .. } => {
                         match button {
-                            Left => {
+                            MouseButton::Left => {
                                 self.active = *state == Pressed;
                                 self.mouse_delta = (0.0, 0.0);
-                            }
+                            },
+                            _ => ()
                         }
                     }
                     _ => ()
