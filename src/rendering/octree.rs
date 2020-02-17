@@ -1,14 +1,16 @@
+use std::convert::{TryFrom, TryInto};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::convert::{TryFrom, TryInto};
 
+use cgmath::{Matrix4, vec3, Vector3};
+use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
+use vulkano::memory::pool::StdMemoryPool;
 use winit::Event;
 
 use crate::core::{Component, Filter, Message, System};
-use crate::rendering::{RenderSystem, Camera, Transformation, InstanceData};
-use cgmath::{Vector3, Matrix4, SquareMatrix, vec3};
-use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
-use vulkano::memory::pool::StdMemoryPool;
+use crate::rendering::{Camera, InstanceData, RenderSystem, Transformation};
+use std::f32::consts::PI;
+
 
 enum NodePosition {
     Flt = 0,
@@ -43,7 +45,7 @@ impl TryFrom<i32> for NodePosition {
 pub struct Octree {
     pub size: Vector3<f32>,
     pub root: Option<Node>,
-    pub instance_data_buffer: Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>>
+    pub instance_data_buffer: Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>>,
 }
 
 impl Component for Octree {}
@@ -53,7 +55,7 @@ impl Octree {
         let oct = Octree {
             size,
             root: Some(Node::new()),
-            instance_data_buffer: None
+            instance_data_buffer: None,
         };
 
         Octree::fill_octree(oct)
@@ -66,9 +68,9 @@ impl Octree {
     fn fill_octree(mut octree: Octree) -> Octree {
         octree.root = Octree::traverse(
             octree.root,
-            vec3(0.0,0.0,0.0),
+            vec3(0.0, 0.0, 0.0),
             0,
-            4);
+            5);
 
         octree.clone()
     }
@@ -81,9 +83,9 @@ impl Octree {
         let mut node_copy = node.clone().unwrap();
 
         let children = node_copy.children;
-        let new_children:Vec<_> = children.iter().enumerate().map(|(idx, child)| {
+        let new_children: Vec<_> = children.iter().enumerate().map(|(idx, child)| {
             match child {
-                Some(node) => { Some(node.clone()) },
+                Some(node) => { Some(node.clone()) }
                 None => {
                     let new_depth = current_depth + 1;
 
@@ -105,7 +107,47 @@ impl Octree {
                     }
                     new_child.position = t;
 
-                    Octree::traverse(Option::Some(new_child), t, new_depth, target_depth)
+                    let node_origin = t;
+
+                    let sinc = |x: f32, y: f32| {
+                        let scale = 6.0 * PI;
+                        let scale_y = 0.25;
+
+                        let r = f32::sqrt( x * x + y * y);
+                        let r_val = if r == 0.0 { 1.0 } else { (r * scale).sin() / (r * scale) };
+                        r_val * scale_y
+                    };
+
+                    let intersect = |origin: Vector3<f32>, scale: f32, function: &dyn Fn(f32, f32) -> f32| {
+                        let box_points: Vec<Vector3<f32>> = vec![
+                            origin + vec3(-0.5, -0.5, -0.5) * scale,
+                            origin + vec3(0.5, -0.5, -0.5) * scale,
+                            origin + vec3(-0.5, 0.5, -0.5) * scale,
+                            origin + vec3(0.5, 0.5, -0.5) * scale,
+                            origin + vec3(-0.5, -0.5, 0.5) * scale,
+                            origin + vec3(0.5, -0.5, 0.5) * scale,
+                            origin + vec3(-0.5, 0.5, 0.5) * scale,
+                            origin + vec3(0.5, 0.5, 0.5) * scale
+                        ];
+
+                        let all_greater = box_points.iter()
+                            .all(|val| function(val.x, val.z) >= (val.y));
+
+                        let all_smaller = box_points.iter()
+                            .all(|val| function(val.x, val.z) <= (val.y));
+
+                        !(all_greater || all_smaller)
+                    };
+
+                    // NOTE: intersect test does not work with every function correctly.
+                    // It is possible that all samples at the corner points of the octree node do
+                    // not indicate an intersection and thus leading to false negative intersection
+                    // tests!
+                    if intersect(node_origin, s, &sinc) {
+                        Octree::traverse(Option::Some(new_child), t, new_depth, target_depth)
+                    } else {
+                        None
+                    }
                 }
             }
         }).collect();
@@ -127,8 +169,8 @@ impl Node {
     pub fn new() -> Self {
         let mut tmp = Node {
             children: vec![],
-            position: vec3(0.0, 0.0,0.0),
-            scale: vec3(1.0, 1.0,1.0),
+            position: vec3(0.0, 0.0, 0.0),
+            scale: vec3(1.0, 1.0, 1.0),
         };
         tmp.children.resize(8, None);
 
@@ -142,7 +184,7 @@ impl Node {
             match child {
                 Some(n) => {
                     count += n.count_leaves();
-                },
+                }
                 None => {
                     count += 1;
                 }
@@ -155,7 +197,6 @@ impl Node {
     pub fn is_leaf(&self) -> bool {
         self.children.iter().all(|n| n.is_none())
     }
-
 }
 
 pub struct OctreeSystem {
@@ -164,8 +205,6 @@ pub struct OctreeSystem {
 
 impl OctreeSystem {
     pub fn new(render_sys: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
-        let mut data = ();
-
         Arc::new(Mutex::new(OctreeSystem {
             render_sys
         }))
@@ -176,21 +215,28 @@ impl OctreeSystem {
             return vec![];
         }
 
-        let mut node_copy = node.clone().unwrap();
+        let node_copy = node.clone().unwrap();
 
         let mut model_matrices: Vec<InstanceData> = vec![];
 
         if !node_copy.is_leaf() {
             let children = node_copy.children;
-            children.iter().enumerate().for_each(|(i, child)| {
+            children.iter().enumerate().for_each(|(_i, child)| {
                 match child {
-                    Some(node) => {
-                        let mut new_mat = &mut OctreeSystem::generate_instance_data(child);
+                    Some(_) => {
+                        let new_mat = &mut OctreeSystem::generate_instance_data(child);
                         model_matrices.append(new_mat);
-                    },
+                    }
                     None => {}
                 }
             });
+
+            // generate matrices for all nodes (debugging)
+//            let mat = Matrix4::from_translation(node_copy.position)
+//                * Matrix4::from_scale(node_copy.scale.x);
+//            model_matrices.push(InstanceData {
+//                model_matrix: mat.into()
+//            });
         } else {
             let mat = Matrix4::from_translation(node_copy.position)
                 * Matrix4::from_scale(node_copy.scale.x);
@@ -219,7 +265,7 @@ impl System for OctreeSystem {
         if !entities.is_empty() {
             for entity in entities {
                 let mut entitiy_mutex = entity.lock().unwrap();
-                let transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
+                let _transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
                 let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
                 let model_matrices = OctreeSystem::generate_instance_data(&octree.root);

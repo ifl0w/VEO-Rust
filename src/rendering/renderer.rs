@@ -162,7 +162,7 @@ impl System for RenderSystem {
         for octree in &filter[2].lock().unwrap().entities {
             let mutex = octree.lock().unwrap();
             let mesh = mutex.get_component::<Mesh>().unwrap();
-            let trans = mutex.get_component::<Transformation>().unwrap();
+            let _trans = mutex.get_component::<Transformation>().unwrap();
             let octree = mutex.get_component::<Octree>().unwrap();
 
             if octree.instance_data_buffer.is_some() {
