@@ -44,7 +44,7 @@ impl TryFrom<i32> for NodePosition {
 #[derive(Clone)]
 pub struct Octree {
     pub size: Vector3<f32>,
-    pub root: Option<Node>,
+    pub root: Arc<Mutex<Option<Node>>>,
     pub instance_data_buffer: Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>>,
 }
 
@@ -54,7 +54,7 @@ impl Octree {
     pub fn new(size: Vector3<f32>) -> Self {
         let oct = Octree {
             size,
-            root: Some(Node::new()),
+            root: Arc::new(Mutex::new(None)),
             instance_data_buffer: None,
         };
 
@@ -62,15 +62,16 @@ impl Octree {
     }
 
     pub fn count_leaves(&self) -> i64 {
-        self.root.clone().unwrap().count_leaves()
+        let root = self.root.lock().unwrap();
+        (*root).as_ref().unwrap().count_leaves()
     }
 
     fn fill_octree(mut octree: Octree) -> Octree {
-        octree.root = Octree::traverse(
-            octree.root,
+        octree.root = Arc::new(Mutex::new(Octree::traverse(
+            Some(Node::new()),
             vec3(0.0, 0.0, 0.0),
             0,
-            5);
+            7)));
 
         octree.clone()
     }
@@ -268,11 +269,17 @@ impl System for OctreeSystem {
                 let _transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
                 let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
-                let model_matrices = OctreeSystem::generate_instance_data(&octree.root);
+                if octree.instance_data_buffer.is_none() {
+                    { // scope to enclose mutex
+                        let root = octree.root.lock().unwrap();
+                        let model_matrices = OctreeSystem::generate_instance_data(&root);
 
-                octree.instance_data_buffer = Some(Arc::new(
-                    self.render_sys.lock().unwrap().instance_buffer_pool.chunk(model_matrices).unwrap()));
-                entitiy_mutex.add_component(octree);
+                        octree.instance_data_buffer = Some(Arc::new(
+                            self.render_sys.lock().unwrap().instance_buffer_pool.chunk(model_matrices).unwrap()));
+                    }
+
+                    entitiy_mutex.add_component(octree);
+                }
             }
         }
     }
