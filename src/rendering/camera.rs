@@ -1,4 +1,4 @@
-use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector3};
+use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector3, Vector4};
 
 use crate::core::Component;
 
@@ -106,6 +106,7 @@ impl Transformation {
 pub struct CameraDataUbo {
     pub view: Matrix4<f32>,
     pub proj: Matrix4<f32>,
+    pub position: Vector4<f32>,
 }
 
 impl CameraDataUbo {
@@ -116,6 +117,7 @@ impl CameraDataUbo {
         CameraDataUbo {
             view: transform.get_model_matrix().inverse_transform().unwrap(),
             proj: p,
+            position: transform.position.extend(0.0),
         }
     }
 }
@@ -125,6 +127,7 @@ impl Default for CameraDataUbo {
         CameraDataUbo {
             view: Matrix4::identity(),
             proj: Matrix4::identity(),
+            position: Vector4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0}
         }
     }
 }

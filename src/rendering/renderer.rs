@@ -511,9 +511,9 @@ impl RenderSystem {
             .fragment_shader(frag_shader_module.main_entry_point(), ())
             .depth_clamp(false)
             // NOTE: there's an outcommented .rasterizer_discard() in Vulkano...
-//            .polygon_mode_fill() // = default
-            .polygon_mode_line()
-            .line_width(1.0) // = default
+            .polygon_mode_fill() // = default
+//            .polygon_mode_line()
+//            .line_width(1.0) // = default
             .cull_mode_back()
             .front_face_counter_clockwise()
             // NOTE: no depth_bias here, but on pipeline::raster::Rasterization
