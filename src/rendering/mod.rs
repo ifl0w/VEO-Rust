@@ -10,8 +10,10 @@ pub use mesh::Vertex;
 pub use renderer::RenderSystem;
 pub use octree::Octree;
 pub use octree::OctreeSystem;
+pub use nse_gui::octree_gui::OctreeGuiSystem;
 
 mod renderer;
 mod mesh;
 mod camera;
 mod octree;
+mod nse_gui;

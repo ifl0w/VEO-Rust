@@ -11,6 +11,7 @@ use imgui::{Context, FontConfig, FontGlyphRanges, FontSource, Ui};
 use imgui_gfx_renderer::{Renderer, Shaders};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::time::Instant;
+use winit::event::WindowEvent;
 
 type ColorFormat = gfx::format::Rgba8;
 

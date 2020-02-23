@@ -3,7 +3,7 @@ use cgmath::{Vector3};
 use nse;
 use nse::core::{Entity};
 use nse::NSE;
-use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation, OctreeSystem, Octree};
+use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation, OctreeSystem, Octree, OctreeGuiSystem};
 
 pub mod shared;
 
@@ -18,6 +18,7 @@ fn main() {
     fps_camera_system.lock().unwrap().set_movement_speed(5.0);
 
     let octree_sys = OctreeSystem::new(render_system.clone());
+    let octree_gui_system = OctreeGuiSystem::new(&engine, render_system.clone());
 
     engine.add_system(render_system.clone());
     engine.add_system(fps_camera_system.clone());

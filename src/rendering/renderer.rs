@@ -89,7 +89,7 @@ pub struct RenderSystem {
     #[allow(unused)]
     debug_callback: Option<DebugCallback>,
 
-    surface: Arc<Surface<Window>>,
+    pub(in crate::rendering) surface: Arc<Surface<Window>>,
 
     physical_device_index: usize,
     // can't store PhysicalDevice directly (lifetime issues)
