@@ -6,38 +6,46 @@ extern crate vulkano;
 extern crate vulkano_win;
 extern crate winit;
 
+use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use winit::{Event, EventsLoop, WindowEvent};
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop};
+use winit::platform::desktop::EventLoopExtDesktop;
 
-use crate::core::{EntityManager, Exit, Message, System, EntityRef};
+use crate::core::{EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
-use std::any::TypeId;
+use std::cell::{Cell, RefCell};
+use std::ops::{DerefMut, AddAssign};
+use winit::window::Window;
+
+//use winit::{Event, EventsLoop, WindowEvent};
 
 pub mod core;
 pub mod rendering;
 
 pub struct NSE {
-    message_manager: MessageManager,
-    entity_manager: EntityManager,
-    system_manager: SystemManager,
+    message_manager: Arc<Mutex<MessageManager>>,
+    entity_manager: Arc<Mutex<EntityManager>>,
+    system_manager: Arc<Mutex<SystemManager>>,
 
-    event_loop: EventsLoop,
+    event_loop: EventLoop<()>,
 
-    delta_time: Duration,
+    delta_time: Arc<Mutex<Duration>>,
 }
 
 impl NSE {
     pub fn new() -> Self {
         let nse = NSE {
-            message_manager: MessageManager::new(),
-            entity_manager: EntityManager::new(),
-            system_manager: SystemManager::new(),
-            event_loop: EventsLoop::new(),
+            message_manager: Arc::new(Mutex::new(MessageManager::new())),
+            entity_manager: Arc::new(Mutex::new(EntityManager::new())),
+            system_manager: Arc::new(Mutex::new(SystemManager::new())),
 
-            delta_time: Duration::new(0, 0),
+            event_loop: EventLoop::new(),
+
+            delta_time: Arc::new(Mutex::new(Duration::new(0,0))),
         };
 
         nse
@@ -47,82 +55,88 @@ impl NSE {
         println!("Initializing...")
     }
 
-    pub fn run(&mut self) {
-        loop {
+    pub fn run(self) {
+        let system_manager = self.system_manager.clone();
+        let message_manager = self.message_manager.clone();
+        let delta_time = self.delta_time.clone();
+
+        self.event_loop.run(move |event, _, control_flow| {
+
+            let system_manager_lock = system_manager.lock().unwrap();
+
             let frame_start = Instant::now();
             let mut exit = false;
-            let systems = &self.system_manager.systems.values().cloned().collect::<Vec<Arc<Mutex<dyn System>>>>();
+            let systems = system_manager_lock.systems.values().cloned().collect::<Vec<Arc<Mutex<dyn System>>>>();
 
-            self.event_loop.poll_events(|event| {
-                for sys in systems {
-                    sys.lock().unwrap().handle_input(&event);
-                }
-                match event {
-                    | Event::WindowEvent { event, .. } => {
-                        match event {
-                            | WindowEvent::CloseRequested => {
-                                exit = true;
-                            }
-                            | _ => {}
+            for sys in systems {
+                sys.lock().unwrap().handle_input(&event);
+            }
+            match event {
+                Event::WindowEvent { event, .. } => {
+                    match event {
+                        | WindowEvent::CloseRequested => {
+                            *control_flow = ControlFlow::Exit;
+                        }
+                        | _ => {}
+                    }
+                },
+                Event::RedrawRequested(_) => {
+                    let v: Vec<_> = message_manager.lock().unwrap().receiver.try_iter().collect();
+
+                    for msg in v.iter() {
+                        if msg.is_type::<Exit>() {
+                            exit = true;
                         }
                     }
-                    _ => (),
-                }
-            });
 
-            let v: Vec<_> = self.message_manager.receiver.try_iter().collect();
+                    if exit {
+                        *control_flow = ControlFlow::Exit;
+                        println!("Exiting NSE");
+                        return;
+                    }
 
-            for msg in v.iter() {
-                if msg.is_type::<Exit>() {
-//                *control_flow = ControlFlow::Exit;
-                    exit = true;
-                }
+                    let sys_iterator = system_manager_lock.systems.iter();
+                    let mut msgs: Vec<Message> = vec![];
+
+                    for (typeid, sys) in sys_iterator {
+                        let filter = system_manager_lock.get_filter(&typeid).unwrap();
+
+                        sys.lock().unwrap().consume_messages(&v);
+                        sys.lock().unwrap().execute(filter, *delta_time.lock().unwrap());
+                        msgs.append(&mut sys.lock().unwrap().get_messages());
+                    }
+
+                    for msg in msgs.iter() {
+                        let result = message_manager.lock().unwrap().sender.send(msg.clone());
+                        result.expect("Sending message failed");
+                    }
+
+                    let frame_end = Instant::now();
+
+                    *delta_time.lock().unwrap() = (frame_end - frame_start)
+//                    println!("Frame time: {} ", (frame_end - frame_start).as_millis());
+                },
+                _ => (),
             }
-
-            if exit {
-                println!("Exiting NSE");
-                return;
-            }
-
-
-            let sys_iterator = self.system_manager.systems.iter();
-            let mut msgs: Vec<Message> = vec![];
-
-            for (typeid, sys) in sys_iterator {
-                let filter = self.system_manager.get_filter(&typeid).unwrap();
-
-                sys.lock().unwrap().consume_messages(&v);
-                sys.lock().unwrap().execute(filter, self.delta_time);
-                msgs.append(&mut sys.lock().unwrap().get_messages());
-            }
-
-            for msg in msgs.iter() {
-                let result = self.message_manager.sender.send(msg.clone());
-                result.expect("Sending message failed");
-            }
-
-            let frame_end = Instant::now();
-            self.delta_time = frame_end - frame_start;
-
-//            println!("Frame time: {} ", self.delta_time.as_millis())
-        }
+        });
     }
 
     pub fn add_system<T: 'static + System>(&mut self, sys: Arc<Mutex<T>>) {
         let typeid = TypeId::of::<T>();
+        let mut system_manager_lock = self.system_manager.lock().unwrap();
 
-        self.system_manager.add_system(sys);
+        system_manager_lock.add_system(sys);
 
-        let entities = &self.entity_manager.entities.values().cloned().collect();
-        let filter = self.system_manager.get_filter(&typeid).unwrap();
+        let entities = &self.entity_manager.lock().unwrap().entities.values().cloned().collect();
+        let filter = system_manager_lock.get_filter(&typeid).unwrap();
         filter.iter().for_each(|f| {
             f.lock().unwrap().update(entities)
         });
     }
 
     pub fn add_entity(&mut self, e: EntityRef) {
-        self.entity_manager.add_entity(e.clone());
-        self.system_manager.filter.iter().for_each(|(_, filters)| {
+        self.entity_manager.lock().unwrap().add_entity(e.clone());
+        self.system_manager.lock().unwrap().filter.iter().for_each(|(_, filters)| {
             for filter in filters {
                 filter.lock().unwrap().add(e.clone());
             }
@@ -130,8 +144,8 @@ impl NSE {
     }
 
     pub fn remove_entity(&mut self, e: EntityRef) {
-        self.entity_manager.remove_entity(e.clone());
-        self.system_manager.filter.iter().for_each(|(_, filters)| {
+        self.entity_manager.lock().unwrap().remove_entity(e.clone());
+        self.system_manager.lock().unwrap().filter.iter().for_each(|(_, filters)| {
             for filter in filters {
                 filter.lock().unwrap().remove(e.clone());
             }

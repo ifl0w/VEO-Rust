@@ -3,37 +3,44 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool};
+use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
-use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSetBuf};
+use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSetBuf, UnsafeDescriptorSetLayout};
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
-use vulkano::format::{Format, ClearValue};
+use vulkano::format::{ClearValue, Format};
 use vulkano::framebuffer::{
     Framebuffer,
     FramebufferAbstract,
     RenderPassAbstract,
     Subpass,
 };
-use vulkano::image::{ImageUsage, SwapchainImage, AttachmentImage};
+use vulkano::image::{AttachmentImage, ImageUsage, SwapchainImage};
 use vulkano::instance::{ApplicationInfo, Instance, InstanceExtensions, layers_list, PhysicalDevice, Version};
 use vulkano::instance::debug::{DebugCallback, MessageSeverity, MessageType};
+use vulkano::memory::pool::StdMemoryPool;
 use vulkano::pipeline::{
     GraphicsPipeline,
     GraphicsPipelineAbstract,
     viewport::Viewport,
 };
+use vulkano::pipeline::depth_stencil::DepthStencil;
 use vulkano::pipeline::vertex::OneVertexOneInstanceDefinition;
-use vulkano::swapchain::{acquire_next_image, AcquireError, Capabilities, ColorSpace, CompositeAlpha, PresentMode, SupportedPresentModes, Surface, Swapchain};
+use vulkano::swapchain::{acquire_next_image, AcquireError, Capabilities, ColorSpace, CompositeAlpha, PresentMode, SupportedPresentModes, Surface, Swapchain, FullscreenExclusive};
 use vulkano::sync::{self, GpuFuture, SharingMode};
 use vulkano_win::VkSurfaceBuild;
-use winit::{EventsLoop, Window, WindowBuilder};
+//use winit::{Event, EventsLoop, Window, WindowBuilder};
 use winit::dpi::LogicalSize;
 
 use crate::core::{Filter, System};
 use crate::NSE;
-use crate::rendering::{Camera, Octree, CameraDataUbo, InstanceData, Mesh, Transformation, Vertex};
-use vulkano::pipeline::depth_stencil::DepthStencil;
-use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
-use vulkano::memory::pool::StdMemoryPool;
+use crate::rendering::{Camera, CameraDataUbo, InstanceData, Mesh, Octree, Transformation, Vertex};
+use imgui::Context;
+use imgui_winit_support::{WinitPlatform, HiDpiMode};
+use std::ops::Deref;
+use winit::window::{WindowBuilder, Window};
+use winit::event::Event;
+use winit::event_loop::EventLoop;
+use vulkano::descriptor::PipelineLayoutAbstract;
 
 // Constants
 const WINDOW_TITLE: &'static str = "NSE";
@@ -73,7 +80,7 @@ impl QueueFamilyIndices {
 }
 
 type MainDescriptorSet = ((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<CameraDataUbo>>>);
-
+type VertexDefinition = OneVertexOneInstanceDefinition::<Vertex, InstanceData>;
 //type MainDescriptorSet = (((), PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<CameraDataUbo>>>),
 //                          PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<InstanceData>>>);
 
@@ -95,7 +102,7 @@ pub struct RenderSystem {
     swap_chain_images: Vec<Arc<SwapchainImage<Window>>>,
 
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+    graphics_pipeline: Arc<GraphicsPipeline<VertexDefinition, Box<dyn PipelineLayoutAbstract + Send + Sync>, Arc<dyn RenderPassAbstract + Send + Sync>>>,
 
     swap_chain_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
@@ -104,7 +111,7 @@ pub struct RenderSystem {
     pub(in crate::rendering) instance_buffer_pool: CpuBufferPool<InstanceData>,
     instance_info: HashMap<Mesh, Vec<InstanceData>>,
 
-    camera_descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, MainDescriptorSet>>>,
+    camera_descriptor_sets: Vec<Arc<FixedSizeDescriptorSet<MainDescriptorSet>>>,
 
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
 
@@ -115,6 +122,7 @@ pub struct RenderSystem {
 
     #[allow(dead_code)]
     start_time: Instant,
+
 }
 
 impl System for RenderSystem {
@@ -124,6 +132,10 @@ impl System for RenderSystem {
             crate::filter!(Camera, Transformation),
             crate::filter!(Octree, Mesh, Transformation),
         ]
+    }
+
+    fn handle_input(&mut self, _event: &Event<()>) {
+
     }
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _: Duration) {
@@ -173,6 +185,8 @@ impl System for RenderSystem {
         self.forward_pass_command_buffer(camera_ubo, instanced_meshes);
 
         self.draw_frame();
+
+        self.surface.window().request_redraw();
     }
 }
 
@@ -209,6 +223,12 @@ impl RenderSystem {
         let camera_descriptor_sets = Self::create_descriptor_sets(&descriptor_sets_pool, &camera_ubo);
 
         let previous_frame_end = Some(Self::create_sync_objects(&device));
+
+        let mut imgui = Context::create();
+        // configure imgui-rs Context if necessary
+
+        let mut platform = WinitPlatform::init(&mut imgui); // step 1
+        platform.attach_window(imgui.io_mut(), surface.window(), HiDpiMode::Default); // step 2
 
         let rs = RenderSystem {
             instance,
@@ -414,7 +434,7 @@ impl RenderSystem {
             device.clone(),
             surface.clone(),
             image_count,
-            surface_format.0, // TODO: color space?
+            surface_format.0,
             extent,
             1, // layers
             image_usage,
@@ -422,8 +442,9 @@ impl RenderSystem {
             capabilities.current_transform,
             CompositeAlpha::Opaque,
             present_mode,
+            FullscreenExclusive::Default,
             true, // clipped
-            old_swapchain.as_ref(),
+            surface_format.1
         ).expect("failed to create swap chain!");
 
         (swap_chain, images)
@@ -441,7 +462,7 @@ impl RenderSystem {
             device.clone(),
             dimensions,
             format,
-            ImageUsage { depth_stencil_attachment: true, ..ImageUsage::none() }
+            ImageUsage { depth_stencil_attachment: true, ..ImageUsage::none() },
         ).unwrap()
     }
 
@@ -474,7 +495,7 @@ impl RenderSystem {
         device: &Arc<Device>,
         swap_chain_extent: [u32; 2],
         render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
-    ) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
+    ) -> Arc<GraphicsPipeline<VertexDefinition, Box<dyn PipelineLayoutAbstract + Send + Sync>, Arc<dyn RenderPassAbstract + Send + Sync>>> {
         mod vertex_shader {
             vulkano_shaders::shader! {
                ty: "vertex",
@@ -502,7 +523,7 @@ impl RenderSystem {
         };
 
         Arc::new(GraphicsPipeline::start()
-            .vertex_input(OneVertexOneInstanceDefinition::<Vertex, InstanceData>::new())
+            .vertex_input(VertexDefinition::new())
 //            .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(vert_shader_module.main_entry_point(), ())
             .triangle_list()
@@ -551,6 +572,7 @@ impl RenderSystem {
             let buffer = CpuAccessibleBuffer::from_data(
                 device.clone(),
                 BufferUsage::uniform_buffer_transfer_destination(),
+                false,
                 data,
             ).unwrap();
 
@@ -560,16 +582,17 @@ impl RenderSystem {
         buffers
     }
 
-    fn create_descriptor_pool(graphics_pipeline: &Arc<dyn GraphicsPipelineAbstract + Send + Sync>)
-                              -> Mutex<FixedSizeDescriptorSetsPool<Arc<dyn GraphicsPipelineAbstract + Send + Sync>>>
+    fn create_descriptor_pool(graphics_pipeline: &Arc<GraphicsPipeline<VertexDefinition, Box<dyn PipelineLayoutAbstract + Send + Sync>, Arc<dyn RenderPassAbstract + Send + Sync>>>)
+                              -> Mutex<FixedSizeDescriptorSetsPool>
     {
-        Mutex::new(FixedSizeDescriptorSetsPool::new(graphics_pipeline.clone(), 0))
+        let layout = graphics_pipeline.layout().descriptor_set_layout(0).unwrap();
+        Mutex::new(FixedSizeDescriptorSetsPool::new(layout.clone()))
     }
 
     fn create_descriptor_sets(
-        pool: &Mutex<FixedSizeDescriptorSetsPool<Arc<dyn GraphicsPipelineAbstract + Send + Sync>>>,
+        pool: &Mutex<FixedSizeDescriptorSetsPool>,
         camera_ubo: &[Arc<CpuAccessibleBuffer<CameraDataUbo>>],
-    ) -> Vec<Arc<FixedSizeDescriptorSet<Arc<dyn GraphicsPipelineAbstract + Send + Sync>, MainDescriptorSet>>>
+    ) -> Vec<Arc<FixedSizeDescriptorSet<MainDescriptorSet>>>
     {
         camera_ubo
             .iter()
@@ -727,7 +750,7 @@ impl RenderSystem {
 
         let minimal_features = Features {
             fill_mode_non_solid: true,
-            .. Features::none()
+            ..Features::none()
         };
 
         let (device, mut queues) = Device::new(physical_device,
@@ -741,10 +764,10 @@ impl RenderSystem {
         (device, graphics_queue, present_queue)
     }
 
-    fn create_surface(instance: &Arc<Instance>, events_loop: &EventsLoop) -> Arc<Surface<Window>> {
+    fn create_surface(instance: &Arc<Instance>, events_loop: &EventLoop<()>) -> Arc<Surface<Window>> {
         let surface = WindowBuilder::new()
             .with_title(WINDOW_TITLE)
-            .with_dimensions(LogicalSize::new(f64::from(WINDOW_WIDTH), f64::from(WINDOW_HEIGHT)))
+//            .with_dimensions(LogicalSize::new(f64::from(WINDOW_WIDTH), f64::from(WINDOW_HEIGHT)))
             .build_vk_surface(&events_loop, instance.clone())
             .expect("failed to create window surface!");
         surface
@@ -758,7 +781,7 @@ impl RenderSystem {
             self.recreate_swap_chain = false;
         }
 
-        let (image_index, acquire_future) = match acquire_next_image(self.swap_chain.clone(), None) {
+        let (image_index, _, acquire_future) = match acquire_next_image(self.swap_chain.clone(), None) {
             Ok(r) => r,
             Err(AcquireError::OutOfDate) => {
                 self.recreate_swap_chain = true;

@@ -2,12 +2,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Deg, Matrix3, Quaternion, Vector3};
-use winit::{ElementState, Event, VirtualKeyCode, WindowEvent, MouseButton};
-use winit::DeviceEvent::MouseMotion;
-use winit::ElementState::Pressed;
 
 use nse::core::{Filter, System};
 use nse::rendering::{Camera, Transformation};
+use winit::event::{Event, WindowEvent, ElementState, VirtualKeyCode, MouseButton, KeyboardInput};
+use winit::event::ElementState::Pressed;
+use winit::event::DeviceEvent::MouseMotion;
 
 pub struct FPSCameraSystem {
     mouse_delta: (f32, f32),
@@ -50,13 +50,13 @@ impl FPSCameraSystem {
 impl System for FPSCameraSystem {
     fn get_filter(&mut self) -> Vec<Filter> { vec![nse::filter!(Camera, Transformation)] }
 
-    fn handle_input(&mut self, event: &Event) {
+    fn handle_input(&mut self, event: &Event<()>) {
         match event {
             | Event::WindowEvent { event, .. } => {
                 match event {
                     | WindowEvent::KeyboardInput { input, .. } => {
                         match input {
-                            | winit::KeyboardInput { virtual_keycode, state, .. } => {
+                            | KeyboardInput { virtual_keycode, state, .. } => {
                                 match (virtual_keycode, state) {
                                     | (Some(VirtualKeyCode::W), ElementState::Pressed) => {
                                         self.move_forward = true;

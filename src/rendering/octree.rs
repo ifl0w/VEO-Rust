@@ -5,11 +5,12 @@ use std::time::Duration;
 use cgmath::{Matrix4, vec3, Vector3};
 use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
 use vulkano::memory::pool::StdMemoryPool;
-use winit::Event;
+//use winit::Event;
 
 use crate::core::{Component, Filter, Message, System};
 use crate::rendering::{Camera, InstanceData, RenderSystem, Transformation};
 use std::f32::consts::PI;
+use winit::event::Event;
 
 
 enum NodePosition {
@@ -257,7 +258,7 @@ impl System for OctreeSystem {
             crate::filter!(Camera, Transformation)
         ]
     }
-    fn handle_input(&mut self, _event: &Event) {}
+    fn handle_input(&mut self, _event: &Event<()>) {}
     fn consume_messages(&mut self, _: &Vec<Message>) {}
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _delta_time: Duration) {
