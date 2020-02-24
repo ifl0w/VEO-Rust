@@ -17,6 +17,7 @@ use winit::event::{ElementState, Event, VirtualKeyCode};
 use crate::core::{Filter, Message, System};
 use crate::NSE;
 use crate::rendering::RenderSystem;
+use std::collections::VecDeque;
 
 //use imgui_glium_renderer::glium::Display;
 
@@ -25,6 +26,9 @@ pub struct OctreeGuiSystem {
     platform: WinitPlatform,
     renderer: Renderer,
     display: glium::Display,
+
+    octree_depth: i32,
+    frame_times: VecDeque<f32>,
 }
 
 impl OctreeGuiSystem {
@@ -69,11 +73,17 @@ impl OctreeGuiSystem {
 
         let renderer = Renderer::init(&mut imgui, &display).expect("Failed to initialize renderer");
 
+        let mut frame_times = VecDeque::new();
+        frame_times.resize(500, 0.0);
+
         Arc::new(Mutex::new(OctreeGuiSystem {
             imgui,
             platform,
             renderer,
             display,
+
+            octree_depth: 5,
+            frame_times
         }))
     }
 }
@@ -130,19 +140,34 @@ impl System for OctreeGuiSystem {
 
     fn consume_messages(&mut self, _: &Vec<Message>) {}
 
-    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, _delta_time: Duration) {
+    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, delta_time: Duration) {
         let ui = self.imgui.frame();
 //        let render_system_lock = self.render_system.lock().unwrap();
 //        let window = render_system_lock.surface.window();
         let gl_window = self.display.gl_window();
         // application-specific rendering *under the UI*
 
+        let octree_depth = &mut self.octree_depth;
+
+        let frame_times = &mut self.frame_times;
+        frame_times.pop_front();
+        frame_times.push_back(delta_time.as_secs_f32());
+
+        let f_times: Vec<f32> = frame_times.iter().cloned().collect();
+
         Window::new(im_str!("Hello world"))
-            .size([300.0, 100.0], Condition::FirstUseEver)
+            .size([300.0, 0.0], Condition::FirstUseEver)
             .build(&ui, || {
-                ui.text(im_str!("Hello world! {}", _delta_time.as_millis()));
+                ui.text(im_str!("Hello world! {}", delta_time.as_millis()));
                 ui.text(im_str!("This...is...imgui-rs!"));
-                ui.button(im_str!("Test"), [0.0, 0.0]);
+                ui.button(im_str!("Test Button"), [0.0, 0.0]);
+
+                // Plot some values
+                ui.plot_lines(im_str!("Frame Times"), &f_times[..]).build();
+
+                ui.input_int(im_str!("Octree Depth"), octree_depth).build();
+                ui.button(im_str!("Update Octree"), [0.0, 0.0]);
+
                 ui.separator();
                 let mouse_pos = ui.io().mouse_pos;
                 ui.text(format!(
