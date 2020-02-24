@@ -296,7 +296,7 @@ impl System for OctreeSystem {
                 if octree.instance_data_buffer.is_none() {
                     { // scope to enclose mutex
                         let root = octree.root.lock().unwrap();
-                        let mut model_matrices = OctreeSystem::generate_instance_data(&root, octree.size);
+                        let model_matrices = OctreeSystem::generate_instance_data(&root, octree.size);
 
 
                         octree.instance_data_buffer = Some(Arc::new(
