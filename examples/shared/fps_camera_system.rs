@@ -3,11 +3,12 @@ use std::time::Duration;
 
 use cgmath::{Deg, Matrix3, Quaternion, Vector3};
 
-use nse::core::{Filter, System};
+use nse::core::{Filter, System, Message, MainWindow};
 use nse::rendering::{Camera, Transformation};
 use winit::event::{Event, WindowEvent, ElementState, VirtualKeyCode, MouseButton, KeyboardInput};
 use winit::event::ElementState::Pressed;
 use winit::event::DeviceEvent::MouseMotion;
+use winit::window::WindowId;
 
 pub struct FPSCameraSystem {
     mouse_delta: (f32, f32),
@@ -20,6 +21,8 @@ pub struct FPSCameraSystem {
 
     movement_speed: f32,
     mouse_speed: f32,
+
+    main_window: Option<WindowId>,
 }
 
 impl FPSCameraSystem {
@@ -35,6 +38,8 @@ impl FPSCameraSystem {
 
             movement_speed: 3.0,
             mouse_speed: 0.25,
+
+            main_window: None,
         }))
     }
 
@@ -51,8 +56,16 @@ impl System for FPSCameraSystem {
     fn get_filter(&mut self) -> Vec<Filter> { vec![nse::filter!(Camera, Transformation)] }
 
     fn handle_input(&mut self, event: &Event<()>) {
+        if self.main_window.is_none() {
+            return;
+        }
+
         match event {
-            | Event::WindowEvent { event, .. } => {
+            | Event::WindowEvent { event, window_id } => {
+                if *window_id != self.main_window.expect("No main window exists.") {
+                    return;
+                }
+
                 match event {
                     | WindowEvent::KeyboardInput { input, .. } => {
                         match input {
@@ -153,4 +166,13 @@ impl System for FPSCameraSystem {
 
         camera.add_component(transform);
     }
+
+    fn consume_messages(&mut self, messages: &Vec<Message>) {
+        for msg in messages {
+            if msg.is_type::<MainWindow>() {
+                self.main_window = Some(msg.get_payload::<MainWindow>().ok().unwrap().window_id)
+            }
+        }
+    }
+
 }

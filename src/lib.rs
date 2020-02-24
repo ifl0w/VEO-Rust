@@ -72,14 +72,6 @@ impl NSE {
                 sys.lock().unwrap().handle_input(&event);
             }
             match event {
-                Event::WindowEvent { event, .. } => {
-                    match event {
-                        | WindowEvent::CloseRequested => {
-                            *control_flow = ControlFlow::Exit;
-                        }
-                        | _ => {}
-                    }
-                },
                 Event::RedrawRequested(_) => {
                     let v: Vec<_> = message_manager.lock().unwrap().receiver.try_iter().collect();
 

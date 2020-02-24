@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crate::core::{EntityRef, Message};
 use winit::event::Event;
+use winit::event_loop::ControlFlow;
 
 #[macro_export]
 macro_rules! filter {

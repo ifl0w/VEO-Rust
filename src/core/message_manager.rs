@@ -2,6 +2,7 @@ use std::any::TypeId;
 use std::fmt::Debug;
 
 use crossbeam::crossbeam_channel::unbounded;
+use winit::window::WindowId;
 
 pub trait Payload: Debug + PayloadClone + mopa::Any {}
 mopafy!(Payload);
@@ -30,10 +31,10 @@ impl Clone for Box<dyn Payload> {
 }
 
 impl Message {
-    pub fn new<T: 'static + Payload>(payload: Box<T>) -> Self {
+    pub fn new<T: 'static + Payload>(payload: T) -> Self {
         Message {
             code: TypeId::of::<T>(),
-            data: payload,
+            data: Box::new(payload),
         }
     }
 
@@ -79,6 +80,13 @@ impl Payload for Empty {}
 pub struct Exit {}
 
 impl Payload for Exit {}
+
+#[derive(Debug, Clone)]
+pub struct MainWindow {
+    pub window_id: WindowId
+}
+
+impl Payload for MainWindow {}
 
 #[derive(Debug, Clone)]
 pub struct Text {

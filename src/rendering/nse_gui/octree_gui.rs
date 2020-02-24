@@ -1,31 +1,32 @@
-use imgui::*;
-use winit::event::Event;
-use std::sync::{Mutex, Arc};
+use std::cell::{Cell, RefCell};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
-use crate::core::{System, Filter, Message};
-
-use crate::NSE;
-use crate::rendering::RenderSystem;
+use glium::{Display, Surface};
+use glium::glutin;
+use glium::glutin::event::WindowEvent;
+use glium::glutin::event_loop::{ControlFlow, EventLoop};
+use glium::glutin::window::WindowBuilder;
+use imgui::*;
+use imgui::{Context, FontConfig, FontGlyphRanges, FontSource, Ui};
+use imgui::StyleColor::Button;
 //use imgui_gfx_renderer::Shaders;
 //use imgui_rs_vulkan_renderer::Renderer;
 //use imgui_glium_renderer::glium::Display;
 use imgui_glium_renderer::glium::*;
-//use imgui_glium_renderer::glium::Display;
-
-use glium::glutin;
-use glium::glutin::event::{WindowEvent};
-use glium::glutin::event_loop::{ControlFlow, EventLoop};
-use glium::glutin::window::WindowBuilder;
-use glium::{Display, Surface};
-use imgui::{Context, FontConfig, FontGlyphRanges, FontSource, Ui};
 use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use vulkano_win::VkSurfaceBuild;
+use winit::event::{ElementState, Event, VirtualKeyCode};
+use winit::event::WindowEvent::KeyboardInput;
 use winit::platform::desktop::EventLoopExtDesktop;
-use std::cell::{Cell, RefCell};
-use imgui::StyleColor::Button;
-use std::thread;
+
+use crate::core::{Filter, Message, System};
+use crate::NSE;
+use crate::rendering::RenderSystem;
+
+//use imgui_glium_renderer::glium::Display;
 
 pub struct OctreeGuiSystem {
     imgui: Context,
@@ -33,18 +34,13 @@ pub struct OctreeGuiSystem {
     render_system: Arc<Mutex<RenderSystem>>,
     renderer: Renderer,
     display: glium::Display,
-
-    event_loop: EventLoop<()>
 }
 
 impl OctreeGuiSystem {
     pub fn new(nse: &NSE, render_system: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
 
-        let mut event_loop = EventLoop::new();
-//        let render_system_lock = render_system.lock().unwrap();
-//        let mut main_window = render_system_lock.surface.window();
-
         let mut imgui = Context::create();
+
         // configure imgui-rs Context if necessary
         imgui.set_ini_filename(None);
 
@@ -83,43 +79,23 @@ impl OctreeGuiSystem {
 
         let renderer = Renderer::init(&mut imgui, &display).expect("Failed to initialize renderer");
 
-//        drop(render_system_lock);
-
         Arc::new(Mutex::new(OctreeGuiSystem {
             imgui,
             platform,
             render_system,
             renderer,
             display,
-
-            event_loop,
         }))
     }
 }
 
 impl System for OctreeGuiSystem {
     fn get_filter(&mut self) -> Vec<Filter> { vec![] }
+
     fn handle_input(&mut self, _event: &Event<()>) {
-        let el = &mut self.event_loop;
         let platform = &mut self.platform;
         let gl_window = self.display.gl_window();
         let imgui = &mut self.imgui;
-
-//        el.run_return(|event, _, control_flow| match event {
-//            Event::MainEventsCleared => {
-//                platform.prepare_frame(imgui.io_mut(), &gl_window.window()) // step 4
-//                    .expect("Failed to prepare frame");
-//
-//                gl_window.window().request_redraw();
-//            }
-//            Event::WindowEvent {
-//                event: WindowEvent::CloseRequested,
-//                ..
-//            } => *control_flow = ControlFlow::Exit,
-//            event => {
-//                platform.handle_event(imgui.io_mut(), &gl_window.window(), &event); // step 3
-//            }
-//        });
 
         match _event {
             Event::MainEventsCleared => {
@@ -127,17 +103,44 @@ impl System for OctreeGuiSystem {
                     .expect("Failed to prepare frame");
 
                 gl_window.window().request_redraw();
-            },
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id
+            } => {
+                if *window_id == self.display.gl_window().window().id() {
+                    println!("Close Octree Config Window");
+
+                    self.display.gl_window().window().set_visible(false);
+                    return;
+                }
+            }
+            Event::WindowEvent { event, window_id } => {
+                match event {
+                    WindowEvent::KeyboardInput { input, .. } => {
+                        match input {
+                            | winit::event::KeyboardInput { virtual_keycode, state, .. } => {
+                                match (virtual_keycode, state) {
+                                    | (Some(VirtualKeyCode::F12), ElementState::Pressed) => {
+                                        println!("Open Octree Config Window");
+                                        self.display.gl_window().window().set_visible(true);
+                                    }
+                                    _ => ()
+                                }
+                            }
+                            _ => ()
+                        }
+                    }
+                    _ => ()
+                }
+            }
             _ => ()
         }
 
         platform.handle_event(imgui.io_mut(), &gl_window.window(), &_event); // step 3
-
-
     }
 
-    fn consume_messages(&mut self, _: &Vec<Message>) {
-    }
+    fn consume_messages(&mut self, _: &Vec<Message>) {}
 
     fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, _delta_time: Duration) {
         let ui = self.imgui.frame();
@@ -151,7 +154,7 @@ impl System for OctreeGuiSystem {
             .build(&ui, || {
                 ui.text(im_str!("Hello world! {}", _delta_time.as_millis()));
                 ui.text(im_str!("This...is...imgui-rs!"));
-                ui.button(im_str!("Test"), [50.0, 10.0]);
+                ui.button(im_str!("Test"), [0.0, 0.0]);
                 ui.separator();
                 let mouse_pos = ui.io().mouse_pos;
                 ui.text(format!(

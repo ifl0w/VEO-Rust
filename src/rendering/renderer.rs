@@ -31,15 +31,15 @@ use vulkano_win::VkSurfaceBuild;
 //use winit::{Event, EventsLoop, Window, WindowBuilder};
 use winit::dpi::LogicalSize;
 
-use crate::core::{Filter, System};
+use crate::core::{Filter, System, Message, MainWindow, Exit};
 use crate::NSE;
 use crate::rendering::{Camera, CameraDataUbo, InstanceData, Mesh, Octree, Transformation, Vertex};
 use imgui::Context;
 use imgui_winit_support::{WinitPlatform, HiDpiMode};
 use std::ops::Deref;
 use winit::window::{WindowBuilder, Window};
-use winit::event::Event;
-use winit::event_loop::EventLoop;
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::{EventLoop, ControlFlow};
 use vulkano::descriptor::PipelineLayoutAbstract;
 
 // Constants
@@ -123,6 +123,7 @@ pub struct RenderSystem {
     #[allow(dead_code)]
     start_time: Instant,
 
+    messages: Vec<Message>,
 }
 
 impl System for RenderSystem {
@@ -134,8 +135,30 @@ impl System for RenderSystem {
         ]
     }
 
-    fn handle_input(&mut self, _event: &Event<()>) {
+    fn get_messages(&mut self) -> Vec<Message> {
+        let mut ret = vec![];
+        if !self.messages.is_empty() {
+            ret = self.messages.clone();
+            self.messages = vec![];
+        }
 
+        ret
+    }
+
+    fn handle_input(&mut self, event: &Event<()>) {
+        match event {
+            Event::WindowEvent { event, window_id } => {
+                if *window_id == self.surface.window().id() {
+                    match event {
+                        | WindowEvent::CloseRequested => {
+                            self.messages = vec![Message::new(Exit {})];
+                        }
+                        | _ => {}
+                    }
+                }
+            },
+            _ => ()
+        }
     }
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _: Duration) {
@@ -230,6 +253,8 @@ impl RenderSystem {
         let mut platform = WinitPlatform::init(&mut imgui); // step 1
         platform.attach_window(imgui.io_mut(), surface.window(), HiDpiMode::Default); // step 2
 
+        let messages = vec![Message::new(MainWindow { window_id: surface.window().id() })];
+
         let rs = RenderSystem {
             instance,
             debug_callback,
@@ -264,6 +289,8 @@ impl RenderSystem {
             recreate_swap_chain: false,
 
             start_time,
+
+            messages,
         };
 
         Arc::new(Mutex::new(rs))
