@@ -23,6 +23,7 @@ fn main() {
     engine.add_system(render_system.clone());
     engine.add_system(fps_camera_system.clone());
     engine.add_system(octree_sys.clone());
+    engine.add_system(octree_gui_system.clone());
 
     // add camera
     let camera = Entity::new();

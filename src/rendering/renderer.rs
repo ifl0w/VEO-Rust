@@ -85,7 +85,7 @@ type VertexDefinition = OneVertexOneInstanceDefinition::<Vertex, InstanceData>;
 //                          PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<InstanceData>>>);
 
 pub struct RenderSystem {
-    instance: Arc<Instance>,
+    pub(in crate::rendering) instance: Arc<Instance>,
     #[allow(unused)]
     debug_callback: Option<DebugCallback>,
 
