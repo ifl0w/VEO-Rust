@@ -221,7 +221,7 @@ impl OctreeSystem {
         }))
     }
 
-    fn generate_instance_data(node: &Option<Node>) -> Vec<InstanceData> {
+    fn generate_instance_data(node: &Option<Node>, scale: Vector3<f32>) -> Vec<InstanceData> {
         if node.is_none() {
             return vec![];
         }
@@ -235,7 +235,7 @@ impl OctreeSystem {
             children.iter().enumerate().for_each(|(_i, child)| {
                 match child {
                     Some(_) => {
-                        let new_mat = &mut OctreeSystem::generate_instance_data(child);
+                        let new_mat = &mut OctreeSystem::generate_instance_data(child, scale);
                         model_matrices.append(new_mat);
                     }
                     None => {}
@@ -249,7 +249,8 @@ impl OctreeSystem {
 //                model_matrix: mat.into()
 //            });
         } else {
-            let mat = Matrix4::from_translation(node_copy.position)
+            let mat = Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
+                * Matrix4::from_translation(node_copy.position)
                 * Matrix4::from_scale(node_copy.scale.x);
             model_matrices.push(InstanceData {
                 model_matrix: mat.into()
@@ -295,7 +296,8 @@ impl System for OctreeSystem {
                 if octree.instance_data_buffer.is_none() {
                     { // scope to enclose mutex
                         let root = octree.root.lock().unwrap();
-                        let model_matrices = OctreeSystem::generate_instance_data(&root);
+                        let mut model_matrices = OctreeSystem::generate_instance_data(&root, octree.size);
+
 
                         octree.instance_data_buffer = Some(Arc::new(
                             self.render_sys.lock().unwrap().instance_buffer_pool.chunk(model_matrices).unwrap()));

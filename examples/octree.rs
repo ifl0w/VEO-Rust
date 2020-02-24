@@ -1,4 +1,4 @@
-use cgmath::Vector3;
+use cgmath::{Vector3, Quaternion, Euler, Deg};
 
 use nse;
 use nse::core::Entity;
@@ -29,14 +29,17 @@ fn main() {
     let camera = Entity::new();
     camera.lock().unwrap()
         .add_component(Camera::new(0.1, 1000.0, 90.0, [800.0, 600.0]))
-        .add_component(Transformation::new().position(Vector3::new(0.0, 0.0, 3.0)));
+        .add_component(Transformation::new()
+            .position(Vector3::new(0.0, 10.0, 30.0))
+            .rotation(Quaternion::from(Euler::new(Deg(-15.0), Deg(0.0), Deg(0.0))))
+        );
     engine.add_entity(camera);
 
     // add octree
     let octree = Entity::new();
-    let size = Vector3::new(50.0, 50.0, 50.0);
+    let size = Vector3::new(25.0, 25.0, 25.0);
     octree.lock().unwrap()
-        .add_component(Octree::new(4, None))
+        .add_component(Octree::new(4, Some(size)))
         .add_component(Transformation::new().position(size / 2.0))
         .add_component(Mesh::new::<Cube>(&render_system.lock().unwrap()));
     engine.add_entity(octree);
