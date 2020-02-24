@@ -2,6 +2,7 @@ pub use entity_manager::Component;
 pub use entity_manager::Entity;
 pub use entity_manager::EntityManager;
 pub use entity_manager::EntityRef;
+pub use message_manager::Payload;
 pub use message_manager::Exit;
 pub use message_manager::MainWindow;
 pub use message_manager::Message;

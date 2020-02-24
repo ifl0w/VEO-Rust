@@ -10,6 +10,7 @@ use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, System};
 use crate::rendering::{Camera, InstanceData, RenderSystem, Transformation};
+use crate::rendering::nse_gui::octree_gui::UpdateOctree;
 
 //use winit::Event;
 
@@ -52,29 +53,32 @@ pub struct Octree {
 impl Component for Octree {}
 
 impl Octree {
-    pub fn new(size: Vector3<f32>) -> Self {
-        let oct = Octree {
+    pub fn new(depth: i32, size: Option<Vector3<f32>>) -> Self {
+
+        let size = if size.is_none() {
+            vec3(0.0, 0.0, 0.0)
+        } else {
+            size.unwrap()
+        };
+
+        let mut oct = Octree {
             size,
             root: Arc::new(Mutex::new(None)),
             instance_data_buffer: None,
         };
 
-        Octree::fill_octree(oct)
+        oct.root = Arc::new(Mutex::new(Octree::traverse(
+            Some(Node::new()),
+            vec3(0.0, 0.0, 0.0),
+            0,
+            depth)));
+
+        oct
     }
 
     pub fn count_leaves(&self) -> i64 {
         let root = self.root.lock().unwrap();
         (*root).as_ref().unwrap().count_leaves()
-    }
-
-    fn fill_octree(mut octree: Octree) -> Octree {
-        octree.root = Arc::new(Mutex::new(Octree::traverse(
-            Some(Node::new()),
-            vec3(0.0, 0.0, 0.0),
-            0,
-            7)));
-
-        octree.clone()
     }
 
     fn traverse(node: Option<Node>, translate: Vector3<f32>, current_depth: i32, target_depth: i32) -> Option<Node> {
@@ -202,13 +206,18 @@ impl Node {
 }
 
 pub struct OctreeSystem {
-    render_sys: Arc<Mutex<RenderSystem>>
+    render_sys: Arc<Mutex<RenderSystem>>,
+
+    update_octrees: bool,
+    octree_depth: i32,
 }
 
 impl OctreeSystem {
     pub fn new(render_sys: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(OctreeSystem {
-            render_sys
+            render_sys,
+            update_octrees: false,
+            octree_depth: 5,
         }))
     }
 
@@ -259,7 +268,15 @@ impl System for OctreeSystem {
         ]
     }
     fn handle_input(&mut self, _event: &Event<()>) {}
-    fn consume_messages(&mut self, _: &Vec<Message>) {}
+
+    fn consume_messages(&mut self, messages: &Vec<Message>) {
+        messages.iter().for_each(|msg| {
+            if msg.is_type::<UpdateOctree>() {
+                self.update_octrees = true;
+                self.octree_depth = msg.get_payload::<UpdateOctree>().unwrap().octree_depth
+            }
+        });
+    }
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _delta_time: Duration) {
         let entities = &filter[0].lock().unwrap().entities;
@@ -269,6 +286,11 @@ impl System for OctreeSystem {
                 let mut entitiy_mutex = entity.lock().unwrap();
                 let _transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
                 let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
+
+                if self.update_octrees {
+                    octree = Octree::new(self.octree_depth, Some(octree.size));
+                    self.update_octrees = false;
+                }
 
                 if octree.instance_data_buffer.is_none() {
                     { // scope to enclose mutex

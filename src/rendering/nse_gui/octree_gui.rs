@@ -14,10 +14,11 @@ use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use winit::event::{ElementState, Event, VirtualKeyCode};
 
-use crate::core::{Filter, Message, System};
+use crate::core::{Filter, Message, System, Payload};
 use crate::NSE;
 use crate::rendering::RenderSystem;
 use std::collections::VecDeque;
+use std::ops::RangeInclusive;
 
 //use imgui_glium_renderer::glium::Display;
 
@@ -27,8 +28,12 @@ pub struct OctreeGuiSystem {
     renderer: Renderer,
     display: glium::Display,
 
+    // octree data
     octree_depth: i32,
     frame_times: VecDeque<f32>,
+
+    // message passing
+    messages: Vec<Message>,
 }
 
 impl OctreeGuiSystem {
@@ -83,7 +88,9 @@ impl OctreeGuiSystem {
             display,
 
             octree_depth: 5,
-            frame_times
+            frame_times,
+
+            messages: vec![],
         }))
     }
 }
@@ -147,6 +154,8 @@ impl System for OctreeGuiSystem {
         let gl_window = self.display.gl_window();
         // application-specific rendering *under the UI*
 
+        let messages = &mut self.messages;
+
         let octree_depth = &mut self.octree_depth;
 
         let frame_times = &mut self.frame_times;
@@ -165,8 +174,12 @@ impl System for OctreeGuiSystem {
                 // Plot some values
                 ui.plot_lines(im_str!("Frame Times"), &f_times[..]).build();
 
-                ui.input_int(im_str!("Octree Depth"), octree_depth).build();
-                ui.button(im_str!("Update Octree"), [0.0, 0.0]);
+                Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 10))
+                    .build(&ui, octree_depth);
+
+                if ui.button(im_str!("Update Octree"), [0.0, 0.0]) {
+                    messages.push(Message::new(UpdateOctree { octree_depth: *octree_depth }));
+                };
 
                 ui.separator();
                 let mouse_pos = ui.io().mouse_pos;
@@ -191,5 +204,19 @@ impl System for OctreeGuiSystem {
 
         target.finish().expect("Failed to swap buffers");
     }
-    fn get_messages(&mut self) -> Vec<Message> { vec![] }
+
+    fn get_messages(&mut self) -> Vec<Message> {
+        let ret = self.messages.clone();
+
+        self.messages.clear();
+
+        ret
+    }
 }
+
+#[derive(Debug, Clone)]
+pub struct UpdateOctree {
+    pub octree_depth: i32
+}
+
+impl Payload for UpdateOctree {}
