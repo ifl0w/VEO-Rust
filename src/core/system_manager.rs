@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-//use winit::Event;
+use winit::event::Event;
 
 use crate::core::{EntityRef, Message};
-use winit::event::Event;
-use winit::event_loop::ControlFlow;
+
+//use winit::Event;
 
 #[macro_export]
 macro_rules! filter {
@@ -53,7 +53,7 @@ impl Filter {
         match index {
             Some(idx) => {
                 self.entities.remove(idx);
-            },
+            }
             None => ()
         }
     }

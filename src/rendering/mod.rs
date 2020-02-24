@@ -7,10 +7,10 @@ pub use mesh::Mesh;
 pub use mesh::MeshGenerator;
 pub use mesh::Plane;
 pub use mesh::Vertex;
-pub use renderer::RenderSystem;
+pub use nse_gui::octree_gui::OctreeGuiSystem;
 pub use octree::Octree;
 pub use octree::OctreeSystem;
-pub use nse_gui::octree_gui::OctreeGuiSystem;
+pub use renderer::RenderSystem;
 
 mod renderer;
 mod mesh;

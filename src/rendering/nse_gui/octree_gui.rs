@@ -1,26 +1,18 @@
-use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 
 use glium::{Display, Surface};
 use glium::glutin;
 use glium::glutin::event::WindowEvent;
-use glium::glutin::event_loop::{ControlFlow, EventLoop};
 use glium::glutin::window::WindowBuilder;
 use imgui::*;
-use imgui::{Context, FontConfig, FontGlyphRanges, FontSource, Ui};
-use imgui::StyleColor::Button;
+use imgui::{Context, FontConfig, FontGlyphRanges, FontSource};
 //use imgui_gfx_renderer::Shaders;
 //use imgui_rs_vulkan_renderer::Renderer;
 //use imgui_glium_renderer::glium::Display;
-use imgui_glium_renderer::glium::*;
 use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use vulkano_win::VkSurfaceBuild;
 use winit::event::{ElementState, Event, VirtualKeyCode};
-use winit::event::WindowEvent::KeyboardInput;
-use winit::platform::desktop::EventLoopExtDesktop;
 
 use crate::core::{Filter, Message, System};
 use crate::NSE;
@@ -31,14 +23,12 @@ use crate::rendering::RenderSystem;
 pub struct OctreeGuiSystem {
     imgui: Context,
     platform: WinitPlatform,
-    render_system: Arc<Mutex<RenderSystem>>,
     renderer: Renderer,
     display: glium::Display,
 }
 
 impl OctreeGuiSystem {
-    pub fn new(nse: &NSE, render_system: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
-
+    pub fn new(nse: &NSE, _render_system: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
         let mut imgui = Context::create();
 
         // configure imgui-rs Context if necessary
@@ -82,7 +72,6 @@ impl OctreeGuiSystem {
         Arc::new(Mutex::new(OctreeGuiSystem {
             imgui,
             platform,
-            render_system,
             renderer,
             display,
         }))
@@ -115,20 +104,19 @@ impl System for OctreeGuiSystem {
                     return;
                 }
             }
-            Event::WindowEvent { event, window_id } => {
+            Event::WindowEvent { event, .. } => {
                 match event {
                     WindowEvent::KeyboardInput { input, .. } => {
                         match input {
                             | winit::event::KeyboardInput { virtual_keycode, state, .. } => {
                                 match (virtual_keycode, state) {
-                                    | (Some(VirtualKeyCode::F12), ElementState::Pressed) => {
+                                    (Some(VirtualKeyCode::F12), ElementState::Pressed) => {
                                         println!("Open Octree Config Window");
                                         self.display.gl_window().window().set_visible(true);
                                     }
                                     _ => ()
                                 }
                             }
-                            _ => ()
                         }
                     }
                     _ => ()

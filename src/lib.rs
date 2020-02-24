@@ -10,16 +10,12 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use winit::event::{Event, WindowEvent};
+use winit::event::Event;
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::platform::desktop::EventLoopExtDesktop;
 
 use crate::core::{EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
-use std::cell::{Cell, RefCell};
-use std::ops::{DerefMut, AddAssign};
-use winit::window::Window;
 
 //use winit::{Event, EventsLoop, WindowEvent};
 
@@ -45,7 +41,7 @@ impl NSE {
 
             event_loop: EventLoop::new(),
 
-            delta_time: Arc::new(Mutex::new(Duration::new(0,0))),
+            delta_time: Arc::new(Mutex::new(Duration::new(0, 0))),
         };
 
         nse
@@ -61,7 +57,6 @@ impl NSE {
         let delta_time = self.delta_time.clone();
 
         self.event_loop.run(move |event, _, control_flow| {
-
             let system_manager_lock = system_manager.lock().unwrap();
 
             let frame_start = Instant::now();
@@ -105,9 +100,9 @@ impl NSE {
 
                     let frame_end = Instant::now();
 
-                    *delta_time.lock().unwrap() = (frame_end - frame_start)
+                    *delta_time.lock().unwrap() = frame_end - frame_start
 //                    println!("Frame time: {} ", (frame_end - frame_start).as_millis());
-                },
+                }
                 _ => (),
             }
         });

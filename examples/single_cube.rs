@@ -1,13 +1,13 @@
 use cgmath::{Deg, Euler, Quaternion, Vector3};
 
 use nse;
-use nse::core::{Entity};
+use nse::core::Entity;
 use nse::NSE;
 use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation};
 
-mod shared;
-
 use crate::shared::fps_camera_system::FPSCameraSystem;
+
+mod shared;
 
 fn main() {
     let mut engine: NSE = NSE::new();
@@ -21,7 +21,7 @@ fn main() {
     let entity = Entity::new();
     entity.lock().unwrap()
         .add_component(Mesh::new::<Cube>(&render_system.lock().unwrap()))
-        .add_component(Transformation::new() );
+        .add_component(Transformation::new());
     engine.add_entity(entity);
 
     let camera = Entity::new();

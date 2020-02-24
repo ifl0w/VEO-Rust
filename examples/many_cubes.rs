@@ -1,13 +1,13 @@
-use cgmath::{Vector3};
+use cgmath::Vector3;
 
 use nse;
-use nse::core::{Entity};
+use nse::core::Entity;
 use nse::NSE;
 use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation};
 
-mod shared;
-
 use crate::shared::fps_camera_system::FPSCameraSystem;
+
+mod shared;
 
 fn main() {
     let mut engine: NSE = NSE::new();

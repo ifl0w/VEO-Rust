@@ -1,17 +1,17 @@
 use std::convert::{TryFrom, TryInto};
+use std::f32::consts::PI;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Matrix4, vec3, Vector3};
 use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
 use vulkano::memory::pool::StdMemoryPool;
-//use winit::Event;
+use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, System};
 use crate::rendering::{Camera, InstanceData, RenderSystem, Transformation};
-use std::f32::consts::PI;
-use winit::event::Event;
 
+//use winit::Event;
 
 enum NodePosition {
     Flt = 0,
@@ -115,7 +115,7 @@ impl Octree {
                         let scale = 6.0 * PI;
                         let scale_y = 0.25;
 
-                        let r = f32::sqrt( x * x + y * y);
+                        let r = f32::sqrt(x * x + y * y);
                         let r_val = if r == 0.0 { 1.0 } else { (r * scale).sin() / (r * scale) };
                         r_val * scale_y
                     };

@@ -37,12 +37,11 @@ pub struct Transformation {
     pub scale: Vector3<f32>,
     pub rotation: Quaternion<f32>,
 
-    pub model_matrix: Matrix4<f32>
+    pub model_matrix: Matrix4<f32>,
 }
 
-impl Transformation {
+impl Transformation {}
 
-}
 impl Default for Transformation {
     fn default() -> Self {
         Transformation {
@@ -62,10 +61,9 @@ impl Default for Transformation {
 impl Component for Transformation {}
 
 impl Transformation {
-
     pub fn new() -> Self {
         Transformation {
-            .. Default::default()
+            ..Default::default()
         }
     }
 

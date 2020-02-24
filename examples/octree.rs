@@ -1,13 +1,13 @@
-use cgmath::{Vector3};
+use cgmath::Vector3;
 
 use nse;
-use nse::core::{Entity};
+use nse::core::Entity;
 use nse::NSE;
-use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation, OctreeSystem, Octree, OctreeGuiSystem};
-
-pub mod shared;
+use nse::rendering::{Camera, Cube, Mesh, Octree, OctreeGuiSystem, OctreeSystem, RenderSystem, Transformation};
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
+
+pub mod shared;
 
 fn main() {
     let mut engine: NSE = NSE::new();

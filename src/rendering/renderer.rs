@@ -2,10 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use imgui::Context;
+use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, CpuBufferPool};
 use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
-use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSetBuf, UnsafeDescriptorSetLayout};
+use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSetBuf};
+use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
 use vulkano::format::{ClearValue, Format};
 use vulkano::framebuffer::{
@@ -20,27 +23,22 @@ use vulkano::instance::debug::{DebugCallback, MessageSeverity, MessageType};
 use vulkano::memory::pool::StdMemoryPool;
 use vulkano::pipeline::{
     GraphicsPipeline,
-    GraphicsPipelineAbstract,
     viewport::Viewport,
 };
 use vulkano::pipeline::depth_stencil::DepthStencil;
 use vulkano::pipeline::vertex::OneVertexOneInstanceDefinition;
-use vulkano::swapchain::{acquire_next_image, AcquireError, Capabilities, ColorSpace, CompositeAlpha, PresentMode, SupportedPresentModes, Surface, Swapchain, FullscreenExclusive};
+use vulkano::swapchain::{acquire_next_image, AcquireError, Capabilities, ColorSpace, CompositeAlpha, FullscreenExclusive, PresentMode, SupportedPresentModes, Surface, Swapchain};
 use vulkano::sync::{self, GpuFuture, SharingMode};
 use vulkano_win::VkSurfaceBuild;
-//use winit::{Event, EventsLoop, Window, WindowBuilder};
-use winit::dpi::LogicalSize;
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::EventLoop;
+use winit::window::{Window, WindowBuilder};
 
-use crate::core::{Filter, System, Message, MainWindow, Exit};
+use crate::core::{Exit, Filter, MainWindow, Message, System};
 use crate::NSE;
 use crate::rendering::{Camera, CameraDataUbo, InstanceData, Mesh, Octree, Transformation, Vertex};
-use imgui::Context;
-use imgui_winit_support::{WinitPlatform, HiDpiMode};
-use std::ops::Deref;
-use winit::window::{WindowBuilder, Window};
-use winit::event::{Event, WindowEvent};
-use winit::event_loop::{EventLoop, ControlFlow};
-use vulkano::descriptor::PipelineLayoutAbstract;
+
+//use winit::{Event, EventsLoop, Window, WindowBuilder};
 
 // Constants
 const WINDOW_TITLE: &'static str = "NSE";
@@ -156,7 +154,7 @@ impl System for RenderSystem {
                         | _ => {}
                     }
                 }
-            },
+            }
             _ => ()
         }
     }
@@ -429,7 +427,7 @@ impl RenderSystem {
         device: &Arc<Device>,
         graphics_queue: &Arc<Queue>,
         present_queue: &Arc<Queue>,
-        old_swapchain: Option<Arc<Swapchain<Window>>>,
+        _old_swapchain: Option<Arc<Swapchain<Window>>>,
     ) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
         let physical_device = PhysicalDevice::from_index(&instance, physical_device_index).unwrap();
         let capabilities = surface.capabilities(physical_device)
@@ -471,7 +469,7 @@ impl RenderSystem {
             present_mode,
             FullscreenExclusive::Default,
             true, // clipped
-            surface_format.1
+            surface_format.1,
         ).expect("failed to create swap chain!");
 
         (swap_chain, images)

@@ -1,5 +1,5 @@
 use std::any::TypeId;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
