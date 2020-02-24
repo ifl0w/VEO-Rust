@@ -138,17 +138,19 @@ vec3 evaluateLight(Light light, Material mat, vec3 position, vec3 normal) {
 }
 
 void main() {
+    vec3 ambient_color = vec3(0.1, 0.1, 0.15);
+
     Light sun;
-    sun.color = vec3(1,1,0.8);
+    sun.color = vec3(2, 2, 1.8);
     sun.type = 0;
-    sun.direction = vec3(-1, -1, -1);
+    sun.direction = vec3(1.0, -0.5, -0.8);
 
     Material defaultMat;
-    defaultMat.albedo = vec3(0.7, 0.7, 0.7);
+    defaultMat.albedo = vec3(1, 1, 1);
     defaultMat.metallic = 0;
     defaultMat.roughness = 0.4;
 
     vec3 shadedColor = evaluateLight(sun, defaultMat, fragPosition, normalize(fragNormal));
-    outColor = vec4(shadedColor, 1.0);
+    outColor = vec4(shadedColor + ambient_color, 1.0);
     //outColor = vec4(fragColor, 1.0);
 }
