@@ -2,8 +2,11 @@ extern crate cgmath;
 #[macro_use]
 extern crate mopa;
 #[macro_use]
-extern crate vulkano;
-extern crate vulkano_win;
+extern crate gfx_hal;
+
+#[macro_use] extern crate glsl_to_spirv_macros;
+#[macro_use] extern crate glsl_to_spirv_macros_impl;
+
 extern crate winit;
 
 use std::any::TypeId;

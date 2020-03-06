@@ -5,9 +5,9 @@ use nse::rendering::RenderSystem;
 fn main() {
     let mut engine: NSE = NSE::new();
 
-    let render_system = Box::new(RenderSystem::new(&engine));
+    let render_system = RenderSystem::new(&engine);
 
-    engine.system_manager.add_system(render_system);
+    engine.add_system(render_system);
 
     engine.run();
 }

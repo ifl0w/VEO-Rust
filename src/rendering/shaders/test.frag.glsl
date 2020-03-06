@@ -146,7 +146,7 @@ void main() {
     sun.direction = vec3(1.0, -0.5, -0.8);
 
     Material defaultMat;
-    defaultMat.albedo = vec3(1, 1, 1);
+    defaultMat.albedo = fragNormal; //vec3(1, 1, 1);
     defaultMat.metallic = 0;
     defaultMat.roughness = 0.4;
 

@@ -299,8 +299,8 @@ impl System for OctreeSystem {
                         let model_matrices = OctreeSystem::generate_instance_data(&root, octree.size);
 
 
-                        octree.instance_data_buffer = Some(Arc::new(
-                            self.render_sys.lock().unwrap().instance_buffer_pool.chunk(model_matrices).unwrap()));
+//                        octree.instance_data_buffer = Some(Arc::new(
+//                            self.render_sys.lock().unwrap().instance_buffer_pool.chunk(model_matrices).unwrap()));
                     }
 
                     entitiy_mutex.add_component(octree);

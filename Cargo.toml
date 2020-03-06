@@ -11,15 +11,18 @@ crossbeam = "0.7" # multithreading library
 mopa = "0.2.2"
 
 #winit = "0.20.0-alpha5"
-winit = "0.21.0"
+winit = { version = "0.21.0", features = ["web-sys"]}
 
 vulkano = "0.17.0"
-vulkano-win = "0.17.0"
+#vulkano-win = "0.17.0"
 vulkano-shaders = "0.17.0"
+
+gfx-hal = "0.4.1"
+glsl-to-spirv-macros = "0.1.1"
+glsl-to-spirv-macros-impl = "0.1.0"
 
 cgmath = "0.17.0"
 
-gfx = "0.18.2"
 glium = "0.26"
 imgui = "0.3.0"
 imgui-winit-support = "0.3.0"
@@ -27,3 +30,11 @@ imgui-winit-support = "0.3.0"
 #imgui-rs-vulkan-renderer = "0.3.0"
 imgui-glium-renderer = "0.3.0"
 glutin = "0.23.0"
+
+[dependencies.gfx-backend-vulkan]
+version = "0.4.2"
+features = ["x11"]
+optional = true
+
+[features]
+vulkan = ["gfx-backend-vulkan"]
