@@ -1,6 +1,9 @@
 use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector3, Vector4};
 
 use crate::core::Component;
+use std::sync::{Arc, Mutex};
+use crate::rendering::RenderSystem;
+use crate::rendering::utility::Uniform;
 
 #[derive(Clone)]
 pub struct Camera {
@@ -101,18 +104,18 @@ impl Transformation {
 }
 
 #[derive(Copy, Clone)]
-pub struct CameraDataUbo {
+pub struct CameraData {
     pub view: Matrix4<f32>,
     pub proj: Matrix4<f32>,
     pub position: Vector4<f32>,
 }
 
-impl CameraDataUbo {
+impl CameraData {
     pub fn new(camera: &Camera, transform: &Transformation) -> Self {
         let mut p = camera.projection;
         p.y.y *= -1.0;
 
-        CameraDataUbo {
+        CameraData {
             view: transform.get_model_matrix().inverse_transform().unwrap(),
             proj: p,
             position: transform.position.extend(0.0),
@@ -120,9 +123,9 @@ impl CameraDataUbo {
     }
 }
 
-impl Default for CameraDataUbo {
+impl Default for CameraData {
     fn default() -> Self {
-        CameraDataUbo {
+        CameraData {
             view: Matrix4::identity(),
             proj: Matrix4::identity(),
             position: Vector4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0}

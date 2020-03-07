@@ -26,10 +26,16 @@ fn main() {
     engine.add_system(render_system.clone());
     engine.add_system(fps_camera_system.clone());
 
-    let entity = Entity::new();
+    let mut entity = Entity::new();
     entity.lock().unwrap()
         .add_component(Mesh::new::<Cube>(&render_system))
         .add_component(Transformation::new());
+    engine.add_entity(entity);
+
+    entity = Entity::new();
+    entity.lock().unwrap()
+        .add_component(Mesh::new::<Cube>(&render_system))
+        .add_component(Transformation::new().position(Vector3::new(3.0, 0.0, 0.0)));
     engine.add_entity(entity);
 
     let camera = Entity::new();

@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use crate::rendering::mesh::MeshID;
 use std::sync::{Arc, Weak};
 use std::mem::ManuallyDrop;
-use crate::rendering::utility::{Vertex, Index, GPUBuffer};
+use crate::rendering::utility::{Vertex, Index, GPUBuffer, Shader};
 
 use gfx_hal::adapter::{MemoryType, Adapter};
 use gfx_hal::adapter::PhysicalDevice;
@@ -30,44 +29,53 @@ use gfx_hal::{
 };
 
 use std::{mem, ptr, iter};
+use vulkano::device::DeviceOwned;
+use crate::rendering::renderer::Renderer;
 
 
 pub struct ResourceManager<B>
     where B: gfx_hal::Backend {
 
     device: Arc<B::Device>,
-    adapter:  Arc<Adapter<B>>,
+    adapter: Arc<Adapter<B>>,
 
-    pub(in crate::rendering) meshes: HashMap<MeshID, Arc<GPUMesh<B>>>
+    pub(in crate::rendering) meshes: HashMap<MeshID, Arc<GPUMesh<B>>>,
+//    pub(in crate::rendering) buffers: HashMap<BufferID, Arc<GPUBuffer<B>>>,
+//    pub(in crate::rendering) shaders: HashMap<ShaderID, Arc<Shader<B>>>,
 }
 
 impl<B> ResourceManager<B>
     where B: gfx_hal::Backend {
-    pub fn new(device: Arc<B::Device>, adapter: Arc<Adapter<B>>) -> Self {
+    pub fn new(renderer: &Renderer<B>) -> Self {
         ResourceManager {
-            device,
-            adapter,
-            meshes: HashMap::new()
+            device: renderer.device.clone(),
+            adapter: renderer.adapter.clone(),
+            meshes: HashMap::new(),
+//            buffers: HashMap::new(),
         }
     }
 }
+
+pub type MeshID = u64;
 
 pub trait MeshGenerator {
     fn get_vertices() -> Vec<Vertex>;
     fn get_indices() -> Vec<Index>;
 
-    fn generate<T: MeshGenerator, B: gfx_hal::Backend>(id: MeshID, rm: &mut ResourceManager<B>)
-        -> Weak<GPUMesh<B>> {
+    fn generate<T: MeshGenerator, B: gfx_hal::Backend>(rm: &mut ResourceManager<B>)
+        -> (MeshID, Weak<GPUMesh<B>>) {
         let device = rm.device.clone();
         let adapter = rm.adapter.clone();
 
         let m  = Arc::new(GPUMesh::new::<T>(device, adapter));
 
+        let id = rm.meshes.len() as u64;
+
         // store in map
         rm.meshes.insert(id, m.clone());
 
         // return non owning pointer
-        Arc::downgrade(&m)
+        (id, Arc::downgrade(&m))
     }
 }
 

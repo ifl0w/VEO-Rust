@@ -1,17 +1,24 @@
-use gfx_hal::{Backend, memory, buffer, pso};
-use std::sync::Arc;
 use gfx_hal::device::Device;
-use gfx_hal::adapter::MemoryType;
+use gfx_hal::adapter::PhysicalDevice;
+use gfx_hal::adapter::{MemoryType, Adapter};
+use gfx_hal::{Backend, memory, buffer, pso};
+use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
+
+use std::sync::Arc;
 use std::mem::{size_of, ManuallyDrop};
-use std::ptr;
+use std::{ptr, iter};
 use std::borrow::{Borrow, BorrowMut};
-use gfx_hal::pso::Descriptor;
+
+use crate::rendering::renderer::Renderer;
 
 
 pub struct GPUBuffer<B: Backend> {
+    device: Arc<B::Device>,
+    adapter: Arc<Adapter<B>>,
+
     buffer: ManuallyDrop<B::Buffer>,
     memory: ManuallyDrop<B::Memory>,
-    device: Arc<B::Device>,
+
     size: u64,
 }
 
@@ -21,14 +28,15 @@ impl<B: Backend> GPUBuffer<B> {
     }
 
     pub unsafe fn new<T>(
-        device: Arc<B::Device>,
+        device: &Arc<B::Device>,
+        adapter: &Arc<Adapter<B>>,
         data_source: &[T],
         usage: buffer::Usage,
-        memory_types: Vec<MemoryType>,
     ) -> Self
         where
             T: Copy,
     {
+        let memory_types = adapter.physical_device.memory_properties().memory_types;
         let memory: B::Memory;
         let mut buffer: B::Buffer;
         let size: u64;
@@ -68,9 +76,10 @@ impl<B: Backend> GPUBuffer<B> {
         }
 
         GPUBuffer {
+            device: device.clone(),
+            adapter: adapter.clone(),
             buffer: ManuallyDrop::new(buffer),
             memory: ManuallyDrop::new(memory),
-            device,
             size,
         }
     }
@@ -105,50 +114,52 @@ impl<B: Backend> Drop for GPUBuffer<B> {
     }
 }
 
-//pub struct Uniform<B: Backend> {
-//    buffers: Vec<GPUBuffer<B>>,
-//    desc: Vec<B::Descriptor>,
-//}
-//
-//impl<B: Backend> Uniform<B> {
-//    unsafe fn new<T>(
-//        device: Arc<dyn Device<B>>,
-//        memory_types: &[MemoryType],
-//        data: &[T],
-//        mut desc: DescSet<B>,
-//        binding: u32,
-//        frames: u32,
-//    ) -> Self
-//        where
-//            T: Copy,
-//    {
-//        let buffer = GPUBuffer::new(
-//            device,
-//            &data,
-//            buffer::Usage::UNIFORM,
-//            memory_types,
-//        );
-//        let buffer = Some(buffer);
-//
-//        desc.write_to_state(
-//            vec![DescSetWrite {
-//                binding,
-//                array_offset: 0,
-//                descriptors: Some(pso::Descriptor::Buffer(
-//                    buffer.as_ref().unwrap().get_buffer(),
-//                    None .. None,
-//                )),
-//            }],
-//            &mut device,
-//        );
-//
-//        Uniform {
-//            buffer,
-//            desc: Some(desc),
-//        }
-//    }
-//
-//    fn get_layout(&self) -> &B::DescriptorSetLayout {
-//        self.desc.as_ref().unwrap().get_layout()
-//    }
-//}
+pub type UniformID = u64;
+
+pub struct Uniform<B: Backend> {
+    device: Arc<B::Device>,
+    adapter: Arc<Adapter<B>>,
+
+    pub(in crate::rendering) buffers: Vec<GPUBuffer<B>>,
+}
+
+impl<B: Backend> Uniform<B> {
+    pub fn new<T>(
+        renderer: &Renderer<B>,
+        data: &[T],
+        binding: u32,
+    ) -> Self
+        where T: Copy {
+
+        let mut buffers: Vec<GPUBuffer<B>> = Vec::new();
+        for idx in 0..renderer.frames_in_flight {
+            let buffer = unsafe {
+                GPUBuffer::new(
+                    &renderer.device,
+                    &renderer.adapter,
+                    &data,
+                    buffer::Usage::UNIFORM,
+                )
+            };
+
+            unsafe {
+                renderer.device.write_descriptor_sets(iter::once(DescriptorSetWrite {
+                    set: &renderer.desc_set[idx],
+                    binding: 0,
+                    array_offset: 0,
+                    descriptors: iter::once(
+                        Descriptor::Buffer(buffer.get_buffer(), None..None)
+                    ),
+                }));
+            }
+
+            buffers.push(buffer);
+        }
+
+        Uniform {
+            device: renderer.device.clone(),
+            adapter: renderer.adapter.clone(),
+            buffers
+        }
+    }
+}

@@ -1,10 +1,13 @@
 
 //pub use uniform::Uniform;
-pub use uniform::GPUBuffer;
 mod uniform;
+pub use uniform::GPUBuffer;
+pub use uniform::UniformID;
+pub use uniform::Uniform;
 
-mod resources;
+pub mod resources;
 pub use resources::ResourceManager;
+pub use resources::MeshID;
 pub use resources::GPUMesh;
 
 pub use resources::MeshGenerator;

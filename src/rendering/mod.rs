@@ -1,5 +1,5 @@
 pub use camera::Camera;
-pub use camera::CameraDataUbo;
+pub use camera::CameraData;
 pub use camera::Transformation;
 pub use mesh::Mesh;
 pub use nse_gui::octree_gui::OctreeGuiSystem;
@@ -14,5 +14,5 @@ mod camera;
 mod octree;
 mod nse_gui;
 
-use utility::*;
+pub use utility::*;
 pub mod utility;

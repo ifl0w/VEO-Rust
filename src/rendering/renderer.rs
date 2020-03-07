@@ -69,8 +69,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::core::{Exit, Filter, MainWindow, Message, System};
 use crate::NSE;
-use crate::rendering::{Camera, CameraDataUbo, Cube, Mesh, Octree, Plane, Transformation};
-use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Vertex};
+use crate::rendering::{Camera, CameraData, Cube, Mesh, Octree, Plane, Transformation};
+use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Vertex, Uniform};
 
 use self::Backend::Instance;
 use gfx_hal::pso::Comparison::LessEqual;
@@ -82,28 +82,27 @@ pub fn wasm_main() {
     main();
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-const DIMS: window::Extent2D = window::Extent2D { width: 1024, height: 768 };
 
+/* Constants */
 const ENTRY_NAME: &str = "main";
 
-
-const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
-    aspects: f::Aspects::COLOR,
-    levels: 0..1,
-    layers: 0..1,
-};
-
-// Constants
+// Window
 const WINDOW_TITLE: &'static str = "NSE";
 const WINDOW_WIDTH: u32 = 800;
 const WINDOW_HEIGHT: u32 = 600;
+const WINDOW_DIMENSIONS: window::Extent2D = window::Extent2D { width: 1024, height: 768 };
+
+// Uniform
+const CAMERA_UNIFORM_BINDING: u32 = 0;
 
 pub struct RenderSystem {
     window: Window,
 
     pub(in crate::rendering) renderer: Renderer<Backend::Backend>,
     pub(in crate::rendering) resource_manager: ResourceManager<Backend::Backend>,
+
+    // uniforms
+    pub camera_uniform: Uniform<Backend::Backend>,
 
     messages: Vec<Message>,
 }
@@ -136,7 +135,11 @@ impl RenderSystem {
         let adapter = Arc::new(adapters.remove(0));
 
         let mut renderer = Renderer::new(Some(instance), surface, adapter.clone());
-        let mut resource_manager = ResourceManager::new(renderer.device.clone(), adapter.clone());
+        let mut resource_manager = ResourceManager::new(&renderer);
+
+        let camera_uniform = Uniform::new(&renderer,
+                                          &[CameraData::default()],
+                                          CAMERA_UNIFORM_BINDING);
 
         let messages = vec![Message::new(MainWindow { window_id: window.id() })];
 
@@ -145,6 +148,9 @@ impl RenderSystem {
 
             renderer,
             resource_manager,
+
+            // uniforms
+            camera_uniform,
 
             messages,
         };
@@ -182,7 +188,6 @@ pub struct Renderer<B: gfx_hal::Backend> {
     pub cmd_pools: Vec<B::CommandPool>,
     pub cmd_buffers: Vec<B::CommandBuffer>,
     pub mesh_cmd_buffer: Vec<B::CommandBuffer>,
-    pub camera_buffer: Vec<GPUBuffer<B>>,
     pub frames_in_flight: usize,
     pub frame: u64,
 }
@@ -272,13 +277,6 @@ impl<B> Renderer<B>
         println!("Memory types: {:?}", memory_types);
         let non_coherent_alignment = limits.non_coherent_atom_size as u64;
 
-        let mut camera_buffer: Vec<GPUBuffer<B>> = Vec::new();
-        unsafe {
-            for _ in 0 .. frames_in_flight {
-                camera_buffer.push(GPUBuffer::new(device.clone(), &[CameraDataUbo::default()], buffer::Usage::UNIFORM, memory_types.clone()))
-            }
-        };
-
         let caps = surface.capabilities(&adapter.physical_device);
         let formats = surface.supported_formats(&adapter.physical_device);
         println!("formats: {:?}", formats);
@@ -290,7 +288,7 @@ impl<B> Renderer<B>
                 .unwrap_or(formats[0])
         });
 
-        let swap_config = window::SwapchainConfig::from_caps(&caps, format, DIMS);
+        let swap_config = window::SwapchainConfig::from_caps(&caps, format, WINDOW_DIMENSIONS);
         println!("{:?}", swap_config);
         let extent = swap_config.extent;
         unsafe {
@@ -375,7 +373,7 @@ impl<B> Renderer<B>
             unsafe {
                 device.create_pipeline_layout(
                     iter::once(&*set_layout),
-                    &[(pso::ShaderStageFlags::VERTEX, 0..8)],
+                    &[],
                 )
             }
                 .expect("Can't create pipeline layout"),
@@ -471,6 +469,14 @@ impl<B> Renderer<B>
                         offset: 24,
                     },
                 });
+                pipeline_desc.attributes.push(pso::AttributeDesc {
+                    location: 2,
+                    binding: 0,
+                    element: pso::Element {
+                        format: f::Format::Rgb32Sfloat,
+                        offset: 24,
+                    },
+                });
 
                 unsafe { device.create_graphics_pipeline(&pipeline_desc, None) }
             };
@@ -504,7 +510,7 @@ impl<B> Renderer<B>
             surface: ManuallyDrop::new(surface),
             adapter,
             format,
-            dimensions: DIMS,
+            dimensions: WINDOW_DIMENSIONS,
             viewport,
             render_pass,
             pipeline,
@@ -516,7 +522,6 @@ impl<B> Renderer<B>
             cmd_pools,
             cmd_buffers,
             mesh_cmd_buffer,
-            camera_buffer,
             frames_in_flight,
             frame: 0,
         }
@@ -582,17 +587,6 @@ impl<B> Renderer<B>
                 .reset_fence(fence)
                 .expect("Failed to reset fence");
             self.cmd_pools[frame_idx].reset(false);
-        }
-
-        unsafe {
-            self.device.write_descriptor_sets(iter::once(DescriptorSetWrite {
-                set: &self.desc_set[frame_idx],
-                binding: 0,
-                array_offset: 0,
-                descriptors: iter::once(
-                    Descriptor::Buffer(self.camera_buffer[frame_idx].get_buffer(), None..None)
-                ),
-            }));
         }
 
         // Rendering
@@ -758,7 +752,7 @@ impl System for RenderSystem {
         let camera_entity = mutex.entities[0].lock().unwrap();
         let cam_cam_comp = camera_entity.get_component::<Camera>().ok().unwrap();
         let cam_trans_comp = camera_entity.get_component::<Transformation>().ok().unwrap();
-        let camera_ubo = CameraDataUbo::new(cam_cam_comp, cam_trans_comp);
+        let camera_uniform_data = CameraData::new(cam_cam_comp, cam_trans_comp);
 
         /*
         let mut instanced_meshes: Vec<(Mesh, Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>)> = vec![];
@@ -843,7 +837,7 @@ impl System for RenderSystem {
             m_cmd
         };
 
-        self.renderer.camera_buffer[frame_idx].update_data(0, &[camera_ubo]);
+        self.camera_uniform.buffers[frame_idx].update_data(0, &[camera_uniform_data]);
 
         if mesh.is_some() {
             self.renderer.render(self.resource_manager.meshes.get(&mesh.unwrap().id).unwrap());
