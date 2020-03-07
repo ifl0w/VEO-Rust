@@ -5,8 +5,10 @@ pub use mesh::Mesh;
 pub use nse_gui::octree_gui::OctreeGuiSystem;
 pub use octree::Octree;
 pub use octree::OctreeSystem;
-pub use renderer::RenderSystem;
+pub use render_passes::*;
 pub use renderer::Backend;
+pub use renderer::RenderSystem;
+pub use utility::*;
 
 mod renderer;
 mod mesh;
@@ -14,5 +16,5 @@ mod camera;
 mod octree;
 mod nse_gui;
 
-pub use utility::*;
 pub mod utility;
+mod render_passes;

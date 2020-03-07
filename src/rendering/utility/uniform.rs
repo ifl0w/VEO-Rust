@@ -128,6 +128,7 @@ impl<B: Backend> Uniform<B> {
         renderer: &Renderer<B>,
         data: &[T],
         binding: u32,
+        desc_sets: &Vec<B::DescriptorSet>,
     ) -> Self
         where T: Copy {
 
@@ -144,8 +145,8 @@ impl<B: Backend> Uniform<B> {
 
             unsafe {
                 renderer.device.write_descriptor_sets(iter::once(DescriptorSetWrite {
-                    set: &renderer.desc_set[idx],
-                    binding: 0,
+                    set: &desc_sets[idx],
+                    binding,
                     array_offset: 0,
                     descriptors: iter::once(
                         Descriptor::Buffer(buffer.get_buffer(), None..None)

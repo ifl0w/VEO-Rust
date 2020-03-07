@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use std::sync::{Arc, Weak};
 use std::mem::ManuallyDrop;
-use crate::rendering::utility::{Vertex, Index, GPUBuffer, Shader};
+use crate::rendering::utility::{Vertex, Index, GPUBuffer};
 
 use gfx_hal::adapter::{MemoryType, Adapter};
 use gfx_hal::adapter::PhysicalDevice;
@@ -50,8 +50,16 @@ impl<B> ResourceManager<B>
         ResourceManager {
             device: renderer.device.clone(),
             adapter: renderer.adapter.clone(),
+
             meshes: HashMap::new(),
 //            buffers: HashMap::new(),
+        }
+    }
+
+    pub fn get_mesh(&self, id: &MeshID) -> &GPUMesh<B> {
+        match self.meshes.get(id) {
+            Some(m) => m,
+            None => panic!("Mesh not stored on GPU")
         }
     }
 }
@@ -88,6 +96,7 @@ pub struct GPUMesh<B>
     pub (in crate::rendering) vertex_memory: Arc<ManuallyDrop<B::Memory>>,
 
     pub (in crate::rendering) num_indices: u32,
+    pub (in crate::rendering) index_type: IndexType,
     pub (in crate::rendering) index_buffer: Arc<ManuallyDrop<B::Buffer>>,
     pub (in crate::rendering) index_memory: Arc<ManuallyDrop<B::Memory>>,
 }
@@ -106,6 +115,7 @@ impl<B> GPUMesh<B>
             vertex_memory: Arc::new(vertex_buffer_info.2),
 
             num_indices: index_buffer_info.0,
+            index_type: IndexType::U32,
             index_buffer: Arc::new(index_buffer_info.1),
             index_memory: Arc::new(index_buffer_info.2),
         }
