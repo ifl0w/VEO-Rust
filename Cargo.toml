@@ -20,6 +20,7 @@ vulkano-shaders = "0.17.0"
 gfx-hal = "0.4.1"
 glsl-to-spirv-macros = "0.1.1"
 glsl-to-spirv-macros-impl = "0.1.0"
+shaderc = "0.6.2"
 
 cgmath = "0.17.0"
 

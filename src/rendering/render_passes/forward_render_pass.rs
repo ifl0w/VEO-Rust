@@ -1,6 +1,6 @@
 use std::{iter, mem, ptr};
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Error};
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
@@ -17,8 +17,9 @@ use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
-use crate::rendering::{CameraData, GPUMesh, MeshID, RenderPass, ResourceManager, Uniform, Vertex, InstanceData};
+use crate::rendering::{CameraData, GPUMesh, MeshID, RenderPass, ResourceManager, Uniform, Vertex, InstanceData, ShaderCode};
 use crate::rendering::renderer::Renderer;
+use std::process::exit;
 
 /* Constants */
 const ENTRY_NAME: &str = "main";
@@ -127,7 +128,12 @@ impl<B: Backend> ForwardRenderPass<B> {
             )
         };
 
-        let (pipeline, pipeline_layout) = Self::create_pipeline(device, &render_pass, &set_layout);
+        let pipeline_option = Self::create_pipeline(device, &render_pass, &set_layout);
+        // TODO refine error handling
+        if pipeline_option.is_none() {
+            exit(1); //"Pipeline creation failed!");
+        }
+        let (pipeline, pipeline_layout) = pipeline_option.unwrap();
 
         // uniforms
         let camera_uniform = Uniform::new(&renderer,
@@ -153,7 +159,7 @@ impl<B: Backend> ForwardRenderPass<B> {
     fn create_pipeline(device: &Arc<B::Device>,
                        render_pass: &ManuallyDrop<B::RenderPass>,
                        set_layout: &ManuallyDrop<B::DescriptorSetLayout>)
-                       -> (ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>) {
+                       -> Option<(ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>)> {
         let pipeline_layout = ManuallyDrop::new(
             unsafe {
                 device.create_pipeline_layout(
@@ -164,19 +170,30 @@ impl<B: Backend> ForwardRenderPass<B> {
                 .expect("Can't create pipeline layout"),
         );
         let pipeline = {
+            let mut shader_code = ShaderCode::new("src/rendering/shaders/test.vert.glsl");
+            let mut compile_result = shader_code.compile(shaderc::ShaderKind::Vertex, ENTRY_NAME.parse().unwrap());
+            if compile_result.is_none() {
+                println!("Shader could not be compiled.");
+                return None;
+            }
             let vs_module = {
-                let shader = include_glsl_vs!("src/rendering/shaders/test.vert.glsl");
-                let spirv = pso::read_spirv(Cursor::new(shader))
+                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0))
                     .unwrap();
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
+
+            shader_code = ShaderCode::new("src/rendering/shaders/test.frag.glsl");
+            compile_result = shader_code.compile(shaderc::ShaderKind::Fragment, ENTRY_NAME.parse().unwrap());
+            if compile_result.is_none() {
+                println!("Shader could not be compiled.");
+                return None;
+            }
             let fs_module = {
-                let shader = include_glsl_fs!("src/rendering/shaders/test.frag.glsl");
-                let spirv =
-                    pso::read_spirv(Cursor::new(shader))
+                 let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0))
                         .unwrap();
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
+
 
             let pipeline = {
                 let (vs_entry, fs_entry) = (
@@ -281,7 +298,30 @@ impl<B: Backend> ForwardRenderPass<B> {
             ManuallyDrop::new(pipeline.unwrap())
         };
 
-        (pipeline, pipeline_layout)
+        Some((pipeline, pipeline_layout))
+    }
+
+    pub fn recreate_pipeline(&mut self) {
+        let pipeline_option = Self::create_pipeline(&self.device, &self.render_pass, &self.set_layout);
+
+        // TODO refine
+        if pipeline_option.is_none() {
+            return;
+        }
+
+        let (new_pipeline, new_pipeline_layout) = pipeline_option.unwrap();
+
+        unsafe {
+            self.device
+                .destroy_graphics_pipeline(ManuallyDrop::into_inner(ptr::read(&self.pipeline)));
+            self.device
+                .destroy_pipeline_layout(ManuallyDrop::into_inner(ptr::read(
+                    &self.pipeline_layout,
+                )));
+        }
+
+        self.pipeline = new_pipeline;
+        self.pipeline_layout = new_pipeline_layout;
     }
 
     pub fn update_camera(&mut self, camera_data: CameraData, frame_idx: usize) {

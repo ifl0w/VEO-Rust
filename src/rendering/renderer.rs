@@ -66,7 +66,7 @@ use gfx_hal::window::Surface;
 use glium::buffer::Buffer;
 use glium::RawUniformValue::Vec2;
 use mopa::Any;
-use winit::event::{Event, WindowEvent};
+use winit::event::{Event, WindowEvent, VirtualKeyCode, ElementState};
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
@@ -189,6 +189,19 @@ impl System for RenderSystem {
                     match event {
                         | WindowEvent::CloseRequested => {
                             self.messages = vec![Message::new(Exit {})];
+                        }
+                        WindowEvent::KeyboardInput { input, .. } => {
+                            match input {
+                                | winit::event::KeyboardInput { virtual_keycode, state, .. } => {
+                                    match (virtual_keycode, state) {
+                                        (Some(VirtualKeyCode::F5), ElementState::Pressed) => {
+                                            println!("Recreating pipeline...");
+                                            self.forward_render_pass.recreate_pipeline();
+                                        }
+                                        _ => ()
+                                    }
+                                }
+                            }
                         }
                         | _ => {}
                     }
