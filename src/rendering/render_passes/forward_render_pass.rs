@@ -170,7 +170,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                 .expect("Can't create pipeline layout"),
         );
         let pipeline = {
-            let mut shader_code = ShaderCode::new("src/rendering/shaders/test.vert.glsl");
+            let mut shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.vert.glsl");
             let mut compile_result = shader_code.compile(shaderc::ShaderKind::Vertex, ENTRY_NAME.parse().unwrap());
             if compile_result.is_none() {
                 println!("Shader could not be compiled.");
@@ -182,7 +182,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
 
-            shader_code = ShaderCode::new("src/rendering/shaders/test.frag.glsl");
+            shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.frag.glsl");
             compile_result = shader_code.compile(shaderc::ShaderKind::Fragment, ENTRY_NAME.parse().unwrap());
             if compile_result.is_none() {
                 println!("Shader could not be compiled.");
