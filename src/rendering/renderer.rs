@@ -315,7 +315,8 @@ impl<B> Renderer<B>
                 .unwrap_or(formats[0])
         });
 
-        let swap_config = window::SwapchainConfig::from_caps(&caps, format, WINDOW_DIMENSIONS);
+        let mut swap_config = window::SwapchainConfig::from_caps(&caps, format, WINDOW_DIMENSIONS)
+            .with_present_mode(gfx_hal::window::PresentMode::IMMEDIATE);
         println!("{:?}", swap_config);
         let extent = swap_config.extent;
         unsafe {
