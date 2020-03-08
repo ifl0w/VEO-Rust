@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use std::io::{Cursor, Error};
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
+use std::process::exit;
 use std::sync::{Arc, Weak};
 
 use cgmath::{Matrix4, SquareMatrix};
 use gfx_hal::{Backend, command, format::Format, IndexType, pass, pass::Attachment, pso};
 use gfx_hal::buffer::IndexBufferView;
-use gfx_hal::command::CommandBuffer;
+use gfx_hal::command::{ClearDepthStencil, CommandBuffer};
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
 use gfx_hal::image::{Extent, Layout};
@@ -17,9 +18,8 @@ use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
-use crate::rendering::{CameraData, GPUMesh, MeshID, RenderPass, ResourceManager, Uniform, Vertex, InstanceData, ShaderCode};
+use crate::rendering::{CameraData, GPUMesh, InstanceData, MeshID, RenderPass, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::renderer::Renderer;
-use std::process::exit;
 
 /* Constants */
 const ENTRY_NAME: &str = "main";
@@ -75,7 +75,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                     &[
                         DescriptorRangeDesc {
                             ty: DescriptorType::UniformBuffer,
-                            count: 1,
+                            count: renderer.frames_in_flight,
                         }
                     ],
                     DescriptorPoolCreateFlags::empty(),
@@ -92,12 +92,19 @@ impl<B: Backend> ForwardRenderPass<B> {
         };
 
         let caps = renderer.surface.capabilities(&adapter.physical_device);
-        let formats = renderer.surface.supported_formats(&adapter.physical_device);
+        let formats = &renderer.surface.supported_formats(&adapter.physical_device);
         println!("formats: {:?}", formats);
-        let format = formats.map_or(Format::Rgba8Srgb, |formats| {
+        let format = formats.clone().map_or(Format::Rgba8Srgb, |formats| {
             formats
                 .iter()
                 .find(|format| format.base_format().1 == ChannelType::Srgb)
+                .map(|format| *format)
+                .unwrap_or(formats[0])
+        });
+        let depth_stencil_format = formats.clone().map_or(Format::D24UnormS8Uint, |formats| {
+            formats
+                .iter()
+                .find(|format| format.base_format().1 == ChannelType::Sfloat)
                 .map(|format| *format)
                 .unwrap_or(formats[0])
         });
@@ -113,6 +120,16 @@ impl<B: Backend> ForwardRenderPass<B> {
                 stencil_ops: pass::AttachmentOps::DONT_CARE,
                 layouts: Layout::Undefined..Layout::Present,
             };
+//            let depth_attachment = pass::Attachment {
+//                format: Some(depth_stencil_format),
+//                samples: 1,
+//                ops: pass::AttachmentOps::new(
+//                    pass::AttachmentLoadOp::Clear,
+//                    pass::AttachmentStoreOp::Store,
+//                ),
+//                stencil_ops: pass::AttachmentOps::DONT_CARE,
+//                layouts: Layout::Undefined..Layout::DepthStencilAttachmentOptimal,
+//            };
 
             let subpass = pass::SubpassDesc {
                 colors: &[(0, Layout::ColorAttachmentOptimal)],
@@ -189,8 +206,8 @@ impl<B: Backend> ForwardRenderPass<B> {
                 return None;
             }
             let fs_module = {
-                 let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0))
-                        .unwrap();
+                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0))
+                    .unwrap();
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
 
@@ -370,11 +387,19 @@ impl<B: Backend> ForwardRenderPass<B> {
                 &self.render_pass,
                 &framebuffer,
                 renderer.viewport.rect,
-                &[command::ClearValue {
-                    color: command::ClearColor {
-                        float32: [0.3, 0.3, 0.3, 1.0],
+                &[
+                    command::ClearValue {
+                        color: command::ClearColor {
+                            float32: [0.3, 0.3, 0.3, 1.0],
+                        },
                     },
-                }],
+                    command::ClearValue {
+                        depth_stencil: ClearDepthStencil {
+                            depth: 0f32,
+                            stencil: 0,
+                        },
+                    }
+                ],
                 command::SubpassContents::Inline,
             );
 

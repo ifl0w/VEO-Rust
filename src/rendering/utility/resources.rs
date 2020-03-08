@@ -29,7 +29,6 @@ use gfx_hal::{
 };
 
 use std::{mem, ptr, iter};
-use vulkano::device::DeviceOwned;
 use crate::rendering::renderer::Renderer;
 
 

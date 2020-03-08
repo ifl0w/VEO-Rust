@@ -9,13 +9,10 @@ edition = "2018"
 [dependencies]
 crossbeam = "0.7" # multithreading library
 mopa = "0.2.2"
+log = "0.4.0"
+env_logger = "0.7.1"
 
-#winit = "0.20.0-alpha5"
 winit = { version = "0.21.0", features = ["web-sys"]}
-
-vulkano = "0.17.0"
-#vulkano-win = "0.17.0"
-vulkano-shaders = "0.17.0"
 
 gfx-hal = "0.4.1"
 glsl-to-spirv-macros = "0.1.1"
@@ -37,5 +34,14 @@ version = "0.4.2"
 features = ["x11"]
 optional = true
 
+[dependencies.gfx-backend-gl]
+version = "0.4.0"
+features = ["glutin"]
+optional = true
+
+[dependencies.gfx-backend-empty]
+version = "0.4.0"
+
 [features]
 vulkan = ["gfx-backend-vulkan"]
+gl = ["gfx-backend-gl"]

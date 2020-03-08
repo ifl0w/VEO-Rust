@@ -14,6 +14,15 @@ allow(dead_code, unused_extern_crates, unused_imports)
 pub extern crate gfx_backend_dx11 as Backend;
 #[cfg(feature = "dx12")]
 pub extern crate gfx_backend_dx12 as Backend;
+#[cfg(
+not(any(
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
+)))]
+pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
 pub extern crate gfx_backend_gl as Backend;
 #[cfg(feature = "metal")]
@@ -28,6 +37,7 @@ use std::{
     mem::{self, ManuallyDrop},
     ptr,
 };
+use std::borrow::BorrowMut;
 use std::cell::Cell;
 use std::hash::Hasher;
 use std::iter::once;
@@ -36,57 +46,26 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Matrix4, SquareMatrix};
-use gfx_hal::{
-    buffer,
-    command,
-    format as f,
-    format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
-    image as i,
-    IndexType,
-    memory as m,
-    pass,
-    pass::Subpass,
-    pool,
-    prelude::*,
-    pso,
-    pso::{
-        PipelineStage,
-        ShaderStageFlags,
-        VertexInputRate,
-    },
-    queue::{QueueGroup, Submission},
-    window,
-};
+use gfx_hal::{buffer, command, format as f, format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle}, image as i, IndexType, Instance, memory as m, pass, pass::Subpass, pool, prelude::*, pso, pso::{
+    PipelineStage,
+    ShaderStageFlags,
+    VertexInputRate,
+}, queue::{QueueGroup, Submission}, window};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::buffer::IndexBufferView;
 use gfx_hal::command::{CommandBuffer, CommandBufferInheritanceInfo, SubpassContents};
 use gfx_hal::pso::{Comparison, DepthTest, Descriptor, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace};
 use gfx_hal::pso::Comparison::LessEqual;
 use gfx_hal::window::Surface;
-use glium::buffer::Buffer;
-use glium::RawUniformValue::Vec2;
 use mopa::Any;
-use winit::event::{Event, WindowEvent, VirtualKeyCode, ElementState};
+use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::Window;
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
 
 use crate::core::{Exit, Filter, MainWindow, Message, System};
 use crate::NSE;
 use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree, Plane, RenderPass, Transformation};
 use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
-
-use self::Backend::Instance;
-
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(start)]
-pub fn wasm_main() {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    main();
-}
-
 
 /* Constants */
 // Window
@@ -108,11 +87,7 @@ pub struct RenderSystem {
 impl RenderSystem {
     #[cfg(any(
     feature = "vulkan",
-    feature = "dx11",
-    feature = "dx12",
-    feature = "metal",
     feature = "gl",
-    feature = "wgl"
     ))]
     pub fn new(nse: &NSE) -> Arc<Mutex<Self>> {
         let (window, instance, adapter) = RenderSystem::init(nse);
@@ -144,12 +119,13 @@ impl RenderSystem {
 
     fn init(nse: &NSE) ->
     (Window,
-     Instance,
+     Backend::Instance,
      Arc<Adapter<Backend::Backend>>) {
         let window = RenderSystem::init_window(&nse.event_loop);
 
-        let instance = Instance::create("render-engine", 1)
+        let instance: Backend::Instance = Instance::create("render-engine", ((1) << 22 | (1) << 12))
             .expect("Failed to create an instance!");
+        println!("{:?}", instance.extensions);
 
         let mut adapters = instance.enumerate_adapters();
 
@@ -266,6 +242,7 @@ pub struct Renderer<B: gfx_hal::Backend> {
     pub submission_complete_semaphores: Vec<B::Semaphore>,
     pub submission_complete_fences: Vec<B::Fence>,
     pub cmd_pools: Vec<B::CommandPool>,
+    pub frame_buffers: Vec<B::Framebuffer>,
     pub frames_in_flight: usize,
     pub current_swap_chain_image: usize,
 }
@@ -284,7 +261,9 @@ impl<B> Renderer<B>
             .queue_families
             .iter()
             .find(|family| {
-                surface.supports_queue_family(family) && family.queue_type().supports_graphics()
+                surface.supports_queue_family(family)
+                    && family.queue_type().supports_graphics()
+                    && family.queue_type().supports_compute()
             })
             .unwrap();
         let mut gpu = unsafe {
@@ -298,7 +277,7 @@ impl<B> Renderer<B>
 
         // Define maximum number of frames we want to be able to be "in flight" (being computed
         // simultaneously) at once
-        let frames_in_flight = 3;
+        let frames_in_flight: usize = 3;
 
         let mut command_pool = unsafe {
             device.create_command_pool(queue_group.family, pool::CommandPoolCreateFlags::empty())
@@ -373,6 +352,9 @@ impl<B> Renderer<B>
             depth: 0.0..1.0,
         };
 
+        let mut frame_buffers = Vec::new();
+        frame_buffers.reserve(frames_in_flight);
+
         Renderer {
             instance,
             device,
@@ -385,6 +367,7 @@ impl<B> Renderer<B>
             submission_complete_semaphores,
             submission_complete_fences,
             cmd_pools,
+            frame_buffers,
             frames_in_flight,
             current_swap_chain_image: 0,
         }
@@ -425,8 +408,18 @@ impl<B> Renderer<B>
     }
 
     fn render(&mut self, render_pass: &dyn RenderPass<B>, resource_manager: &ResourceManager<B>) {
+
+        // Compute index into our resource ring buffers based on the frame number
+        // and number of frames in flight. Pay close attention to where this index is needed
+        // versus when the swapchain image index we got from acquire_image is needed.
+        let frame_idx = self.current_swap_chain_image;
+
         let surface_image = unsafe {
-            match self.surface.acquire_image(!0) {
+            match self.surface.acquire_image(
+                !0,
+//                Some(self.image_acquired_semaphores), //Option<&B::Semaphore>,
+//                None, //Some(self.image_acquired_fences),//Option<&B::Fence>
+            ) {
                 Ok((image, _)) => image,
                 Err(_) => {
                     self.recreate_swapchain();
@@ -434,6 +427,8 @@ impl<B> Renderer<B>
                 }
             }
         };
+
+        self.sync_and_reset(frame_idx);
 
         // TODO move to render_pass and recreate on swapchain recreation
         let framebuffer = unsafe {
@@ -450,15 +445,9 @@ impl<B> Renderer<B>
                 .unwrap()
         };
 
-        // Compute index into our resource ring buffers based on the frame number
-        // and number of frames in flight. Pay close attention to where this index is needed
-        // versus when the swapchain image index we got from acquire_image is needed.
-        let frame_idx = self.current_swap_chain_image;
-
-        self.sync_and_reset(frame_idx);
-
         // Rendering
         let mut command_buffers = render_pass.generate_command_buffer(self, resource_manager, &framebuffer);
+//        self.cmd_buffers[frame_idx] = command_buffers;
 
         unsafe {
             let submission = Submission {
@@ -471,6 +460,11 @@ impl<B> Renderer<B>
                 Some(&self.submission_complete_fences[frame_idx]),
             );
 
+            let fence = &self.submission_complete_fences[frame_idx];
+            self.device
+                .wait_for_fence(fence, !0)
+                .expect("Failed to wait for fence");
+
             // present frame
             let result = self.queue_group.queues[0].present_surface(
                 &mut self.surface,
@@ -478,7 +472,14 @@ impl<B> Renderer<B>
                 Some(&self.submission_complete_semaphores[frame_idx]),
             );
 
-            self.device.destroy_framebuffer(framebuffer);
+//            if self.frame_buffers.len() > self.current_swap_chain_image {
+//
+//                let tmp = self.frame_buffers.remove(self.current_swap_chain_image);
+//                unsafe {
+//                    self.device.destroy_framebuffer(tmp);
+//                }
+//            }
+//            self.frame_buffers.insert(self.current_swap_chain_image, framebuffer);
 
             if result.is_err() {
                 self.recreate_swapchain();

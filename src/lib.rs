@@ -7,6 +7,9 @@ extern crate gfx_hal;
 #[macro_use] extern crate glsl_to_spirv_macros;
 #[macro_use] extern crate glsl_to_spirv_macros_impl;
 
+#[macro_use] extern crate log;
+use log::Level;
+
 extern crate winit;
 
 use std::any::TypeId;
@@ -37,6 +40,11 @@ pub struct NSE {
 
 impl NSE {
     pub fn new() -> Self {
+        #[cfg(debug_assertions)]
+        println!("Debugging enabled ... ");
+
+        env_logger::init();
+
         let nse = NSE {
             message_manager: Arc::new(Mutex::new(MessageManager::new())),
             entity_manager: Arc::new(Mutex::new(EntityManager::new())),

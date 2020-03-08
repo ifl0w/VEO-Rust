@@ -20,8 +20,6 @@ use crate::rendering::RenderSystem;
 use std::collections::VecDeque;
 use std::ops::RangeInclusive;
 
-//use imgui_glium_renderer::glium::Display;
-
 pub struct OctreeGuiSystem {
     imgui: Context,
     platform: WinitPlatform,

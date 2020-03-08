@@ -4,8 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Matrix4, vec3, Vector3};
-use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
-use vulkano::memory::pool::StdMemoryPool;
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, System};
@@ -47,7 +45,7 @@ impl TryFrom<i32> for NodePosition {
 pub struct Octree {
     pub size: Vector3<f32>,
     pub root: Arc<Mutex<Option<Node>>>,
-    pub instance_data_buffer: Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>>,
+//    pub instance_data_buffer: Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>>,
 }
 
 impl Component for Octree {}
@@ -64,7 +62,7 @@ impl Octree {
         let mut oct = Octree {
             size,
             root: Arc::new(Mutex::new(None)),
-            instance_data_buffer: None,
+//            instance_data_buffer: None,
         };
 
         oct.root = Arc::new(Mutex::new(Octree::traverse(
@@ -293,6 +291,7 @@ impl System for OctreeSystem {
                     self.update_octrees = false;
                 }
 
+                /*
                 if octree.instance_data_buffer.is_none() {
                     { // scope to enclose mutex
                         let root = octree.root.lock().unwrap();
@@ -305,6 +304,7 @@ impl System for OctreeSystem {
 
                     entitiy_mutex.add_component(octree);
                 }
+                */
             }
         }
     }

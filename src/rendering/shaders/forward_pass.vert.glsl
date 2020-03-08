@@ -18,7 +18,7 @@ layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 color;
 
 // The per-instance data
-layout(location = 3) in mat4 instance_model_matrix;
+//layout(location = 3) in mat4 instance_model_matrix;
 
 /*
 layout(location = 0) out FragmentData {
