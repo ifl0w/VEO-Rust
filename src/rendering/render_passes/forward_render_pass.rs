@@ -40,6 +40,8 @@ pub struct ForwardRenderPass<B: Backend> {
     pub desc_set: Vec<B::DescriptorSet>,
     pub set_layout: ManuallyDrop<B::DescriptorSetLayout>,
 
+    pub cmd_buffers: Vec<B::CommandBuffer>,
+
     // uniforms
     camera_uniform: Uniform<B>,
 
@@ -47,7 +49,7 @@ pub struct ForwardRenderPass<B: Backend> {
 }
 
 impl<B: Backend> ForwardRenderPass<B> {
-    pub fn new(renderer: &Renderer<B>) -> Self {
+    pub fn new(renderer: &mut Renderer<B>) -> Self {
         let device = &renderer.device;
         let adapter = &renderer.adapter;
 
@@ -160,6 +162,13 @@ impl<B: Backend> ForwardRenderPass<B> {
                                           CAMERA_UNIFORM_BINDING,
                                           &desc_set);
 
+        let mut cmd_buffers = Vec::with_capacity(renderer.frames_in_flight);
+        for i in 0..renderer.frames_in_flight {
+            unsafe {
+                cmd_buffers.push(renderer.cmd_pools[i].allocate_one(command::Level::Primary));
+            }
+        }
+
         ForwardRenderPass {
             device: device.clone(),
             render_pass,
@@ -168,6 +177,8 @@ impl<B: Backend> ForwardRenderPass<B> {
             desc_pool,
             desc_set,
             set_layout,
+
+            cmd_buffers,
 
             camera_uniform,
 
@@ -366,13 +377,14 @@ impl<B: Backend> ForwardRenderPass<B> {
         };
     }
 
-    pub fn create_commandbuffer(&self,
+    pub fn create_commandbuffer(&mut self,
                                 renderer: &mut Renderer<B>,
                                 resource_manager: &ResourceManager<B>,
-                                framebuffer: &B::Framebuffer) -> B::CommandBuffer {
+                                framebuffer: &B::Framebuffer) -> &B::CommandBuffer {
         let frame_idx = renderer.current_swap_chain_image;
-        let cmd_buffer = unsafe {
-            let mut cmd_buffer = renderer.cmd_pools[frame_idx].allocate_one(command::Level::Primary);
+
+        unsafe {
+            let mut cmd_buffer = &mut self.cmd_buffers[frame_idx];
 
             cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
 
@@ -433,15 +445,13 @@ impl<B: Backend> ForwardRenderPass<B> {
                 }
             }
 
-//            cmd_buffer.execute_commands(iter::once(&self.mesh_cmd_buffer[frame_idx]));
-
             cmd_buffer.end_render_pass();
             cmd_buffer.finish();
 
             cmd_buffer
         };
 
-        cmd_buffer
+        &self.cmd_buffers[frame_idx]
     }
 }
 
@@ -475,9 +485,9 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         &self.render_pass
     }
 
-    fn generate_command_buffer(&self, renderer: &mut Renderer<B>,
+    fn generate_command_buffer(&mut self, renderer: &mut Renderer<B>,
                                resource_manager: &ResourceManager<B>,
-                               framebuffer: &B::Framebuffer) -> B::CommandBuffer {
+                               framebuffer: &B::Framebuffer) -> &B::CommandBuffer {
         self.create_commandbuffer(renderer, resource_manager, framebuffer)
     }
 

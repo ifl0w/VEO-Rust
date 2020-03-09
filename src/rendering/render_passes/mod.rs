@@ -13,9 +13,9 @@ mod forward_render_pass;
 
 pub trait RenderPass<B: Backend> {
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass>;
-    fn generate_command_buffer(&self, renderer: &mut Renderer<B>,
+    fn generate_command_buffer(&mut self, renderer: &mut Renderer<B>,
                                resource_manager: &ResourceManager<B>,
-                               framebuffer: &B::Framebuffer) -> B::CommandBuffer;
+                               framebuffer: &B::Framebuffer) -> &B::CommandBuffer;
     fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet;
 }
 

@@ -99,7 +99,7 @@ impl RenderSystem {
 
         let mut renderer = Renderer::new(Some(instance), surface, adapter.clone());
         let mut resource_manager = ResourceManager::new(&renderer);
-        let mut forward_render_pass = ForwardRenderPass::new(&renderer);
+        let mut forward_render_pass = ForwardRenderPass::new(&mut renderer);
 
         let messages = vec![Message::new(MainWindow { window_id: window.id() })];
 
@@ -214,7 +214,7 @@ impl System for RenderSystem {
 
         // Currently only a single pass can be rendered since fences and semaphores are in the
         // renderer instead of the render passes
-        self.renderer.render(&self.forward_render_pass, &self.resource_manager);
+        self.renderer.render(&mut self.forward_render_pass, &self.resource_manager);
 
         self.window.request_redraw();
     }
@@ -279,10 +279,6 @@ impl<B> Renderer<B>
         // simultaneously) at once
         let frames_in_flight: usize = 3;
 
-        let mut command_pool = unsafe {
-            device.create_command_pool(queue_group.family, pool::CommandPoolCreateFlags::empty())
-        }.expect("Can't create command pool");
-
         let caps = surface.capabilities(&adapter.physical_device);
         let formats = surface.supported_formats(&adapter.physical_device);
         println!("formats: {:?}", formats);
@@ -317,8 +313,7 @@ impl<B> Renderer<B>
         // same time (each frame).
         let mut cmd_pools = Vec::with_capacity(frames_in_flight);
 
-        cmd_pools.push(command_pool);
-        for _ in 1..frames_in_flight {
+        for _ in 0..frames_in_flight {
             unsafe {
                 cmd_pools.push(
                     device
@@ -407,7 +402,7 @@ impl<B> Renderer<B>
         }
     }
 
-    fn render(&mut self, render_pass: &dyn RenderPass<B>, resource_manager: &ResourceManager<B>) {
+    fn render(&mut self, render_pass: &mut dyn RenderPass<B>, resource_manager: &ResourceManager<B>) {
 
         // Compute index into our resource ring buffers based on the frame number
         // and number of frames in flight. Pay close attention to where this index is needed
@@ -415,11 +410,7 @@ impl<B> Renderer<B>
         let frame_idx = self.current_swap_chain_image;
 
         let surface_image = unsafe {
-            match self.surface.acquire_image(
-                !0,
-//                Some(self.image_acquired_semaphores), //Option<&B::Semaphore>,
-//                None, //Some(self.image_acquired_fences),//Option<&B::Fence>
-            ) {
+            match self.surface.acquire_image(!0) {
                 Ok((image, _)) => image,
                 Err(_) => {
                     self.recreate_swapchain();
@@ -427,8 +418,6 @@ impl<B> Renderer<B>
                 }
             }
         };
-
-        self.sync_and_reset(frame_idx);
 
         // TODO move to render_pass and recreate on swapchain recreation
         let framebuffer = unsafe {
@@ -445,13 +434,14 @@ impl<B> Renderer<B>
                 .unwrap()
         };
 
+        self.sync_and_reset(frame_idx);
+
         // Rendering
         let mut command_buffers = render_pass.generate_command_buffer(self, resource_manager, &framebuffer);
-//        self.cmd_buffers[frame_idx] = command_buffers;
 
         unsafe {
             let submission = Submission {
-                command_buffers: iter::once(&command_buffers),
+                command_buffers: iter::once(command_buffers),
                 wait_semaphores: None,
                 signal_semaphores: iter::once(&self.submission_complete_semaphores[frame_idx]),
             };
@@ -480,6 +470,8 @@ impl<B> Renderer<B>
 //                }
 //            }
 //            self.frame_buffers.insert(self.current_swap_chain_image, framebuffer);
+
+            self.device.destroy_framebuffer(framebuffer);
 
             if result.is_err() {
                 self.recreate_swapchain();
