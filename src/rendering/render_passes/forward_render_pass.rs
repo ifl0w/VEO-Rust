@@ -1,12 +1,13 @@
 use std::{iter, mem, ptr};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::io::{Cursor, Error};
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::process::exit;
 use std::sync::{Arc, Weak};
 
-use cgmath::{Matrix4, SquareMatrix};
+use cgmath::{Matrix, Matrix4, SquareMatrix};
 use gfx_hal::{Backend, command, format::Format, IndexType, pass, pass::Attachment, pso};
 use gfx_hal::buffer::IndexBufferView;
 use gfx_hal::command::{ClearDepthStencil, CommandBuffer};
@@ -17,6 +18,7 @@ use gfx_hal::pass::Subpass;
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
 use gfx_hal::window::{Surface, SwapImageIndex};
+use winit::event::WindowEvent::CursorMoved;
 
 use crate::rendering::{CameraData, GPUMesh, InstanceData, MeshID, RenderPass, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::renderer::Renderer;
@@ -181,7 +183,9 @@ impl<B: Backend> ForwardRenderPass<B> {
             unsafe {
                 device.create_pipeline_layout(
                     iter::once(&**set_layout),
-                    &[],
+                    &[
+                        (ShaderStageFlags::VERTEX, 0..64) // model matrix push constant
+                    ],
                 )
             }
                 .expect("Can't create pipeline layout"),
@@ -403,19 +407,31 @@ impl<B: Backend> ForwardRenderPass<B> {
                 command::SubpassContents::Inline,
             );
 
-            let (id, transform) = self.instances.iter().next().unwrap();
-            let mesh = resource_manager.get_mesh(id);
-            let vert_buf = &**mesh.vertex_buffer;
-            let ind_buf = &**mesh.index_buffer;
-            cmd_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+            for (id, transforms) in self.instances.iter() {
+                let mesh = resource_manager.get_mesh(id);
+                let vert_buf = &**mesh.vertex_buffer;
+                let ind_buf = &**mesh.index_buffer;
 
-            let index_buffer_view = IndexBufferView {
-                buffer: ind_buf,
-                offset: 0,
-                index_type: mesh.index_type,
-            };
-            cmd_buffer.bind_index_buffer(index_buffer_view);
-            cmd_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                for transform in transforms {
+                    let mut data: &[f32; 16] = transform.as_ref();
+                    let push_data: [u32; 16] = std::mem::transmute_copy(data);
+
+                    cmd_buffer.push_graphics_constants(&self.pipeline_layout,
+                                                       ShaderStageFlags::VERTEX,
+                                                       0,
+                                                       &push_data);
+
+                    cmd_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+
+                    let index_buffer_view = IndexBufferView {
+                        buffer: ind_buf,
+                        offset: 0,
+                        index_type: mesh.index_type,
+                    };
+                    cmd_buffer.bind_index_buffer(index_buffer_view);
+                    cmd_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                }
+            }
 
 //            cmd_buffer.execute_commands(iter::once(&self.mesh_cmd_buffer[frame_idx]));
 
