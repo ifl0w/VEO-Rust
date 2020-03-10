@@ -17,6 +17,7 @@ use crate::rendering::renderer::Renderer;
 use crate::rendering::RenderSystem;
 use crate::rendering::utility::{MeshGenerator, ResourceManager};
 use crate::rendering::utility::resources::MeshID;
+use std::borrow::{Borrow, BorrowMut};
 
 static mut LAST_MESH_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -44,8 +45,9 @@ impl Eq for Mesh {}
 impl Mesh {
     pub fn new<T: MeshGenerator>(render_system: &Arc<Mutex<RenderSystem>>) -> Self {
 
-        let resource_manager = &mut render_system.lock().unwrap().resource_manager;
-        let (id, _) = T::generate::<T, _>(resource_manager);
+        let render_system = render_system.lock().unwrap();
+        let mut resource_manager = render_system.resource_manager.lock().unwrap();
+        let (id, _) = T::generate::<T, _>(resource_manager.borrow_mut());
 
         Mesh {
             id,

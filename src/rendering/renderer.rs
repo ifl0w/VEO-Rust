@@ -41,7 +41,7 @@ use std::borrow::BorrowMut;
 use std::cell::Cell;
 use std::hash::Hasher;
 use std::iter::once;
-use std::ops::Deref;
+use std::ops::{Deref, RangeInclusive};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -76,7 +76,7 @@ pub struct RenderSystem {
     window: Window,
 
     pub(in crate::rendering) renderer: Renderer<Backend::Backend>,
-    pub(in crate::rendering) resource_manager: ResourceManager<Backend::Backend>,
+    pub(in crate::rendering) resource_manager: Arc<Mutex<ResourceManager<Backend::Backend>>>,
 
     // Render passes
     forward_render_pass: ForwardRenderPass<Backend::Backend>,
@@ -99,7 +99,7 @@ impl RenderSystem {
 
         let mut renderer = Renderer::new(Some(instance), surface, adapter.clone());
         let mut resource_manager = ResourceManager::new(&renderer);
-        let mut forward_render_pass = ForwardRenderPass::new(&mut renderer);
+        let mut forward_render_pass = ForwardRenderPass::new(&mut renderer, &resource_manager);
 
         let messages = vec![Message::new(MainWindow { window_id: window.id() })];
 
@@ -171,7 +171,7 @@ impl System for RenderSystem {
                                 | winit::event::KeyboardInput { virtual_keycode, state, .. } => {
                                     match (virtual_keycode, state) {
                                         (Some(VirtualKeyCode::F5), ElementState::Pressed) => {
-                                            println!("Recreating pipeline...");
+                                            println!("Recreating pipelines...");
                                             self.forward_render_pass.recreate_pipeline();
                                         }
                                         _ => ()
@@ -214,7 +214,7 @@ impl System for RenderSystem {
 
         // Currently only a single pass can be rendered since fences and semaphores are in the
         // renderer instead of the render passes
-        self.renderer.render(&mut self.forward_render_pass, &self.resource_manager);
+        self.renderer.render(&mut self.forward_render_pass);
 
         self.window.request_redraw();
     }
@@ -279,7 +279,9 @@ impl<B> Renderer<B>
         // simultaneously) at once
         let frames_in_flight: usize = 3;
 
-        let caps = surface.capabilities(&adapter.physical_device);
+        let mut caps = surface.capabilities(&adapter.physical_device);
+//        caps.image_count = RangeInclusive::new(frames_in_flight as u32, *caps.image_count.end()); // TODO Delete line when framebuffer is implemented correctly
+
         let formats = surface.supported_formats(&adapter.physical_device);
         println!("formats: {:?}", formats);
         let format = formats.map_or(f::Format::Rgba8Srgb, |formats| {
@@ -402,7 +404,7 @@ impl<B> Renderer<B>
         }
     }
 
-    fn render(&mut self, render_pass: &mut dyn RenderPass<B>, resource_manager: &ResourceManager<B>) {
+    fn render(&mut self, render_pass: &mut dyn RenderPass<B>) {
 
         // Compute index into our resource ring buffers based on the frame number
         // and number of frames in flight. Pay close attention to where this index is needed
@@ -420,46 +422,58 @@ impl<B> Renderer<B>
         };
 
         // TODO move to render_pass and recreate on swapchain recreation
-        let framebuffer = unsafe {
-            self.device
-                .create_framebuffer(
-                    render_pass.get_render_pass(),
-                    iter::once(surface_image.borrow()),
-                    i::Extent {
-                        width: self.dimensions.width,
-                        height: self.dimensions.height,
-                        depth: 1,
-                    },
-                )
-                .unwrap()
-        };
+//        let framebuffer = unsafe {
+//            self.device
+//                .create_framebuffer(
+//                    render_pass.get_render_pass(),
+//                    iter::once(surface_image.borrow()),
+//                    i::Extent {
+//                        width: self.dimensions.width,
+//                        height: self.dimensions.height,
+//                        depth: 1,
+//                    },
+//                )
+//                .unwrap()
+//        };
 
-        self.sync_and_reset(frame_idx);
+//        self.sync_and_reset(frame_idx);
 
         // Rendering
-        let mut command_buffers = render_pass.generate_command_buffer(self, resource_manager, &framebuffer);
+//        let mut command_buffers = render_pass.generate_command_buffer(self, resource_manager, &framebuffer);
+
+        let mut queue = &mut self.queue_group.queues[0];
+
+        let mut command_buffers = render_pass.render(queue, frame_idx);
+        let mut output = render_pass
+            .blit_to_surface(queue, surface_image.borrow(), frame_idx);
+
+        let mut fb_lock = output.lock().unwrap();
+        let (fence,_,_,_,_,present_semaphore) = fb_lock.get_frame_data(frame_idx);
 
         unsafe {
-            let submission = Submission {
-                command_buffers: iter::once(command_buffers),
-                wait_semaphores: None,
-                signal_semaphores: iter::once(&self.submission_complete_semaphores[frame_idx]),
-            };
-            self.queue_group.queues[0].submit(
-                submission,
-                Some(&self.submission_complete_fences[frame_idx]),
-            );
+//            let submission = Submission {
+//                command_buffers: command_buffers.iter(),
+//                wait_semaphores: None,
+//                signal_semaphores: iter::once(present_semaphore),
+//            };
+//            self.queue_group.queues[0].submit(
+//                submission,
+//                Some(&self.submission_complete_fences[frame_idx]),
+//            );
 
-            let fence = &self.submission_complete_fences[frame_idx];
-            self.device
-                .wait_for_fence(fence, !0)
-                .expect("Failed to wait for fence");
+//            let fence = &self.submission_complete_fences[frame_idx];
+//            self.device
+//                .wait_for_fence(fence, !0)
+//                .expect("Failed to wait for fence");
+//            self.device
+//                .reset_fence(fence)
+//                .expect("Failed to reset fence");
 
             // present frame
-            let result = self.queue_group.queues[0].present_surface(
+            let result = queue.present_surface(
                 &mut self.surface,
                 surface_image,
-                Some(&self.submission_complete_semaphores[frame_idx]),
+                Some(present_semaphore),
             );
 
 //            if self.frame_buffers.len() > self.current_swap_chain_image {
@@ -471,7 +485,7 @@ impl<B> Renderer<B>
 //            }
 //            self.frame_buffers.insert(self.current_swap_chain_image, framebuffer);
 
-            self.device.destroy_framebuffer(framebuffer);
+//            self.device.destroy_framebuffer(framebuffer);
 
             if result.is_err() {
                 self.recreate_swapchain();

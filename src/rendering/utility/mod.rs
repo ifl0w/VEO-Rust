@@ -1,6 +1,7 @@
 
 //pub use uniform::Uniform;
 mod uniform;
+
 pub use uniform::GPUBuffer;
 pub use uniform::UniformID;
 pub use uniform::Uniform;
@@ -13,6 +14,9 @@ pub use resources::GPUMesh;
 pub use resources::MeshGenerator;
 pub use resources::Plane;
 pub use resources::Cube;
+
+pub mod framebuffer;
+pub use framebuffer::Framebuffer;
 
 pub type Index = u32;
 

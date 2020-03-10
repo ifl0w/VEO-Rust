@@ -1,6 +1,7 @@
 pub use camera::Camera;
 pub use camera::CameraData;
 pub use camera::Transformation;
+pub use images::*;
 pub use mesh::Mesh;
 pub use nse_gui::octree_gui::OctreeGuiSystem;
 pub use octree::Octree;
@@ -17,4 +18,6 @@ mod octree;
 mod nse_gui;
 
 pub mod utility;
-mod render_passes;
+pub mod render_passes;
+pub mod images;
+

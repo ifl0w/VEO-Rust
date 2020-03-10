@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Weak, Mutex};
 use std::mem::ManuallyDrop;
 use crate::rendering::utility::{Vertex, Index, GPUBuffer};
 
@@ -45,14 +45,14 @@ pub struct ResourceManager<B>
 
 impl<B> ResourceManager<B>
     where B: gfx_hal::Backend {
-    pub fn new(renderer: &Renderer<B>) -> Self {
-        ResourceManager {
+    pub fn new(renderer: &Renderer<B>) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(ResourceManager {
             device: renderer.device.clone(),
             adapter: renderer.adapter.clone(),
 
             meshes: HashMap::new(),
 //            buffers: HashMap::new(),
-        }
+        }))
     }
 
     pub fn get_mesh(&self, id: &MeshID) -> &GPUMesh<B> {
