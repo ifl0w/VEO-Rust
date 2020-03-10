@@ -20,10 +20,12 @@ mod forward_render_pass;
 mod pipelines;
 
 pub trait RenderPass<B: Backend> {
+    fn sync(&mut self, frame_idx: usize);
+    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue) -> Arc<Mutex<Framebuffer<B, B::Device>>>;
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass>;
     fn fill_command_buffer(&self, framebuffer: &mut B::Framebuffer, command_buffer: &mut B::CommandBuffer, frame_idx: usize);
     fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet;
-    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::ImageView, frame_idx: usize)
+    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize)
                        -> Arc<Mutex<Framebuffer<B, B::Device>>>;
     fn render(&mut self, queue: &mut B::CommandQueue, frame_idx: usize) -> Arc<Mutex<Framebuffer<B, B::Device>>>;
 }

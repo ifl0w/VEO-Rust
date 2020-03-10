@@ -1,22 +1,21 @@
+pub use framebuffer::Framebuffer;
+pub use resources::Cube;
+pub use resources::GPUMesh;
+pub use resources::MeshGenerator;
+pub use resources::MeshID;
+pub use resources::Plane;
+pub use resources::ResourceManager;
+pub use swapchain::SwapchainWrapper;
+pub use uniform::GPUBuffer;
+pub use uniform::Uniform;
+pub use uniform::UniformID;
 
 //pub use uniform::Uniform;
 mod uniform;
 
-pub use uniform::GPUBuffer;
-pub use uniform::UniformID;
-pub use uniform::Uniform;
-
 pub mod resources;
-pub use resources::ResourceManager;
-pub use resources::MeshID;
-pub use resources::GPUMesh;
-
-pub use resources::MeshGenerator;
-pub use resources::Plane;
-pub use resources::Cube;
-
 pub mod framebuffer;
-pub use framebuffer::Framebuffer;
+pub mod swapchain;
 
 pub type Index = u32;
 
@@ -32,7 +31,7 @@ impl Vertex {
         Self {
             position,
             normal,
-            color
+            color,
         }
     }
 }

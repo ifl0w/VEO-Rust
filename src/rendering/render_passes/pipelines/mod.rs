@@ -20,6 +20,9 @@ pub trait Pipeline<B: Backend> {
            set_layout: &B::DescriptorSetLayout)
            -> Self;
 
+    fn get_pipeline(&self) -> &B::GraphicsPipeline;
+    fn get_layout(&self) -> &B::PipelineLayout;
+
     fn create_pipeline(device: &Arc<B::Device>,
                        render_pass: &B::RenderPass,
                        set_layout: &B::DescriptorSetLayout)

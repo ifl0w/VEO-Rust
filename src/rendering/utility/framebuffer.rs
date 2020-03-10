@@ -115,16 +115,6 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
         })
     }
 
-    //    fn next_acq_pre_pair_index(&mut self) -> usize {
-//        if self.last_ref >= self.acquire_semaphores.as_ref().unwrap().len() {
-//            self.last_ref = 0
-//        }
-//
-//        let ret = self.last_ref;
-//        self.last_ref += 1;
-//        ret
-//    }
-//
     pub fn get_frame_data(&mut self, frame_id: usize) -> (&mut B::Fence,
                                                           &mut Image<B, D>,
                                                           &mut B::Framebuffer,

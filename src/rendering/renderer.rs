@@ -40,7 +40,7 @@ use std::{
 use std::borrow::BorrowMut;
 use std::cell::Cell;
 use std::hash::Hasher;
-use std::iter::once;
+use std::iter::{once, Map};
 use std::ops::{Deref, RangeInclusive};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -64,8 +64,10 @@ use winit::window::Window;
 
 use crate::core::{Exit, Filter, MainWindow, Message, System};
 use crate::NSE;
-use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree, Plane, RenderPass, Transformation};
+use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree, Plane, RenderPass, Transformation, SwapchainWrapper};
 use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
+use std::collections::{HashMap, BTreeMap};
+use std::thread::sleep;
 
 /* Constants */
 // Window
@@ -243,6 +245,7 @@ pub struct Renderer<B: gfx_hal::Backend> {
     pub submission_complete_fences: Vec<B::Fence>,
     pub cmd_pools: Vec<B::CommandPool>,
     pub frame_buffers: Vec<B::Framebuffer>,
+    pub swapchain: SwapchainWrapper<B, B::Device>,
     pub frames_in_flight: usize,
     pub current_swap_chain_image: usize,
 }
@@ -296,10 +299,14 @@ impl<B> Renderer<B>
             .with_present_mode(gfx_hal::window::PresentMode::IMMEDIATE);
         println!("{:?}", swap_config);
         let extent = swap_config.extent;
-        unsafe {
-            surface
-                .configure_swapchain(&device, swap_config)
-                .expect("Can't configure swapchain");
+//        unsafe {
+//            surface
+//                .configure_swapchain(&device, swap_config)
+//                .expect("Can't configure swapchain");
+//        };
+
+        let swapchain = unsafe {
+            SwapchainWrapper::new(&device, &adapter, &mut surface, WINDOW_DIMENSIONS)
         };
 
         // The number of the rest of the resources is based on the frames in flight.
@@ -350,7 +357,7 @@ impl<B> Renderer<B>
         };
 
         let mut frame_buffers = Vec::new();
-        frame_buffers.reserve(frames_in_flight);
+//        frame_buffers.reserve(frames_in_flight);
 
         Renderer {
             instance,
@@ -365,26 +372,27 @@ impl<B> Renderer<B>
             submission_complete_fences,
             cmd_pools,
             frame_buffers,
+            swapchain,
             frames_in_flight,
             current_swap_chain_image: 0,
         }
     }
 
-    fn recreate_swapchain(&mut self) {
-        let caps = self.surface.capabilities(&self.adapter.physical_device);
-        let swap_config = window::SwapchainConfig::from_caps(&caps, self.format, self.dimensions);
-        println!("{:?}", swap_config);
-        let extent = swap_config.extent.to_extent();
-
-        unsafe {
-            self.surface
-                .configure_swapchain(&self.device, swap_config)
-                .expect("Can't create swapchain");
-        }
-
-        self.viewport.rect.w = extent.width as _;
-        self.viewport.rect.h = extent.height as _;
-    }
+//    fn recreate_swapchain(&mut self) {
+//        let caps = self.surface.capabilities(&self.adapter.physical_device);
+//        let swap_config = window::SwapchainConfig::from_caps(&caps, self.format, self.dimensions);
+//        println!("{:?}", swap_config);
+//        let extent = swap_config.extent.to_extent();
+//
+//        unsafe {
+//            self.surface
+//                .configure_swapchain(&self.device, swap_config)
+//                .expect("Can't create swapchain");
+//        }
+//
+//        self.viewport.rect.w = extent.width as _;
+//        self.viewport.rect.h = extent.height as _;
+//    }
 
     fn sync_and_reset(&mut self, frame_idx: usize) {
         // Wait for the fence of the previous submission of this frame and reset it; ensures we are
@@ -411,15 +419,17 @@ impl<B> Renderer<B>
         // versus when the swapchain image index we got from acquire_image is needed.
         let frame_idx = self.current_swap_chain_image;
 
-        let surface_image = unsafe {
-            match self.surface.acquire_image(!0) {
-                Ok((image, _)) => image,
-                Err(_) => {
-                    self.recreate_swapchain();
-                    return;
-                }
-            }
-        };
+//        let surface_image = unsafe {
+//            match self.surface.acquire_image(!0) {
+//                Ok((image, _)) => image,
+//                Err(_) => {
+//                    self.recreate_swapchain();
+//                    return;
+//                }
+//            }
+//        };
+
+        let (swap_idx, image) = self.swapchain.acquire_image(frame_idx);
 
         // TODO move to render_pass and recreate on swapchain recreation
 //        let framebuffer = unsafe {
@@ -443,9 +453,11 @@ impl<B> Renderer<B>
 
         let mut queue = &mut self.queue_group.queues[0];
 
-        let mut command_buffers = render_pass.render(queue, frame_idx);
-        let mut output = render_pass
-            .blit_to_surface(queue, surface_image.borrow(), frame_idx);
+//        let mut command_buffers = render_pass.render(queue, frame_idx);
+
+        render_pass.sync(frame_idx);
+        render_pass.blit_to_surface(queue, image, frame_idx);
+        let mut output = render_pass.submit(frame_idx, queue);
 
         let mut fb_lock = output.lock().unwrap();
         let (fence,_,_,_,_,present_semaphore) = fb_lock.get_frame_data(frame_idx);
@@ -470,11 +482,13 @@ impl<B> Renderer<B>
 //                .expect("Failed to reset fence");
 
             // present frame
-            let result = queue.present_surface(
-                &mut self.surface,
-                surface_image,
-                Some(present_semaphore),
-            );
+//            let result = queue.present_surface(
+//                &mut self.surface,
+//                surface_image,
+//                Some(present_semaphore),
+//            );
+
+            self.swapchain.present(queue, swap_idx, Some(vec![present_semaphore]));
 
 //            if self.frame_buffers.len() > self.current_swap_chain_image {
 //
@@ -487,9 +501,9 @@ impl<B> Renderer<B>
 
 //            self.device.destroy_framebuffer(framebuffer);
 
-            if result.is_err() {
-                self.recreate_swapchain();
-            }
+//            if result.is_err() {
+//                self.recreate_swapchain();
+//            }
         }
 
         // Increment our frame

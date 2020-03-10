@@ -17,6 +17,7 @@ use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
 use crate::rendering::{ShaderCode, Vertex, Pipeline, ENTRY_NAME};
+use std::borrow::Borrow;
 
 pub struct ForwardPipeline<B: Backend> {
     device: Arc<B::Device>,
@@ -32,6 +33,14 @@ impl<B: Backend> Pipeline<B> for ForwardPipeline<B>  {
             device: device.clone(),
             info: Self::create_pipeline(device, render_pass, set_layout).unwrap(),
         }
+    }
+
+    fn get_pipeline(&self) -> &B::GraphicsPipeline {
+        &self.info.0
+    }
+
+    fn get_layout(&self) -> &B::PipelineLayout {
+        &self.info.1
     }
 
     fn create_pipeline(device: &Arc<B::Device>, render_pass: &B::RenderPass, set_layout: &B::DescriptorSetLayout)

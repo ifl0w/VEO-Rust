@@ -31,6 +31,14 @@ impl<B: Backend> Pipeline<B> for ResolvePipeline<B> {
         }
     }
 
+    fn get_pipeline(&self) -> &B::GraphicsPipeline {
+        unimplemented!()
+    }
+
+    fn get_layout(&self) -> &<B as Backend>::PipelineLayout {
+        unimplemented!()
+    }
+
     fn create_pipeline(device: &Arc<B::Device>, render_pass: &B::RenderPass, set_layout: &B::DescriptorSetLayout) -> Option<(ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>)> {
         let pipeline_layout = ManuallyDrop::new(
             unsafe {
