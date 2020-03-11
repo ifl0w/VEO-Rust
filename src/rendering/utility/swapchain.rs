@@ -19,6 +19,7 @@ pub struct SwapchainWrapper<B: Backend, D: Device<B>> {
     swapchain: Option<B::Swapchain>,
     backbuffer: Option<Vec<B::Image>>,
     acquire_fences: Vec<B::Fence>,
+    acquire_semaphores: Vec<B::Semaphore>,
 
     extent: Extent,
     format: Format,
@@ -53,8 +54,10 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
             .expect("Can't create swapchain");
 
         let mut acquire_fences = Vec::with_capacity(backbuffer.len());
+        let mut acquire_semaphores = Vec::with_capacity(backbuffer.len());
         for _ in 0..3 {
             acquire_fences.push(device.create_fence(false).expect("Failed to create fence."));
+            acquire_semaphores.push(device.create_semaphore().expect("Failed to create semaphore."));
         };
 
         let swapchain = SwapchainWrapper {
@@ -65,6 +68,7 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
             backbuffer: Some(backbuffer),
 
             acquire_fences,
+            acquire_semaphores,
 
             extent,
             format,
@@ -78,23 +82,26 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
         unimplemented!()
     }
 
-    pub fn acquire_image(&mut self, frame_idx: usize) -> (SwapImageIndex, &B::Image) {
+    pub fn acquire_image(&mut self, frame_idx: usize) -> (SwapImageIndex, &B::Image, &mut B::Semaphore) {
         let mut image_index: SwapImageIndex = 0;
 
         unsafe {
             let (idx, _) = self.swapchain
                 .as_mut().unwrap()
-                .acquire_image(!0, None, Some(&self.acquire_fences[frame_idx]))
+                .acquire_image(!0,
+                               Some(&self.acquire_semaphores[frame_idx]),
+                               None)
+//            Some(&self.acquire_fences[frame_idx]))
                 .expect("Failed to aquire swapchain image.");
 
-            self.device.wait_for_fence(&self.acquire_fences[frame_idx], !0);
-            self.device.reset_fence(&self.acquire_fences[frame_idx]);
+//            self.device.wait_for_fence(&self.acquire_fences[frame_idx], !0);
+//            self.device.reset_fence(&self.acquire_fences[frame_idx]);
 
             image_index = idx;
         }
 
         let image = self.backbuffer.as_ref().unwrap().get(image_index as usize).unwrap();
-        (image_index, image)
+        (image_index, image, &mut self.acquire_semaphores[frame_idx])
     }
 
     pub fn present(&mut self, queue: &mut B::CommandQueue,

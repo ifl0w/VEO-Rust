@@ -18,6 +18,7 @@ use gfx_hal::window::{Extent2D, PresentationSurface};
 use crate::rendering::{DepthImage, Image};
 use gfx_hal::adapter::Adapter;
 use std::ops::Deref;
+use std::rc::Rc;
 
 pub struct Framebuffer<B: Backend, D: Device<B>> {
     device: Arc<D>,
@@ -129,6 +130,10 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
             &mut self.command_buffer_lists[frame_id],
             &mut self.present_semaphores[frame_id],
         )
+    }
+
+    pub fn get_frame_semaphore(&mut self, frame_id: usize) -> &mut B::Semaphore {
+        &mut self.present_semaphores[frame_id]
     }
 }
 

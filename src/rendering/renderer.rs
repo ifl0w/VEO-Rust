@@ -68,6 +68,8 @@ use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree
 use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
 use std::collections::{HashMap, BTreeMap};
 use std::thread::sleep;
+use std::rc::Rc;
+use winit::event::VirtualKeyCode::Mute;
 
 /* Constants */
 // Window
@@ -81,7 +83,7 @@ pub struct RenderSystem {
     pub(in crate::rendering) resource_manager: Arc<Mutex<ResourceManager<Backend::Backend>>>,
 
     // Render passes
-    forward_render_pass: ForwardRenderPass<Backend::Backend>,
+    forward_render_pass: Arc<Mutex<ForwardRenderPass<Backend::Backend>>>,
 
     messages: Vec<Message>,
 }
@@ -101,7 +103,8 @@ impl RenderSystem {
 
         let mut renderer = Renderer::new(Some(instance), surface, adapter.clone());
         let mut resource_manager = ResourceManager::new(&renderer);
-        let mut forward_render_pass = ForwardRenderPass::new(&mut renderer, &resource_manager);
+        let mut forward_render_pass =
+            Arc::new(Mutex::new(ForwardRenderPass::new(&mut renderer, &resource_manager)));
 
         let messages = vec![Message::new(MainWindow { window_id: window.id() })];
 
@@ -174,7 +177,7 @@ impl System for RenderSystem {
                                     match (virtual_keycode, state) {
                                         (Some(VirtualKeyCode::F5), ElementState::Pressed) => {
                                             println!("Recreating pipelines...");
-                                            self.forward_render_pass.recreate_pipeline();
+                                            self.forward_render_pass.lock().unwrap().recreate_pipeline();
                                         }
                                         _ => ()
                                     }
@@ -203,20 +206,20 @@ impl System for RenderSystem {
 
         let frame_idx = self.renderer.current_swap_chain_image;
 
-        self.forward_render_pass.reset_instances();
+        self.forward_render_pass.lock().unwrap().reset_instances();
         for mesh_entity in &filter[0].lock().unwrap().entities {
             let mutex = mesh_entity.lock().unwrap();
             let mesh = mutex.get_component::<Mesh>().unwrap();
             let trans = mutex.get_component::<Transformation>().unwrap();
 
-            self.forward_render_pass.add_instance(mesh.id, trans.model_matrix);
+            self.forward_render_pass.lock().unwrap().add_instance(mesh.id, trans.model_matrix);
         }
 
-        self.forward_render_pass.update_camera(camera_data, frame_idx);
+        self.forward_render_pass.lock().unwrap().update_camera(camera_data, frame_idx);
 
         // Currently only a single pass can be rendered since fences and semaphores are in the
         // renderer instead of the render passes
-        self.renderer.render(&mut self.forward_render_pass);
+        self.renderer.render(&self.forward_render_pass);
 
         self.window.request_redraw();
     }
@@ -267,6 +270,7 @@ impl<B> Renderer<B>
                 surface.supports_queue_family(family)
                     && family.queue_type().supports_graphics()
                     && family.queue_type().supports_compute()
+                    && family.queue_type().supports_transfer()
             })
             .unwrap();
         let mut gpu = unsafe {
@@ -280,7 +284,7 @@ impl<B> Renderer<B>
 
         // Define maximum number of frames we want to be able to be "in flight" (being computed
         // simultaneously) at once
-        let frames_in_flight: usize = 3;
+        let frames_in_flight: usize = 2;
 
         let mut caps = surface.capabilities(&adapter.physical_device);
 //        caps.image_count = RangeInclusive::new(frames_in_flight as u32, *caps.image_count.end()); // TODO Delete line when framebuffer is implemented correctly
@@ -412,7 +416,7 @@ impl<B> Renderer<B>
         }
     }
 
-    fn render(&mut self, render_pass: &mut dyn RenderPass<B>) {
+    fn render(&mut self, render_pass: &Arc<Mutex<ForwardRenderPass<B>>>) {
 
         // Compute index into our resource ring buffers based on the frame number
         // and number of frames in flight. Pay close attention to where this index is needed
@@ -429,7 +433,8 @@ impl<B> Renderer<B>
 //            }
 //        };
 
-        let (swap_idx, image) = self.swapchain.acquire_image(frame_idx);
+        let (swap_idx, image, aquire_semaphore) = self.swapchain.acquire_image(frame_idx);
+
 
         // TODO move to render_pass and recreate on swapchain recreation
 //        let framebuffer = unsafe {
@@ -452,17 +457,81 @@ impl<B> Renderer<B>
 //        let mut command_buffers = render_pass.generate_command_buffer(self, resource_manager, &framebuffer);
 
         let mut queue = &mut self.queue_group.queues[0];
-
-//        let mut command_buffers = render_pass.render(queue, frame_idx);
-
-        render_pass.sync(frame_idx);
-        render_pass.blit_to_surface(queue, image, frame_idx);
-        let mut output = render_pass.submit(frame_idx, queue);
-
-        let mut fb_lock = output.lock().unwrap();
-        let (fence,_,_,_,_,present_semaphore) = fb_lock.get_frame_data(frame_idx);
+        self.device.wait_idle();
 
         unsafe {
+            let mut lock = render_pass.lock().unwrap();
+
+            lock.sync(frame_idx);
+            lock.render(frame_idx);
+//            lock.submit(frame_idx, queue, None);
+
+            let (fe,
+                fi,
+                framebuffer,
+                pool,
+                command_buffers,
+                semaphore) = lock.get_framebuffer().get_frame_data(frame_idx);
+
+            let submission = Submission {
+                command_buffers: command_buffers.iter(),
+                wait_semaphores: None,
+                signal_semaphores: iter::once(&self.submission_complete_semaphores[frame_idx])
+            };
+            queue.submit(
+                submission,
+                Some(fe),
+            );
+        }
+        self.device.wait_idle();
+        unsafe {
+            let mut lock = render_pass.lock().unwrap();
+//            let present_semaphore = lock.get_framebuffer().get_frame_semaphore(frame_idx);
+
+            // blitting
+            lock.sync(frame_idx);
+            lock.blit_to_surface(queue, image, frame_idx);
+//            lock.submit(frame_idx, queue, Some(aquire_semaphore));
+
+            let (fe,
+                fi,
+                framebuffer,
+                pool,
+                command_buffers,
+                semaphore) = lock.get_framebuffer().get_frame_data(frame_idx);
+
+            let w1 = (&aquire_semaphore, pso::PipelineStage::TOP_OF_PIPE);
+            let w2 = (&&mut self.submission_complete_semaphores[frame_idx], pso::PipelineStage::TOP_OF_PIPE);
+
+            let mut wait_sem = vec![w1, w2];
+
+            let submission = Submission {
+                command_buffers: command_buffers.iter(),
+                wait_semaphores: wait_sem,
+                signal_semaphores: vec![&semaphore],
+            };
+            queue.submit(
+                submission,
+                Some(fe),
+            );
+        }
+        self.device.wait_idle();
+
+
+
+//        let mut fb_lock = output.lock().unwrap();
+//        let (fence,_,_,_,_,present_semaphore) = fb_lock.get_frame_data(frame_idx);
+
+        // TODO Submit rendering and then generate a second pass to blit to swapchain
+
+        unsafe {
+            let mut lock = render_pass.lock().unwrap();
+            let (fe,
+                fi,
+                framebuffer,
+                pool,
+                command_buffers,
+                semaphore) = lock.get_framebuffer().get_frame_data(frame_idx);
 //            let submission = Submission {
 //                command_buffers: command_buffers.iter(),
 //                wait_semaphores: None,
@@ -488,7 +557,9 @@ impl<B> Renderer<B>
 //                Some(present_semaphore),
 //            );
 
-            self.swapchain.present(queue, swap_idx, Some(vec![present_semaphore]));
+//            self.device.wait_idle();
+
+            self.swapchain.present(queue, swap_idx, Some(vec![semaphore]));
 
 //            if self.frame_buffers.len() > self.current_swap_chain_image {
 //

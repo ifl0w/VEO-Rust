@@ -1,5 +1,5 @@
 use std::{iter, mem, ptr};
-use std::borrow::BorrowMut;
+use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -10,12 +10,13 @@ use std::iter::once;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, Range};
 use std::process::exit;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex, Weak};
 
 use cgmath::{Matrix, Matrix4, SquareMatrix};
-use gfx_hal::{Backend, command, format, format::Format, image, IndexType, pass, pass::Attachment, pso, memory};
+use gfx_hal::{Backend, command, format, format::Format, image, IndexType, memory, pass, pass::Attachment, pso};
 use gfx_hal::buffer::IndexBufferView;
-use gfx_hal::command::{ClearDepthStencil, CommandBuffer, ImageBlit, SubpassContents};
+use gfx_hal::command::{ClearColor, ClearDepthStencil, ClearValue, CommandBuffer, ImageBlit, ImageCopy, SubpassContents};
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
 use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers, SubresourceRange};
@@ -54,13 +55,14 @@ pub struct ForwardRenderPass<B: Backend> {
     resolve_pipeline: ResolvePipeline<B>,
 
     extent: Extent2D,
+    viewport: pso::Viewport,
 
     //    pub pipeline: ManuallyDrop<B::GraphicsPipeline>,
 //    pub pipeline_layout: ManuallyDrop<B::PipelineLayout>,
     pub desc_pool: ManuallyDrop<B::DescriptorPool>,
     pub desc_set: Vec<B::DescriptorSet>,
     pub render_set_layout: ManuallyDrop<B::DescriptorSetLayout>,
-    pub framebuffer: Arc<Mutex<Framebuffer<B, B::Device>>>,
+    pub framebuffer: Framebuffer<B, B::Device>,
 
     pub cmd_buffers: Vec<B::CommandBuffer>,
 
@@ -137,14 +139,14 @@ impl<B: Backend> ForwardRenderPass<B> {
 
         let render_pass = {
             let attachment = pass::Attachment {
-                format: Some(format),
+                format: Some(Format::Rgba32Sfloat), //Some(format),
                 samples: 1,
                 ops: pass::AttachmentOps::new(
                     pass::AttachmentLoadOp::Clear,
-                    pass::AttachmentStoreOp::DontCare,
+                    pass::AttachmentStoreOp::Store,
                 ),
                 stencil_ops: pass::AttachmentOps::DONT_CARE,
-                layouts: Layout::Undefined..Layout::ColorAttachmentOptimal,
+                layouts: Layout::Undefined..Layout::TransferSrcOptimal,
             };
 //            let depth_attachment = pass::Attachment {
 //                format: Some(depth_stencil_format),
@@ -164,6 +166,48 @@ impl<B: Backend> ForwardRenderPass<B> {
                 resolves: &[],
                 preserves: &[],
             };
+//
+//            let subpass2 = pass::SubpassDesc {
+//                colors: &[(0, Layout::TransferSrcOptimal)],
+//                depth_stencil: None, //Some(&(0, Layout::DepthStencilAttachmentOptimal)),
+//                inputs: &[],
+//                resolves: &[],
+//                preserves: &[],
+//            };
+
+//            let dep = SubpassDependency {
+//                /// Other subpasses this one depends on.
+//                passes: SubpassRef::External .. SubpassRef::Pass(0),
+//                /// Other pipeline stages this subpass depends on.
+//                stages: pso::PipelineStage::TOP_OF_PIPE .. pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
+//                /// Resource accesses this subpass depends on.
+//                accesses: image::Access::COLOR_ATTACHMENT_WRITE .. image::Access::COLOR_ATTACHMENT_WRITE,
+//                /// Dependency flags.
+//                flags: memory::Dependencies::empty(),
+//            };
+//
+//            let dep2 = SubpassDependency {
+//                /// Other subpasses this one depends on.
+//                passes: SubpassRef::Pass(0) .. SubpassRef::Pass(1),
+//                /// Other pipeline stages this subpass depends on.
+//                stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT .. pso::PipelineStage::BOTTOM_OF_PIPE,
+//                /// Resource accesses this subpass depends on.
+//                accesses: image::Access::COLOR_ATTACHMENT_WRITE .. image::Access::empty(),
+//                /// Dependency flags.
+//                flags: memory::Dependencies::empty(),
+//            };
+
+//            let self_dep = SubpassDependency {
+//                /// Other subpasses this one depends on.
+//                passes: SubpassRef::Pass(1) .. SubpassRef::Pass(1),
+//                /// Other pipeline stages this subpass depends on.
+//                stages: pso::PipelineStage::BOTTOM_OF_PIPE .. pso::PipelineStage::BOTTOM_OF_PIPE,
+//                /// Resource accesses this subpass depends on.
+//                accesses: image::Access::empty() .. image::Access::empty(),
+//                /// Dependency flags.
+//                flags: memory::Dependencies::empty(),
+//            };
+
 
             ManuallyDrop::new(
                 unsafe { device.create_render_pass(&[attachment], &[subpass], &[]) }
@@ -187,14 +231,24 @@ impl<B: Backend> ForwardRenderPass<B> {
         let forward_pipeline = ForwardPipeline::new(device, render_pass.deref(), render_set_layout.deref());
         let resolve_pipeline = ResolvePipeline::new(device, render_pass.deref(), render_set_layout.deref());
 
-        let mut framebuffer = Arc::new(Mutex::new(Framebuffer::new(device,
-                                                                   adapter,
-                                                                   &renderer.queue_group,
-                                                                   &render_pass,
-                                                                   renderer.dimensions,
-                                                                   Usage::COLOR_ATTACHMENT | Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
-                                                                   format,
-                                                                   renderer.frames_in_flight).unwrap()));
+        let mut framebuffer = Framebuffer::new(device,
+                                               adapter,
+                                               &renderer.queue_group,
+                                               &render_pass,
+                                               renderer.dimensions,
+                                               Usage::COLOR_ATTACHMENT | Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
+                                               Format::Rgba32Sfloat,
+                                               renderer.frames_in_flight).unwrap();
+
+        let viewport = pso::Viewport {
+            rect: pso::Rect {
+                x: 0,
+                y: 0,
+                w: renderer.dimensions.width as _,
+                h: renderer.dimensions.height as _,
+            },
+            depth: 0.0..1.0,
+        };
 
         ForwardRenderPass {
             device: device.clone(),
@@ -207,6 +261,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             resolve_pipeline,
 
             extent: renderer.dimensions,
+            viewport,
 
             desc_pool,
             desc_set,
@@ -250,6 +305,94 @@ impl<B: Backend> ForwardRenderPass<B> {
 //    pub fn create_command_buffer(&mut self, frame_idx: usize) -> &B::CommandBuffer {
 //
 //    }
+
+//    fn fill_command_buffer(&mut self, frame_idx: usize) {
+//        let viewport = pso::Viewport {
+//            rect: pso::Rect {
+//                x: 0,
+//                y: 0,
+//                w: self.extent.width as _,
+//                h: self.extent.height as _,
+//            },
+//            depth: 0.0..1.0,
+//        };
+//
+//        let (fence,
+//            image,
+//            framebuffer,
+//            pool,
+//            command_buffers,
+//            semaphore) = self.framebuffer.get_frame_data(frame_idx);
+//
+//        unsafe {
+////            command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
+//
+//            command_buffer.set_viewports(0, &[viewport.clone()]);
+//            command_buffer.set_scissors(0, &[viewport.rect]);
+//            command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline());
+////            cmd_buffer.bind_vertex_buffers(0, iter::once((&*self.vertex_buffer, 0)));
+//            command_buffer.bind_graphics_descriptor_sets(
+//                &self.forward_pipeline.get_layout(),
+//                0,
+//                iter::once(&self.desc_set[frame_idx]),
+//                &[],
+//            );
+//
+//            command_buffer.begin_render_pass(
+//                &self.render_pass,
+//                framebuffer,
+//                viewport.rect,
+//                &[
+//                    command::ClearValue {
+//                        color: command::ClearColor {
+//                            float32: [0.3, 0.3, 0.3, 1.0],
+//                        },
+//                    },
+//                    command::ClearValue {
+//                        depth_stencil: ClearDepthStencil {
+//                            depth: 0f32,
+//                            stencil: 0,
+//                        },
+//                    }
+//                ],
+//                command::SubpassContents::Inline,
+//            );
+//
+//            let resource_manager = self.resource_manager.lock().unwrap();
+//            for (id, transforms) in self.instances.iter() {
+//                let mesh = resource_manager.get_mesh(id);
+//                let vert_buf = &**mesh.vertex_buffer;
+//                let ind_buf = &**mesh.index_buffer;
+//
+//                for transform in transforms {
+//                    let mut data: &[f32; 16] = transform.as_ref();
+//                    let push_data: [u32; 16] = std::mem::transmute_copy(data);
+//
+//                    command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(),
+//                                                           ShaderStageFlags::VERTEX,
+//                                                           0,
+//                                                           &push_data);
+//
+//                    command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+//
+//                    let index_buffer_view = IndexBufferView {
+//                        buffer: ind_buf,
+//                        offset: 0,
+//                        index_type: mesh.index_type,
+//                    };
+//                    command_buffer.bind_index_buffer(index_buffer_view);
+//                    command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
+//                }
+//            }
+//
+////            command_buffer.next_subpass(SubpassContents::Inline);
+////            command_buffer.end_render_pass();
+////            command_buffer.finish();
+//            command_buffer.end_render_pass();
+//
+//            command_buffer
+//        };
+//    }
 }
 
 impl<B: Backend> Drop for ForwardRenderPass<B> {
@@ -279,13 +422,12 @@ impl<B: Backend> Drop for ForwardRenderPass<B> {
 
 impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     fn sync(&mut self, frame_idx: usize) {
-        let mut fb_lock = self.framebuffer.lock().unwrap();
         let (fe,
             fi,
             framebuffer,
             pool,
             command_buffers,
-            semaphore) = fb_lock.get_frame_data(frame_idx);
+            semaphore) = self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
             self.device
@@ -298,50 +440,233 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         }
     }
 
-    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue) -> Arc<Mutex<Framebuffer<B, B::Device>>> {
-        let mut fb_lock = self.framebuffer.lock().unwrap();
+    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue, wait_sema: Option<&mut B::Semaphore>) {
         let (fe,
             fi,
             framebuffer,
             pool,
             command_buffers,
-            semaphore) = fb_lock.get_frame_data(frame_idx);
+            semaphore) = self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
-            let submission = Submission {
-                command_buffers: command_buffers.iter(),
-                wait_semaphores: None,
-                signal_semaphores: iter::once(&semaphore),
-            };
-            queue.submit(
-                submission,
-                Some(fe),
-            );
+            if wait_sema.is_some() {
+                let submission = Submission {
+                    command_buffers: command_buffers.iter(),
+                    wait_semaphores: iter::once((wait_sema.as_ref().unwrap(), pso::PipelineStage::TOP_OF_PIPE)),
+                    signal_semaphores: iter::once(&semaphore),
+                };
+                queue.submit(
+                    submission,
+                    Some(fe),
+                );
+            } else {
+                let submission = Submission {
+                    command_buffers: command_buffers.iter(),
+                    wait_semaphores: None,
+                    signal_semaphores: iter::once(&semaphore),
+                };
+                queue.submit(
+                    submission,
+                    Some(fe),
+                );
+            }
         }
-
-        self.framebuffer.clone()
     }
 
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass> {
         &self.render_pass
     }
 
-    fn fill_command_buffer(&self, framebuffer: &mut B::Framebuffer, command_buffer: &mut B::CommandBuffer, frame_idx: usize) {
-        let viewport = pso::Viewport {
-            rect: pso::Rect {
-                x: 0,
-                y: 0,
-                w: self.extent.width as _,
-                h: self.extent.height as _,
-            },
-            depth: 0.0..1.0,
-        };
+    fn get_framebuffer(&mut self) -> &mut Framebuffer<B, B::Device> {
+        &mut self.framebuffer
+    }
+
+    fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet {
+        &self.desc_set[frame_index]
+    }
+
+    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize)
+                       -> &mut B::Semaphore {
+        let (fe,
+            fi,
+            framebuffer,
+            pool,
+            command_buffers,
+            semaphore) = self.framebuffer.get_frame_data(frame_idx);
+
 
         unsafe {
+            // blitting
+            let mut cmd_buffer = match command_buffers.pop() {
+                Some(cmd_buffer) => cmd_buffer,
+                None => pool.allocate_one(command::Level::Primary),
+            };
+
+            cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
+
+            let mut target_image_barrier = Barrier::Image {
+                states: (image::Access::TRANSFER_READ, Layout::Undefined)
+                    ..(image::Access::TRANSFER_WRITE, Layout::TransferDstOptimal),
+                target: surface_image,
+                families: None,
+                range: SubresourceRange {
+                    aspects: format::Aspects::COLOR,
+                    levels: 0..1,
+                    layers: 0..1,
+                },
+            };
+
+            cmd_buffer.pipeline_barrier(
+                pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
+                gfx_hal::memory::Dependencies::empty(),
+                &[target_image_barrier],
+            );
+
+//            self.fill_command_buffer(framebuffer, &mut cmd_buffer, frame_idx);
+
+            let mut image_barrier = Barrier::Image {
+                states: (image::Access::MEMORY_WRITE, Layout::TransferSrcOptimal)
+                    ..(image::Access::MEMORY_READ, Layout::TransferSrcOptimal),
+                target: &*fi.image,
+                families: None,
+                range: SubresourceRange {
+                    aspects: format::Aspects::COLOR,
+                    levels: 0..1,
+                    layers: 0..1,
+                },
+            };
+
+            cmd_buffer.pipeline_barrier(
+                pso::PipelineStage::TOP_OF_PIPE..pso::PipelineStage::TRANSFER,
+                gfx_hal::memory::Dependencies::all(),
+                &[image_barrier],
+            );
+
+//            cmd_buffer.copy_image(&fi.image,
+//                                  Layout::TransferSrcOptimal,
+//                                  surface_image,
+//                                  Layout::TransferDstOptimal,
+//                                  iter::once(ImageCopy {
+//                                      extent: Extent {
+//                                          width: self.extent.width,
+//                                          height: self.extent.height,
+//                                          depth: 1,
+//                                      },
+//                                      src_subresource: SubresourceLayers {
+//                                          aspects: format::Aspects::COLOR,
+//                                          level: 0,
+//                                          layers: 0..1,
+//                                      },
+//                                      src_offset: Offset { x: 0, y: 0, z: 0 },
+//                                      dst_subresource: SubresourceLayers {
+//                                          aspects: format::Aspects::COLOR,
+//                                          level: 0,
+//                                          layers: 0..1,
+//                                      },
+//                                      dst_offset: Offset { x: 0, y: 0, z: 0 },
+//                                  }));
+
+            cmd_buffer.blit_image(&fi.image,
+                                  Layout::TransferSrcOptimal,
+                                  surface_image,
+                                  Layout::TransferDstOptimal,
+                                  Filter::Linear,
+                                  iter::once(ImageBlit {
+                                      src_subresource: SubresourceLayers {
+                                          aspects: format::Aspects::COLOR,
+                                          level: 0,
+                                          layers: 0..1,
+                                      },
+                                      src_bounds: Offset { x: 0, y: 0, z: 0 }
+                                          .. Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
+                                      dst_subresource: SubresourceLayers {
+                                          aspects: format::Aspects::COLOR,
+                                          level: 0,
+                                          layers: 0..1,
+                                      },
+                                      dst_bounds: Offset { x: 0, y: 0, z: 0 }
+                                          .. Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
+                                  }));
+
+            let image_barrier = Barrier::Image {
+                states: (image::Access::TRANSFER_READ, Layout::TransferSrcOptimal)
+                    ..(image::Access::TRANSFER_WRITE, Layout::ColorAttachmentOptimal),
+                target: &*fi.image,
+                families: None,
+                range: SubresourceRange {
+                    aspects: format::Aspects::COLOR,
+                    levels: 0..1,
+                    layers: 0..1,
+                },
+            };
+
+            cmd_buffer.pipeline_barrier(
+                pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
+                gfx_hal::memory::Dependencies::empty(),
+                &[image_barrier],
+            );
+
+            let target_image_barrier = Barrier::Image {
+                states: (image::Access::TRANSFER_WRITE, Layout::TransferDstOptimal)
+                    ..(image::Access::MEMORY_READ, Layout::Present),
+                target: surface_image,
+                families: None,
+                range: SubresourceRange {
+                    aspects: format::Aspects::COLOR,
+                    levels: 0..1,
+                    layers: 0..1,
+                },
+            };
+
+            cmd_buffer.pipeline_barrier(
+                pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
+                gfx_hal::memory::Dependencies::empty(),
+                &[target_image_barrier],
+            );
+
+            cmd_buffer.finish();
+
+            command_buffers.push(cmd_buffer);
+        }
+
+        semaphore
+    }
+
+    fn render(&mut self, frame_idx: usize) -> &mut B::Semaphore {
+        let (fe,
+            fi,
+            framebuffer,
+            pool,
+            command_buffers,
+            semaphore) = self.framebuffer.get_frame_data(frame_idx);
+
+        // Wait for the fence of the previous submission of this frame and reset it; ensures we are
+        // submitting only up to maximum number of frames_in_flight if we are submitting faster than
+        // the gpu can keep up with. This would also guarantee that any resources which need to be
+        // updated with a CPU->GPU data copy are not in use by the GPU, so we can perform those updates.
+        // In this case there are none to be done, however.
+//        unsafe {
+////            self.device
+////                .wait_for_fence(fence, !0)
+////                .expect("Failed to wait for fence");
+//            self.device
+//                .reset_fence(fence)
+//                .expect("Failed to reset fence");
+//            pool.reset(false);
+//        }
+
+        unsafe {
+            let mut command_buffer = match command_buffers.pop() {
+                Some(cmd_buffer) => cmd_buffer,
+                None => pool.allocate_one(command::Level::Primary),
+            };
+
+            command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
+
 //            command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
 
-            command_buffer.set_viewports(0, &[viewport.clone()]);
-            command_buffer.set_scissors(0, &[viewport.rect]);
+            command_buffer.set_viewports(0, &[self.viewport.clone()]);
+            command_buffer.set_scissors(0, &[self.viewport.rect]);
             command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline());
 //            cmd_buffer.bind_vertex_buffers(0, iter::once((&*self.vertex_buffer, 0)));
             command_buffer.bind_graphics_descriptor_sets(
@@ -354,19 +679,19 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
             command_buffer.begin_render_pass(
                 &self.render_pass,
                 framebuffer,
-                viewport.rect,
+                self.viewport.rect,
                 &[
                     command::ClearValue {
                         color: command::ClearColor {
                             float32: [0.3, 0.3, 0.3, 1.0],
                         },
                     },
-                    command::ClearValue {
-                        depth_stencil: ClearDepthStencil {
-                            depth: 0f32,
-                            stencil: 0,
-                        },
-                    }
+//                    command::ClearValue {
+//                        depth_stencil: ClearDepthStencil {
+//                            depth: 0f32,
+//                            stencil: 0,
+//                        },
+//                    }
                 ],
                 command::SubpassContents::Inline,
             );
@@ -398,190 +723,26 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 }
             }
 
-            command_buffer.end_render_pass();
+//            command_buffer.next_subpass(SubpassContents::Inline);
+//            command_buffer.end_render_pass();
 //            command_buffer.finish();
+            command_buffer.end_render_pass();
 
-            command_buffer
-        };
-    }
+            command_buffer.finish();
 
-    fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet {
-        &self.desc_set[frame_index]
-    }
+            command_buffers.push(command_buffer);
 
-    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize)
-                       -> Arc<Mutex<Framebuffer<B, B::Device>>> {
-        let mut fb_lock = self.framebuffer.lock().unwrap();
-        let (fe,
-            fi,
-            framebuffer,
-            pool,
-            command_buffers,
-            semaphore) = fb_lock.get_frame_data(frame_idx);
-
-        unsafe {
-            // blitting
-            let mut cmd_buffer = match command_buffers.pop() {
-                Some(cmd_buffer) => cmd_buffer,
-                None => pool.allocate_one(command::Level::Primary),
-            };
-
-            cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
-
-            self.fill_command_buffer(framebuffer, &mut cmd_buffer, frame_idx);
-
-            let mut image_barrier = Barrier::Image {
-                states: (image::Access::COLOR_ATTACHMENT_WRITE, Layout::ColorAttachmentOptimal)
-                    ..(image::Access::COLOR_ATTACHMENT_READ, Layout::TransferSrcOptimal),
-                target: &*fi.image,
-                families: None,
-                range: SubresourceRange {
-                    aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
-                },
-            };
-
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT .. pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
-                gfx_hal::memory::Dependencies::empty(),
-                &[image_barrier],
-            );
-
-            let mut target_image_barrier = Barrier::Image {
-                states: (image::Access::TRANSFER_READ, Layout::Undefined)
-                    ..(image::Access::TRANSFER_WRITE, Layout::TransferDstOptimal),
-                target: surface_image,
-                families: None,
-                range: SubresourceRange {
-                    aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
-                },
-            };
-
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::TRANSFER .. pso::PipelineStage::TRANSFER,
-                gfx_hal::memory::Dependencies::empty(),
-                &[target_image_barrier],
-            );
-
-            cmd_buffer.blit_image(&*fi.image,
-                                  Layout::TransferSrcOptimal,
-                                  surface_image,
-                                  Layout::TransferDstOptimal,
-                                  Filter::Nearest,
-                                  iter::once(ImageBlit {
-                                      src_subresource: SubresourceLayers {
-                                          aspects: format::Aspects::COLOR,
-                                          level: 0,
-                                          layers: 0..1,
-                                      },
-                                      src_bounds: Range {
-                                          start: Offset { x: 0, y: 0, z: 0 },
-                                          end: Offset { x: fi.extent.width as i32, y: fi.extent.height as i32, z: 1 },
-                                      },
-                                      dst_subresource: SubresourceLayers {
-                                          aspects: format::Aspects::COLOR,
-                                          level: 0,
-                                          layers: 0..1,
-                                      },
-                                      dst_bounds: Range {
-                                          start: Offset { x: 0, y: 0, z: 0 },
-                                          end: Offset { x: fi.extent.width as i32, y: fi.extent.height as i32, z: 1 },
-                                      },
-                                  }));
-
-            image_barrier = Barrier::Image {
-                states: (image::Access::TRANSFER_READ, Layout::TransferSrcOptimal)
-                    ..(image::Access::TRANSFER_WRITE, Layout::ColorAttachmentOptimal),
-                target: &*fi.image,
-                families: None,
-                range: SubresourceRange {
-                    aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
-                },
-            };
-
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
-                gfx_hal::memory::Dependencies::empty(),
-                &[image_barrier],
-            );
-
-            target_image_barrier = Barrier::Image {
-                states: (image::Access::TRANSFER_WRITE, Layout::TransferDstOptimal)
-                    ..(image::Access::TRANSFER_READ, Layout::Present),
-                target: surface_image,
-                families: None,
-                range: SubresourceRange {
-                    aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
-                },
-            };
-
-            cmd_buffer.pipeline_barrier(
-                pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
-                gfx_hal::memory::Dependencies::empty(),
-                &[target_image_barrier],
-            );
-
-            cmd_buffer.finish();
-
-            command_buffers.push(cmd_buffer);
+//            let submission = Submission {
+//                command_buffers: command_buffers.iter(),
+//                wait_semaphores: None,
+//                signal_semaphores: iter::once(&semaphore),
+//            };
+//            queue.submit(
+//                submission,
+//                Some(fence),
+//            );
         }
 
-        self.framebuffer.clone()
-    }
-
-    fn render(&mut self, queue: &mut B::CommandQueue, frame_idx: usize) -> Arc<Mutex<Framebuffer<B, B::Device>>> {
-        let mut fb_lock = self.framebuffer.lock().unwrap();
-
-        let (fence,
-            image,
-            framebuffer,
-            pool,
-            command_buffers,
-            semaphore) = fb_lock.get_frame_data(frame_idx);
-
-        // Wait for the fence of the previous submission of this frame and reset it; ensures we are
-        // submitting only up to maximum number of frames_in_flight if we are submitting faster than
-        // the gpu can keep up with. This would also guarantee that any resources which need to be
-        // updated with a CPU->GPU data copy are not in use by the GPU, so we can perform those updates.
-        // In this case there are none to be done, however.
-        unsafe {
-//            self.device
-//                .wait_for_fence(fence, !0)
-//                .expect("Failed to wait for fence");
-            self.device
-                .reset_fence(fence)
-                .expect("Failed to reset fence");
-            pool.reset(false);
-        }
-
-        unsafe {
-            let mut cmd_buffer = match command_buffers.pop() {
-                Some(cmd_buffer) => cmd_buffer,
-                None => pool.allocate_one(command::Level::Primary),
-            };
-
-            self.fill_command_buffer(framebuffer, &mut cmd_buffer, frame_idx);
-
-            command_buffers.push(cmd_buffer);
-
-            let submission = Submission {
-                command_buffers: command_buffers.iter(),
-                wait_semaphores: None,
-                signal_semaphores: iter::once(&semaphore),
-            };
-            queue.submit(
-                submission,
-                Some(fence),
-            );
-        }
-
-        self.framebuffer.clone()
+        semaphore
     }
 }

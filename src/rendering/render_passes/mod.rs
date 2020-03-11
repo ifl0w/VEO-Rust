@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::mem::ManuallyDrop;
 
-use gfx_hal::Backend;
+use gfx_hal::{Backend, pso};
 use gfx_hal::queue::CommandQueue;
 use gfx_hal::queue::Submission;
 use gfx_hal::window::PresentationSurface;
@@ -14,6 +14,8 @@ use crate::rendering::{Framebuffer, ResourceManager};
 use crate::rendering::renderer::Renderer;
 use gfx_hal::pso::Viewport;
 use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 mod shader;
 mod forward_render_pass;
@@ -21,12 +23,13 @@ mod pipelines;
 
 pub trait RenderPass<B: Backend> {
     fn sync(&mut self, frame_idx: usize);
-    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue) -> Arc<Mutex<Framebuffer<B, B::Device>>>;
+    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue, wait_sema: Option<&mut B::Semaphore>);
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass>;
-    fn fill_command_buffer(&self, framebuffer: &mut B::Framebuffer, command_buffer: &mut B::CommandBuffer, frame_idx: usize);
+    fn get_framebuffer(&mut self) -> &mut Framebuffer<B, B::Device>;
+
     fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet;
     fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize)
-                       -> Arc<Mutex<Framebuffer<B, B::Device>>>;
-    fn render(&mut self, queue: &mut B::CommandQueue, frame_idx: usize) -> Arc<Mutex<Framebuffer<B, B::Device>>>;
+                       -> &mut B::Semaphore;
+    fn render(&mut self, frame_idx: usize) -> &mut B::Semaphore;
 }
 
