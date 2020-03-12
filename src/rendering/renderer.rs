@@ -423,158 +423,28 @@ impl<B> Renderer<B>
         // versus when the swapchain image index we got from acquire_image is needed.
         let frame_idx = self.current_swap_chain_image;
 
-//        let surface_image = unsafe {
-//            match self.surface.acquire_image(!0) {
-//                Ok((image, _)) => image,
-//                Err(_) => {
-//                    self.recreate_swapchain();
-//                    return;
-//                }
-//            }
-//        };
-
-        let (swap_idx, image, aquire_semaphore) = self.swapchain.acquire_image(frame_idx);
-
-
-        // TODO move to render_pass and recreate on swapchain recreation
-//        let framebuffer = unsafe {
-//            self.device
-//                .create_framebuffer(
-//                    render_pass.get_render_pass(),
-//                    iter::once(surface_image.borrow()),
-//                    i::Extent {
-//                        width: self.dimensions.width,
-//                        height: self.dimensions.height,
-//                        depth: 1,
-//                    },
-//                )
-//                .unwrap()
-//        };
-
-//        self.sync_and_reset(frame_idx);
+        let (swap_idx,
+            image) = self.swapchain.acquire_image(frame_idx);
+        let acquire_semaphore = self.swapchain.get_semaphore(frame_idx);
 
         // Rendering
-//        let mut command_buffers = render_pass.generate_command_buffer(self, resource_manager, &framebuffer);
-
         let mut queue = &mut self.queue_group.queues[0];
-        self.device.wait_idle();
 
-        unsafe {
-            let mut lock = render_pass.lock().unwrap();
+        let mut render_pass_lock = render_pass.lock().unwrap();
 
-            lock.sync(frame_idx);
-            lock.render(frame_idx);
-//            lock.submit(frame_idx, queue, None);
-
-            let (fe,
-                fi,
-                framebuffer,
-                pool,
-                command_buffers,
-                semaphore) = lock.get_framebuffer().get_frame_data(frame_idx);
-
-            let submission = Submission {
-                command_buffers: command_buffers.iter(),
-                wait_semaphores: None,
-                signal_semaphores: iter::once(&self.submission_complete_semaphores[frame_idx])
-            };
-            queue.submit(
-                submission,
-                Some(fe),
-            );
-        }
-        self.device.wait_idle();
-        unsafe {
-            let mut lock = render_pass.lock().unwrap();
-//            let present_semaphore = lock.get_framebuffer().get_frame_semaphore(frame_idx);
+        let present_semaphore = unsafe {
+            render_pass_lock.sync(frame_idx);
+            render_pass_lock.record(frame_idx);
+            render_pass_lock.submit(frame_idx, queue, vec![]);
 
             // blitting
-            lock.sync(frame_idx);
-            lock.blit_to_surface(queue, image, frame_idx);
-//            lock.submit(frame_idx, queue, Some(aquire_semaphore));
-
-            let (fe,
-                fi,
-                framebuffer,
-                pool,
-                command_buffers,
-                semaphore) = lock.get_framebuffer().get_frame_data(frame_idx);
-
-            let w1 = (&aquire_semaphore, pso::PipelineStage::TOP_OF_PIPE);
-            let w2 = (&&mut self.submission_complete_semaphores[frame_idx], pso::PipelineStage::TOP_OF_PIPE);
-
-            let mut wait_sem = vec![w1, w2];
-
-            let submission = Submission {
-                command_buffers: command_buffers.iter(),
-                wait_semaphores: wait_sem,
-                signal_semaphores: vec![&semaphore],
-            };
-            queue.submit(
-                submission,
-                Some(fe),
-            );
-        }
-        self.device.wait_idle();
-
-
-
-//        let mut fb_lock = output.lock().unwrap();
-//        let (fence,_,_,_,_,present_semaphore) = fb_lock.get_frame_data(frame_idx);
+            render_pass_lock.blit_to_surface(queue, image, frame_idx, acquire_semaphore)
+        };
 
         // TODO Submit rendering and then generate a second pass to blit to swapchain
 
         unsafe {
-            let mut lock = render_pass.lock().unwrap();
-            let (fe,
-                fi,
-                framebuffer,
-                pool,
-                command_buffers,
-                semaphore) = lock.get_framebuffer().get_frame_data(frame_idx);
-//            let submission = Submission {
-//                command_buffers: command_buffers.iter(),
-//                wait_semaphores: None,
-//                signal_semaphores: iter::once(present_semaphore),
-//            };
-//            self.queue_group.queues[0].submit(
-//                submission,
-//                Some(&self.submission_complete_fences[frame_idx]),
-//            );
-
-//            let fence = &self.submission_complete_fences[frame_idx];
-//            self.device
-//                .wait_for_fence(fence, !0)
-//                .expect("Failed to wait for fence");
-//            self.device
-//                .reset_fence(fence)
-//                .expect("Failed to reset fence");
-
-            // present frame
-//            let result = queue.present_surface(
-//                &mut self.surface,
-//                surface_image,
-//                Some(present_semaphore),
-//            );
-
-//            self.device.wait_idle();
-
-            self.swapchain.present(queue, swap_idx, Some(vec![semaphore]));
-
-//            if self.frame_buffers.len() > self.current_swap_chain_image {
-//
-//                let tmp = self.frame_buffers.remove(self.current_swap_chain_image);
-//                unsafe {
-//                    self.device.destroy_framebuffer(tmp);
-//                }
-//            }
-//            self.frame_buffers.insert(self.current_swap_chain_image, framebuffer);
-
-//            self.device.destroy_framebuffer(framebuffer);
-
-//            if result.is_err() {
-//                self.recreate_swapchain();
-//            }
+            self.swapchain.present(queue, swap_idx, Some(vec![&present_semaphore]));
         }
 
         // Increment our frame

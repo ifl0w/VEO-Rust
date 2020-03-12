@@ -23,13 +23,10 @@ mod pipelines;
 
 pub trait RenderPass<B: Backend> {
     fn sync(&mut self, frame_idx: usize);
-    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue, wait_sema: Option<&mut B::Semaphore>);
+    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue, wait_semaphores: Vec<&B::Semaphore>)
+        -> &B::Semaphore;
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass>;
-    fn get_framebuffer(&mut self) -> &mut Framebuffer<B, B::Device>;
-
     fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet;
-    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize)
-                       -> &mut B::Semaphore;
-    fn render(&mut self, frame_idx: usize) -> &mut B::Semaphore;
+    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize, acquire_semaphore: &B::Semaphore) -> &B::Semaphore;
+    fn record(&mut self, frame_idx: usize);
 }
-

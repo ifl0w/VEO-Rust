@@ -193,7 +193,7 @@ impl<B: Backend> Drop for ForwardPipeline<B> {
     fn drop(&mut self) {
         self.device.wait_idle().unwrap();
         unsafe {
-// TODO: When ManuallyDrop::take (soon to be renamed to ManuallyDrop::read) is stabilized we should use that instead.
+            // TODO: When ManuallyDrop::take (soon to be renamed to ManuallyDrop::read) is stabilized we should use that instead.
 
             self.device
                 .destroy_graphics_pipeline(ManuallyDrop::into_inner(ptr::read(&self.info.0)));

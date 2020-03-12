@@ -34,6 +34,7 @@ use winit::event::WindowEvent::CursorMoved;
 use crate::rendering::{CameraData, ForwardPipeline, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResolvePipeline, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
+use glium::draw_parameters::sync;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -57,12 +58,10 @@ pub struct ForwardRenderPass<B: Backend> {
     extent: Extent2D,
     viewport: pso::Viewport,
 
-    //    pub pipeline: ManuallyDrop<B::GraphicsPipeline>,
-//    pub pipeline_layout: ManuallyDrop<B::PipelineLayout>,
     pub desc_pool: ManuallyDrop<B::DescriptorPool>,
     pub desc_set: Vec<B::DescriptorSet>,
     pub render_set_layout: ManuallyDrop<B::DescriptorSetLayout>,
-    pub framebuffer: Framebuffer<B, B::Device>,
+    framebuffer: Framebuffer<B, B::Device>,
 
     pub cmd_buffers: Vec<B::CommandBuffer>,
 
@@ -148,16 +147,6 @@ impl<B: Backend> ForwardRenderPass<B> {
                 stencil_ops: pass::AttachmentOps::DONT_CARE,
                 layouts: Layout::Undefined..Layout::TransferSrcOptimal,
             };
-//            let depth_attachment = pass::Attachment {
-//                format: Some(depth_stencil_format),
-//                samples: 1,
-//                ops: pass::AttachmentOps::new(
-//                    pass::AttachmentLoadOp::Clear,
-//                    pass::AttachmentStoreOp::Store,
-//                ),
-//                stencil_ops: pass::AttachmentOps::DONT_CARE,
-//                layouts: Layout::Undefined..Layout::DepthStencilAttachmentOptimal,
-//            };
 
             let subpass = pass::SubpassDesc {
                 colors: &[(0, Layout::ColorAttachmentOptimal)],
@@ -166,48 +155,6 @@ impl<B: Backend> ForwardRenderPass<B> {
                 resolves: &[],
                 preserves: &[],
             };
-//
-//            let subpass2 = pass::SubpassDesc {
-//                colors: &[(0, Layout::TransferSrcOptimal)],
-//                depth_stencil: None, //Some(&(0, Layout::DepthStencilAttachmentOptimal)),
-//                inputs: &[],
-//                resolves: &[],
-//                preserves: &[],
-//            };
-
-//            let dep = SubpassDependency {
-//                /// Other subpasses this one depends on.
-//                passes: SubpassRef::External .. SubpassRef::Pass(0),
-//                /// Other pipeline stages this subpass depends on.
-//                stages: pso::PipelineStage::TOP_OF_PIPE .. pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
-//                /// Resource accesses this subpass depends on.
-//                accesses: image::Access::COLOR_ATTACHMENT_WRITE .. image::Access::COLOR_ATTACHMENT_WRITE,
-//                /// Dependency flags.
-//                flags: memory::Dependencies::empty(),
-//            };
-//
-//            let dep2 = SubpassDependency {
-//                /// Other subpasses this one depends on.
-//                passes: SubpassRef::Pass(0) .. SubpassRef::Pass(1),
-//                /// Other pipeline stages this subpass depends on.
-//                stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT .. pso::PipelineStage::BOTTOM_OF_PIPE,
-//                /// Resource accesses this subpass depends on.
-//                accesses: image::Access::COLOR_ATTACHMENT_WRITE .. image::Access::empty(),
-//                /// Dependency flags.
-//                flags: memory::Dependencies::empty(),
-//            };
-
-//            let self_dep = SubpassDependency {
-//                /// Other subpasses this one depends on.
-//                passes: SubpassRef::Pass(1) .. SubpassRef::Pass(1),
-//                /// Other pipeline stages this subpass depends on.
-//                stages: pso::PipelineStage::BOTTOM_OF_PIPE .. pso::PipelineStage::BOTTOM_OF_PIPE,
-//                /// Resource accesses this subpass depends on.
-//                accesses: image::Access::empty() .. image::Access::empty(),
-//                /// Dependency flags.
-//                flags: memory::Dependencies::empty(),
-//            };
-
 
             ManuallyDrop::new(
                 unsafe { device.create_render_pass(&[attachment], &[subpass], &[]) }
@@ -302,97 +249,6 @@ impl<B: Backend> ForwardRenderPass<B> {
         };
     }
 
-//    pub fn create_command_buffer(&mut self, frame_idx: usize) -> &B::CommandBuffer {
-//
-//    }
-
-//    fn fill_command_buffer(&mut self, frame_idx: usize) {
-//        let viewport = pso::Viewport {
-//            rect: pso::Rect {
-//                x: 0,
-//                y: 0,
-//                w: self.extent.width as _,
-//                h: self.extent.height as _,
-//            },
-//            depth: 0.0..1.0,
-//        };
-//
-//        let (fence,
-//            image,
-//            framebuffer,
-//            pool,
-//            command_buffers,
-//            semaphore) = self.framebuffer.get_frame_data(frame_idx);
-//
-//        unsafe {
-////            command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
-//
-//            command_buffer.set_viewports(0, &[viewport.clone()]);
-//            command_buffer.set_scissors(0, &[viewport.rect]);
-//            command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline());
-////            cmd_buffer.bind_vertex_buffers(0, iter::once((&*self.vertex_buffer, 0)));
-//            command_buffer.bind_graphics_descriptor_sets(
-//                &self.forward_pipeline.get_layout(),
-//                0,
-//                iter::once(&self.desc_set[frame_idx]),
-//                &[],
-//            );
-//
-//            command_buffer.begin_render_pass(
-//                &self.render_pass,
-//                framebuffer,
-//                viewport.rect,
-//                &[
-//                    command::ClearValue {
-//                        color: command::ClearColor {
-//                            float32: [0.3, 0.3, 0.3, 1.0],
-//                        },
-//                    },
-//                    command::ClearValue {
-//                        depth_stencil: ClearDepthStencil {
-//                            depth: 0f32,
-//                            stencil: 0,
-//                        },
-//                    }
-//                ],
-//                command::SubpassContents::Inline,
-//            );
-//
-//            let resource_manager = self.resource_manager.lock().unwrap();
-//            for (id, transforms) in self.instances.iter() {
-//                let mesh = resource_manager.get_mesh(id);
-//                let vert_buf = &**mesh.vertex_buffer;
-//                let ind_buf = &**mesh.index_buffer;
-//
-//                for transform in transforms {
-//                    let mut data: &[f32; 16] = transform.as_ref();
-//                    let push_data: [u32; 16] = std::mem::transmute_copy(data);
-//
-//                    command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(),
-//                                                           ShaderStageFlags::VERTEX,
-//                                                           0,
-//                                                           &push_data);
-//
-//                    command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
-//
-//                    let index_buffer_view = IndexBufferView {
-//                        buffer: ind_buf,
-//                        offset: 0,
-//                        index_type: mesh.index_type,
-//                    };
-//                    command_buffer.bind_index_buffer(index_buffer_view);
-//                    command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
-//                }
-//            }
-//
-////            command_buffer.next_subpass(SubpassContents::Inline);
-////            command_buffer.end_render_pass();
-////            command_buffer.finish();
-//            command_buffer.end_render_pass();
-//
-//            command_buffer
-//        };
-//    }
 }
 
 impl<B: Backend> Drop for ForwardRenderPass<B> {
@@ -409,13 +265,6 @@ impl<B: Backend> Drop for ForwardRenderPass<B> {
 
             self.device
                 .destroy_render_pass(ManuallyDrop::into_inner(ptr::read(&self.render_pass)));
-
-//            self.device
-//                .destroy_graphics_pipeline(ManuallyDrop::into_inner(ptr::read(&self.pipeline)));
-//            self.device
-//                .destroy_pipeline_layout(ManuallyDrop::into_inner(ptr::read(
-//                    &self.pipeline_layout,
-//                )));
         }
     }
 }
@@ -440,7 +289,8 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         }
     }
 
-    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue, wait_sema: Option<&mut B::Semaphore>) {
+    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue, wait_semaphores: Vec<&B::Semaphore>)
+              -> &B::Semaphore {
         let (fe,
             fi,
             framebuffer,
@@ -449,51 +299,41 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
             semaphore) = self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
-            if wait_sema.is_some() {
-                let submission = Submission {
-                    command_buffers: command_buffers.iter(),
-                    wait_semaphores: iter::once((wait_sema.as_ref().unwrap(), pso::PipelineStage::TOP_OF_PIPE)),
-                    signal_semaphores: iter::once(&semaphore),
-                };
-                queue.submit(
-                    submission,
-                    Some(fe),
-                );
-            } else {
-                let submission = Submission {
-                    command_buffers: command_buffers.iter(),
-                    wait_semaphores: None,
-                    signal_semaphores: iter::once(&semaphore),
-                };
-                queue.submit(
-                    submission,
-                    Some(fe),
-                );
-            }
+            let wait_sem = wait_semaphores.iter().map(|sem| {
+                (*sem, pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT)
+            }).collect::<Vec<(&B::Semaphore, pso::PipelineStage)>>();
+
+            let submission = Submission {
+                command_buffers: command_buffers.iter(),
+                wait_semaphores: wait_sem,
+                signal_semaphores: vec![&*semaphore],
+            };
+            queue.submit(
+                submission,
+                Some(fe),
+            );
         }
+
+        semaphore
     }
 
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass> {
         &self.render_pass
     }
 
-    fn get_framebuffer(&mut self) -> &mut Framebuffer<B, B::Device> {
-        &mut self.framebuffer
-    }
-
     fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet {
         &self.desc_set[frame_index]
     }
 
-    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize)
-                       -> &mut B::Semaphore {
+    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize, acquire_semaphore: &B::Semaphore) -> &B::Semaphore {
+        self.sync(frame_idx);
+
         let (fe,
             fi,
             framebuffer,
             pool,
             command_buffers,
             semaphore) = self.framebuffer.get_frame_data(frame_idx);
-
 
         unsafe {
             // blitting
@@ -521,8 +361,6 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 gfx_hal::memory::Dependencies::empty(),
                 &[target_image_barrier],
             );
-
-//            self.fill_command_buffer(framebuffer, &mut cmd_buffer, frame_idx);
 
             let mut image_barrier = Barrier::Image {
                 states: (image::Access::MEMORY_WRITE, Layout::TransferSrcOptimal)
@@ -578,14 +416,14 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                                           layers: 0..1,
                                       },
                                       src_bounds: Offset { x: 0, y: 0, z: 0 }
-                                          .. Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
+                                          ..Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
                                       dst_subresource: SubresourceLayers {
                                           aspects: format::Aspects::COLOR,
                                           level: 0,
                                           layers: 0..1,
                                       },
                                       dst_bounds: Offset { x: 0, y: 0, z: 0 }
-                                          .. Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
+                                          ..Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
                                   }));
 
             let image_barrier = Barrier::Image {
@@ -629,31 +467,29 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
             command_buffers.push(cmd_buffer);
         }
 
+        unsafe {
+            let submission = Submission {
+                command_buffers: command_buffers.iter(),
+                wait_semaphores: vec![(&*semaphore, pso::PipelineStage::TRANSFER),
+                                      (acquire_semaphore, pso::PipelineStage::TRANSFER)],
+                signal_semaphores: vec![&*semaphore],
+            };
+            queue.submit(
+                submission,
+                Some(fe),
+            );
+        }
+
         semaphore
     }
 
-    fn render(&mut self, frame_idx: usize) -> &mut B::Semaphore {
+    fn record(&mut self, frame_idx: usize) {
         let (fe,
             fi,
             framebuffer,
             pool,
             command_buffers,
             semaphore) = self.framebuffer.get_frame_data(frame_idx);
-
-        // Wait for the fence of the previous submission of this frame and reset it; ensures we are
-        // submitting only up to maximum number of frames_in_flight if we are submitting faster than
-        // the gpu can keep up with. This would also guarantee that any resources which need to be
-        // updated with a CPU->GPU data copy are not in use by the GPU, so we can perform those updates.
-        // In this case there are none to be done, however.
-//        unsafe {
-////            self.device
-////                .wait_for_fence(fence, !0)
-////                .expect("Failed to wait for fence");
-//            self.device
-//                .reset_fence(fence)
-//                .expect("Failed to reset fence");
-//            pool.reset(false);
-//        }
 
         unsafe {
             let mut command_buffer = match command_buffers.pop() {
@@ -663,12 +499,10 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
 
-//            command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
-
             command_buffer.set_viewports(0, &[self.viewport.clone()]);
             command_buffer.set_scissors(0, &[self.viewport.rect]);
             command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline());
-//            cmd_buffer.bind_vertex_buffers(0, iter::once((&*self.vertex_buffer, 0)));
+
             command_buffer.bind_graphics_descriptor_sets(
                 &self.forward_pipeline.get_layout(),
                 0,
@@ -723,26 +557,11 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 }
             }
 
-//            command_buffer.next_subpass(SubpassContents::Inline);
-//            command_buffer.end_render_pass();
-//            command_buffer.finish();
             command_buffer.end_render_pass();
 
             command_buffer.finish();
 
             command_buffers.push(command_buffer);
-
-//            let submission = Submission {
-//                command_buffers: command_buffers.iter(),
-//                wait_semaphores: None,
-//                signal_semaphores: iter::once(&semaphore),
-//            };
-//            queue.submit(
-//                submission,
-//                Some(fence),
-//            );
         }
-
-        semaphore
     }
 }

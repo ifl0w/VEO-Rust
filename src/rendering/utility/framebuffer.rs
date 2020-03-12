@@ -132,8 +132,8 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
         )
     }
 
-    pub fn get_frame_semaphore(&mut self, frame_id: usize) -> &mut B::Semaphore {
-        &mut self.present_semaphores[frame_id]
+    pub fn get_frame_semaphore(&self, frame_id: usize) -> &B::Semaphore {
+        &self.present_semaphores[frame_id]
     }
 }
 
