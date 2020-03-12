@@ -28,7 +28,7 @@ fn main() {
     engine.add_entity(camera);
 
     // add cubes
-    let cube_mesh = Mesh::new::<Cube>(&render_system.lock().unwrap());
+    let cube_mesh = Mesh::new::<Cube>(&render_system);
 
     let num_cubes = 0..25;
     let offset = Vector3::new(-num_cubes.end as f32, -num_cubes.end as f32, -num_cubes.end as f32 * 4.0);

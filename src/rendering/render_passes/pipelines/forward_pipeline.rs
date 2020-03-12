@@ -12,7 +12,7 @@ use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers};
 use gfx_hal::image::Layout::{TransferDstOptimal, TransferSrcOptimal};
 use gfx_hal::pass::Subpass;
 use gfx_hal::pool::CommandPool;
-use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
+use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate, DepthStencilDesc};
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
@@ -120,10 +120,15 @@ impl<B: Backend> Pipeline<B> for ForwardPipeline<B>  {
                 pipeline_desc.rasterizer.cull_face = pso::Face::BACK;
                 pipeline_desc.rasterizer.front_face = FrontFace::CounterClockwise;
 
-                pipeline_desc.depth_stencil.depth = Some(DepthTest {
-                    fun: Comparison::GreaterEqual,
-                    write: true,
-                });
+                pipeline_desc.depth_stencil = DepthStencilDesc {
+                    depth: Some(DepthTest {
+                        fun: Comparison::LessEqual,
+                        write: true,
+                    }),
+                    depth_bounds: false,
+                    stencil: None,
+                };
+
                 pipeline_desc.blender.targets.push(pso::ColorBlendDesc {
                     mask: pso::ColorMask::ALL,
                     blend: Some(pso::BlendState::ALPHA),

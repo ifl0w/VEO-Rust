@@ -72,9 +72,15 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
                     format)
                     .expect("Image creation failed!");
 
+                let fb_depth_image = DepthImage::new(
+                    adapter,
+                    device,
+                    extend_2d)
+                    .expect("Image creation failed!");
+
                 let fb = device.create_framebuffer(
                     render_pass,
-                    Some(fb_image.image_view.deref()),
+                    vec![fb_image.image_view.deref(), fb_depth_image.image_view.deref()],
                     extent)
                     .expect("Framebuffer creation failed!");
 
@@ -94,6 +100,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
                     .expect("Semaphore creation failed!");
 
                 frame_images.push(fb_image);
+                depth_images.push(fb_depth_image);
                 framebuffers.push(ManuallyDrop::new(fb));
                 fences.push(ManuallyDrop::new(fence));
                 command_pools.push(ManuallyDrop::new(cmd_pool));

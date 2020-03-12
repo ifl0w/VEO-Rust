@@ -148,16 +148,51 @@ impl<B: Backend> ForwardRenderPass<B> {
                 layouts: Layout::Undefined..Layout::TransferSrcOptimal,
             };
 
+            let depth_attachment = pass::Attachment {
+                format: Some(Format::D24UnormS8Uint), //Some(format),
+                samples: 1,
+                ops: pass::AttachmentOps::new(
+                    pass::AttachmentLoadOp::Clear,
+                    pass::AttachmentStoreOp::Store,
+                ),
+                stencil_ops: pass::AttachmentOps::DONT_CARE,
+                layouts: Layout::Undefined..Layout::DepthStencilAttachmentOptimal,
+            };
+
             let subpass = pass::SubpassDesc {
                 colors: &[(0, Layout::ColorAttachmentOptimal)],
-                depth_stencil: None, //Some(&(0, Layout::DepthStencilAttachmentOptimal)),
+                depth_stencil: Some(&(1, Layout::DepthStencilAttachmentOptimal)),
                 inputs: &[],
                 resolves: &[],
                 preserves: &[],
             };
 
+            // Subpass dependencies enable early fragment test mode
+            // source: https://rust-tutorials.github.io/learn-gfx-hal/09_depth_buffer.html
+            let in_dependency = SubpassDependency {
+                passes: SubpassRef::External..SubpassRef::Pass(0),
+                stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
+                    .. pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
+                accesses: image::Access::empty()
+                    ..(image::Access::COLOR_ATTACHMENT_READ
+                    | image::Access::COLOR_ATTACHMENT_WRITE
+                    | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
+                    | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE),
+                flags: memory::Dependencies::empty()
+            };
+            let out_dependency = SubpassDependency {
+                passes: SubpassRef::Pass(0)..SubpassRef::External,
+                stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT | pso::PipelineStage::EARLY_FRAGMENT_TESTS
+                    .. pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
+                accesses: (image::Access::COLOR_ATTACHMENT_READ
+                    | image::Access::COLOR_ATTACHMENT_WRITE
+                    | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
+                    | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE)..image::Access::empty(),
+                flags: memory::Dependencies::empty()
+            };
+
             ManuallyDrop::new(
-                unsafe { device.create_render_pass(&[attachment], &[subpass], &[]) }
+                unsafe { device.create_render_pass(&[attachment, depth_attachment], &[subpass], &[in_dependency, out_dependency]) }
                     .expect("Can't create render pass"),
             )
         };
@@ -520,12 +555,12 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                             float32: [0.3, 0.3, 0.3, 1.0],
                         },
                     },
-//                    command::ClearValue {
-//                        depth_stencil: ClearDepthStencil {
-//                            depth: 0f32,
-//                            stencil: 0,
-//                        },
-//                    }
+                    command::ClearValue {
+                        depth_stencil: ClearDepthStencil {
+                            depth: 1f32,
+                            stencil: 0,
+                        },
+                    }
                 ],
                 command::SubpassContents::Inline,
             );

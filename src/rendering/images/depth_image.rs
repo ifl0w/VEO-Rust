@@ -28,7 +28,7 @@ pub struct DepthImage<B: Backend, D: Device<B>> {
 }
 
 impl<B: Backend, D: Device<B>> DepthImage<B, D> {
-    pub fn new(adapter: &Adapter<B>, device: Arc<D>, extent: Extent2D) -> Result<Self, &'static str> {
+    pub fn new(adapter: &Adapter<B>, device: &Arc<D>, extent: Extent2D) -> Result<Self, &'static str> {
         unsafe {
             let mut the_image = device
                 .create_image(
@@ -80,7 +80,7 @@ impl<B: Backend, D: Device<B>> DepthImage<B, D> {
                 .map_err(|_| "Couldn't create the image view!")?;
 
             Ok(Self {
-                device,
+                device: device.clone(),
                 image: ManuallyDrop::new(the_image),
                 requirements,
                 memory: ManuallyDrop::new(memory),
