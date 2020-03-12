@@ -43,9 +43,12 @@ impl TryFrom<i32> for NodePosition {
 
 #[derive(Clone)]
 pub struct Octree {
-    pub size: Vector3<f32>,
+    pub scale: Vector3<f32>,
     pub root: Arc<Mutex<Option<Node>>>,
 //    pub instance_data_buffer: Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>>,
+    pub depth: i32,
+    pub byte_size: Option<i64>,
+    pub max_byte_size: i64,
 }
 
 impl Component for Octree {}
@@ -58,10 +61,15 @@ impl Octree {
             size.unwrap()
         };
 
+        let max_byte_size = std::mem::size_of::<Octree>() as i64 * 8_i64.pow(depth.try_into().unwrap());
+
         let mut oct = Octree {
-            size,
+            scale: size,
             root: Arc::new(Mutex::new(None)),
 //            instance_data_buffer: None,
+            depth,
+            byte_size: None,
+            max_byte_size,
         };
 
         oct.root = Arc::new(Mutex::new(Octree::traverse(
@@ -70,12 +78,37 @@ impl Octree {
             0,
             depth)));
 
+        oct.byte_size = Some(self::Octree::size_in_bytes(&oct));
+
+        println!("SIZE: {} MB", (oct.byte_size.unwrap() as f32 / (1024_f32 * 1024_f32)));
         oct
     }
 
     pub fn count_leaves(&self) -> i64 {
         let root = self.root.lock().unwrap();
         (*root).as_ref().unwrap().count_leaves()
+    }
+
+    pub fn size_in_bytes(&self) -> i64 {
+        std::mem::size_of::<Octree>() as i64 * self.count_nodes( &self.root.lock().unwrap())
+    }
+
+    fn count_nodes(&self, node: &Option<Node>) -> i64 {
+        let mut count = 0;
+
+        if !node.is_none() {
+            let node_copy = node.clone().unwrap();
+
+            if !node_copy.is_leaf() {
+                let children = node_copy.children;
+                children.iter().enumerate().for_each(|(_i, child)| {
+                    count += self.count_nodes(child);
+                });
+            } else {
+                count += 1;
+            }
+        }
+        count
     }
 
     fn traverse(node: Option<Node>, translate: Vector3<f32>, current_depth: i32, target_depth: i32) -> Option<Node> {
@@ -286,7 +319,7 @@ impl System for OctreeSystem {
                 let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
                 if self.update_octrees {
-                    octree = Octree::new(self.octree_depth, Some(octree.size));
+                    octree = Octree::new(self.octree_depth, Some(octree.scale));
                     self.update_octrees = false;
                 }
 
@@ -294,7 +327,7 @@ impl System for OctreeSystem {
                 if octree.instance_data_buffer.is_none() {
                     { // scope to enclose mutex
                         let root = octree.root.lock().unwrap();
-                        let model_matrices = OctreeSystem::generate_instance_data(&root, octree.size);
+                        let model_matrices = OctreeSystem::generate_instance_data(&root, octree.scale);
 
 
 //                        octree.instance_data_buffer = Some(Arc::new(
