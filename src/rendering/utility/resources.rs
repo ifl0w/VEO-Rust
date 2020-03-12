@@ -1,11 +1,8 @@
+use std::{iter, mem, ptr};
 use std::collections::HashMap;
-
-use std::sync::{Arc, Weak, Mutex};
 use std::mem::ManuallyDrop;
-use crate::rendering::utility::{Vertex, Index, GPUBuffer};
+use std::sync::{Arc, Mutex, Weak};
 
-use gfx_hal::adapter::{MemoryType, Adapter};
-use gfx_hal::adapter::PhysicalDevice;
 use gfx_hal::{
     buffer,
     command,
@@ -25,16 +22,16 @@ use gfx_hal::{
         VertexInputRate,
     },
     queue::{QueueGroup, Submission},
-    window
+    window,
 };
+use gfx_hal::adapter::{Adapter, MemoryType};
+use gfx_hal::adapter::PhysicalDevice;
 
-use std::{mem, ptr, iter};
 use crate::rendering::renderer::Renderer;
-
+use crate::rendering::utility::{GPUBuffer, Index, Vertex};
 
 pub struct ResourceManager<B>
     where B: gfx_hal::Backend {
-
     device: Arc<B::Device>,
     adapter: Arc<Adapter<B>>,
 
@@ -70,11 +67,11 @@ pub trait MeshGenerator {
     fn get_indices() -> Vec<Index>;
 
     fn generate<T: MeshGenerator, B: gfx_hal::Backend>(rm: &mut ResourceManager<B>)
-        -> (MeshID, Weak<GPUMesh<B>>) {
+                                                       -> (MeshID, Weak<GPUMesh<B>>) {
         let device = rm.device.clone();
         let adapter = rm.adapter.clone();
 
-        let m  = Arc::new(GPUMesh::new::<T>(device, adapter));
+        let m = Arc::new(GPUMesh::new::<T>(device, adapter));
 
         let id = rm.meshes.len() as u64;
 
@@ -90,14 +87,14 @@ pub struct GPUMesh<B>
     where B: gfx_hal::Backend {
     device: Arc<B::Device>,
 
-    pub (in crate::rendering) num_vertices: u32,
-    pub (in crate::rendering) vertex_buffer: Arc<ManuallyDrop<B::Buffer>>,
-    pub (in crate::rendering) vertex_memory: Arc<ManuallyDrop<B::Memory>>,
+    pub(in crate::rendering) num_vertices: u32,
+    pub(in crate::rendering) vertex_buffer: Arc<ManuallyDrop<B::Buffer>>,
+    pub(in crate::rendering) vertex_memory: Arc<ManuallyDrop<B::Memory>>,
 
-    pub (in crate::rendering) num_indices: u32,
-    pub (in crate::rendering) index_type: IndexType,
-    pub (in crate::rendering) index_buffer: Arc<ManuallyDrop<B::Buffer>>,
-    pub (in crate::rendering) index_memory: Arc<ManuallyDrop<B::Memory>>,
+    pub(in crate::rendering) num_indices: u32,
+    pub(in crate::rendering) index_type: IndexType,
+    pub(in crate::rendering) index_buffer: Arc<ManuallyDrop<B::Buffer>>,
+    pub(in crate::rendering) index_memory: Arc<ManuallyDrop<B::Memory>>,
 }
 
 impl<B> GPUMesh<B>
@@ -165,10 +162,10 @@ impl<B> GPUMesh<B>
             device
                 .bind_buffer_memory(&memory, 0, &mut vertex_buffer)
                 .unwrap();
-            let mapping = device.map_memory(&memory, 0 .. padded_buffer_len).unwrap();
+            let mapping = device.map_memory(&memory, 0..padded_buffer_len).unwrap();
             ptr::copy_nonoverlapping(vertices.as_ptr() as *const u8, mapping, buffer_len as usize);
             device
-                .flush_mapped_memory_ranges(iter::once((&memory, 0 .. padded_buffer_len)))
+                .flush_mapped_memory_ranges(iter::once((&memory, 0..padded_buffer_len)))
                 .unwrap();
             device.unmap_memory(&memory);
             ManuallyDrop::new(memory)
@@ -223,10 +220,10 @@ impl<B> GPUMesh<B>
             device
                 .bind_buffer_memory(&memory, 0, &mut index_buffer)
                 .unwrap();
-            let mapping = device.map_memory(&memory, 0 .. padded_buffer_len).unwrap();
+            let mapping = device.map_memory(&memory, 0..padded_buffer_len).unwrap();
             ptr::copy_nonoverlapping(indices.as_ptr() as *const u8, mapping, buffer_len as usize);
             device
-                .flush_mapped_memory_ranges(iter::once((&memory, 0 .. padded_buffer_len)))
+                .flush_mapped_memory_ranges(iter::once((&memory, 0..padded_buffer_len)))
                 .unwrap();
             device.unmap_memory(&memory);
             ManuallyDrop::new(memory)
@@ -239,7 +236,6 @@ impl<B> GPUMesh<B>
 impl<B> Drop for GPUMesh<B>
     where B: gfx_hal::Backend {
     fn drop(&mut self) {
-
         unsafe {
             self.device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(self.vertex_buffer.as_ref())));
             self.device.free_memory(ManuallyDrop::into_inner(ptr::read(self.vertex_memory.as_ref())));
@@ -247,7 +243,6 @@ impl<B> Drop for GPUMesh<B>
             self.device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(self.index_buffer.as_ref())));
             self.device.free_memory(ManuallyDrop::into_inner(ptr::read(self.index_memory.as_ref())));
         }
-
     }
 }
 

@@ -1,7 +1,8 @@
+use std::sync::{Arc, Mutex};
+
 use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector3, Vector4};
 
 use crate::core::Component;
-use std::sync::{Arc, Mutex};
 use crate::rendering::RenderSystem;
 use crate::rendering::utility::Uniform;
 
@@ -128,7 +129,7 @@ impl Default for CameraData {
         CameraData {
             view: Matrix4::identity(),
             proj: Matrix4::identity(),
-            position: Vector4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0}
+            position: Vector4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 },
         }
     }
 }

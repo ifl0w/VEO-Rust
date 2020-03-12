@@ -1,4 +1,9 @@
+use std::{iter, ptr};
+use std::borrow::BorrowMut;
+use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
+use std::ops::Deref;
 use std::sync::{Arc, Mutex, RwLock};
 
 use gfx_hal::adapter::Adapter;
@@ -10,11 +15,6 @@ use gfx_hal::image::Usage;
 use gfx_hal::window::{Extent2D, SwapchainConfig, SwapImageIndex};
 use gfx_hal::window::Surface;
 use gfx_hal::window::Swapchain;
-use std::{iter, ptr};
-use std::cell::{Cell, RefCell};
-use std::ops::Deref;
-use std::borrow::BorrowMut;
-use std::mem::ManuallyDrop;
 
 pub struct SwapchainWrapper<B: Backend, D: Device<B>> {
     device: Arc<B::Device>,
@@ -146,7 +146,7 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
             self.swapchain.write().unwrap().present(
                 queue,
                 swap_image_index,
-                wait_semaphores.iter()
+                wait_semaphores.iter(),
             )
         };
 

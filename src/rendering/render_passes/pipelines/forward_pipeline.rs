@@ -1,4 +1,5 @@
 use std::{iter, mem, ptr};
+use std::borrow::Borrow;
 use std::io::Cursor;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
@@ -12,23 +13,21 @@ use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers};
 use gfx_hal::image::Layout::{TransferDstOptimal, TransferSrcOptimal};
 use gfx_hal::pass::Subpass;
 use gfx_hal::pool::CommandPool;
-use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate, DepthStencilDesc};
+use gfx_hal::pso::{Comparison, DepthStencilDesc, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
-use crate::rendering::{ShaderCode, Vertex, Pipeline, ENTRY_NAME};
-use std::borrow::Borrow;
+use crate::rendering::{ENTRY_NAME, Pipeline, ShaderCode, Vertex};
 
 pub struct ForwardPipeline<B: Backend> {
     device: Arc<B::Device>,
-    info: (ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>)
+    info: (ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>),
 }
 
-impl<B: Backend> Pipeline<B> for ForwardPipeline<B>  {
+impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
     fn new(device: &Arc<B::Device>,
            render_pass: &B::RenderPass,
            set_layout: &B::DescriptorSetLayout) -> Self {
-
         ForwardPipeline {
             device: device.clone(),
             info: Self::create_pipeline(device, render_pass, set_layout).unwrap(),

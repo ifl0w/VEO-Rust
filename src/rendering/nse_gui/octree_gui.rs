@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,11 +16,9 @@ use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use winit::event::{ElementState, Event, VirtualKeyCode};
 
-use crate::core::{Filter, Message, System, Payload};
+use crate::core::{Filter, Message, Payload, System};
 use crate::NSE;
 use crate::rendering::RenderSystem;
-use std::collections::VecDeque;
-use std::ops::RangeInclusive;
 
 pub struct OctreeGuiSystem {
     imgui: Context,

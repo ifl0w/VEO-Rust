@@ -40,8 +40,8 @@ layout(location = 2) out vec3 fragPosition;
 
 void main() {
     vec4 worldCoords = pushConsts.model_matrix * vec4(position, 1.0);
-//    vec4 worldCoords = vec4(position + vec3(0,0,-10), 1.0);
-//    gl_Position = vec4(position.xy, 0.0, 1.0); //camera_ubo.proj * camera_ubo.view * worldCoords;
+    //    vec4 worldCoords = vec4(position + vec3(0,0,-10), 1.0);
+    //    gl_Position = vec4(position.xy, 0.0, 1.0); //camera_ubo.proj * camera_ubo.view * worldCoords;
     gl_Position = camera_ubo.proj * camera_ubo.view * worldCoords;
 
     /*

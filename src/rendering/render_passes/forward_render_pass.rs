@@ -29,12 +29,12 @@ use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Extent2D, Surface, SwapImageIndex};
+use glium::draw_parameters::sync;
 use winit::event::WindowEvent::CursorMoved;
 
 use crate::rendering::{CameraData, ForwardPipeline, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResolvePipeline, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
-use glium::draw_parameters::sync;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -172,23 +172,23 @@ impl<B: Backend> ForwardRenderPass<B> {
             let in_dependency = SubpassDependency {
                 passes: SubpassRef::External..SubpassRef::Pass(0),
                 stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
-                    .. pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
+                    ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
                 accesses: image::Access::empty()
                     ..(image::Access::COLOR_ATTACHMENT_READ
                     | image::Access::COLOR_ATTACHMENT_WRITE
                     | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
                     | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE),
-                flags: memory::Dependencies::empty()
+                flags: memory::Dependencies::empty(),
             };
             let out_dependency = SubpassDependency {
                 passes: SubpassRef::Pass(0)..SubpassRef::External,
                 stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT | pso::PipelineStage::EARLY_FRAGMENT_TESTS
-                    .. pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
+                    ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
                 accesses: (image::Access::COLOR_ATTACHMENT_READ
                     | image::Access::COLOR_ATTACHMENT_WRITE
                     | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
                     | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE)..image::Access::empty(),
-                flags: memory::Dependencies::empty()
+                flags: memory::Dependencies::empty(),
             };
 
             ManuallyDrop::new(
@@ -283,7 +283,6 @@ impl<B: Backend> ForwardRenderPass<B> {
             }
         };
     }
-
 }
 
 impl<B: Backend> Drop for ForwardRenderPass<B> {

@@ -1,24 +1,22 @@
 use std::borrow::Borrow;
 use std::mem::ManuallyDrop;
+use std::ops::Deref;
 use std::ptr;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gfx_hal::{Backend, image};
+use gfx_hal::adapter::Adapter;
 use gfx_hal::device::Device;
-use gfx_hal::image::Extent;
-
-use gfx_hal::image::Usage;
 use gfx_hal::format::Format;
-
+use gfx_hal::image::Extent;
+use gfx_hal::image::Usage;
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pool::CommandPoolCreateFlags;
 use gfx_hal::queue::QueueGroup;
 use gfx_hal::window::{Extent2D, PresentationSurface};
 
 use crate::rendering::{DepthImage, Image};
-use gfx_hal::adapter::Adapter;
-use std::ops::Deref;
-use std::rc::Rc;
 
 pub struct Framebuffer<B: Backend, D: Device<B>> {
     device: Arc<D>,
@@ -27,7 +25,7 @@ pub struct Framebuffer<B: Backend, D: Device<B>> {
     framebuffer_fences: Vec<ManuallyDrop<B::Fence>>,
     command_pools: Vec<ManuallyDrop<B::CommandPool>>,
     command_buffer_lists: Vec<Vec<B::CommandBuffer>>,
-    frame_images: Vec<Image<B,D>>,
+    frame_images: Vec<Image<B, D>>,
     depth_images: Vec<DepthImage<B, D>>,
     acquire_semaphores: Vec<ManuallyDrop<B::Semaphore>>,
     present_semaphores: Vec<ManuallyDrop<B::Semaphore>>,
@@ -63,7 +61,6 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
 
         for _ in 0..frames {
             unsafe {
-
                 let fb_image = Image::new(
                     adapter,
                     device,

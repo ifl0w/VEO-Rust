@@ -24,7 +24,7 @@ layout(location = 0) out vec4 outColor;
 
 struct Light {
     vec3 color;
-    int type; // 0 = directional, 1 = point, 2 = spotlight
+    int type;// 0 = directional, 1 = point, 2 = spotlight
     vec3 direction;
 };
 
@@ -73,13 +73,13 @@ float DistributionBeckmann(vec3 N, vec3 H, float roughness)
 }
 
 float geomAttinuationWikipedia(vec3 H, vec3 N, vec3 V, vec3 L) {
-    float VdotH = max(dot(V,H), 0.0001);
-    float HdotN = max(dot(H,N), 0);
-    float VdotN = max(dot(V,N), 0);
-    float LdotN = max(dot(L,N), 0);
+    float VdotH = max(dot(V, H), 0.0001);
+    float HdotN = max(dot(H, N), 0);
+    float VdotN = max(dot(V, N), 0);
+    float LdotN = max(dot(L, N), 0);
     float t1 = 2*(HdotN*VdotN) / VdotH;
     float t2 = 2*(HdotN*LdotN) / VdotH;
-    return min(1, min(t1,t2));
+    return min(1, min(t1, t2));
 }
 
 float GeometrySchlickGGX(float NdotV, float roughness)

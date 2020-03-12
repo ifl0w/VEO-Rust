@@ -39,18 +39,36 @@ use std::{
 };
 use std::borrow::BorrowMut;
 use std::cell::Cell;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
-use std::iter::{once, Map};
+use std::iter::{Map, once};
 use std::ops::{Deref, RangeInclusive};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::thread::sleep;
 use std::time::Duration;
 
 use cgmath::{Matrix4, SquareMatrix};
-use gfx_hal::{buffer, command, format as f, format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle}, image as i, IndexType, Instance, memory as m, pass, pass::Subpass, pool, prelude::*, pso, pso::{
-    PipelineStage,
-    ShaderStageFlags,
-    VertexInputRate,
-}, queue::{QueueGroup, Submission}, window};
+use gfx_hal::{buffer,
+              command,
+              format as f,
+              format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
+              image as i,
+              IndexType,
+              Instance,
+              memory as m,
+              pass,
+              pass::Subpass,
+              pool,
+              prelude::*,
+              pso,
+              pso::{
+                  PipelineStage,
+                  ShaderStageFlags,
+                  VertexInputRate,
+              },
+              queue::{QueueGroup, Submission},
+              window};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::buffer::IndexBufferView;
 use gfx_hal::command::{CommandBuffer, CommandBufferInheritanceInfo, SubpassContents};
@@ -59,17 +77,14 @@ use gfx_hal::pso::Comparison::LessEqual;
 use gfx_hal::window::Surface;
 use mopa::Any;
 use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
+use winit::event::VirtualKeyCode::Mute;
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
 use crate::core::{Exit, Filter, MainWindow, Message, System};
 use crate::NSE;
-use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree, Plane, RenderPass, Transformation, SwapchainWrapper};
+use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree, Plane, RenderPass, SwapchainWrapper, Transformation};
 use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
-use std::collections::{HashMap, BTreeMap};
-use std::thread::sleep;
-use std::rc::Rc;
-use winit::event::VirtualKeyCode::Mute;
 
 /* Constants */
 // Window
@@ -381,22 +396,6 @@ impl<B> Renderer<B>
             current_swap_chain_image: 0,
         }
     }
-
-//    fn recreate_swapchain(&mut self) {
-//        let caps = self.surface.capabilities(&self.adapter.physical_device);
-//        let swap_config = window::SwapchainConfig::from_caps(&caps, self.format, self.dimensions);
-//        println!("{:?}", swap_config);
-//        let extent = swap_config.extent.to_extent();
-//
-//        unsafe {
-//            self.surface
-//                .configure_swapchain(&self.device, swap_config)
-//                .expect("Can't create swapchain");
-//        }
-//
-//        self.viewport.rect.w = extent.width as _;
-//        self.viewport.rect.h = extent.height as _;
-//    }
 
     fn sync_and_reset(&mut self, frame_idx: usize) {
         // Wait for the fence of the previous submission of this frame and reset it; ensures we are

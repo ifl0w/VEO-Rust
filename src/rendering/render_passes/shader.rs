@@ -1,12 +1,11 @@
-use std::path::Path;
-use std::fs::File;
-use std::io::{BufReader, Read};
-use std::ops::Deref;
-
-use std::string::String;
 use std::borrow::Borrow;
 use std::convert::TryInto;
 use std::fmt::Debug;
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::ops::Deref;
+use std::path::Path;
+use std::string::String;
 
 pub struct ShaderCode {
     contents: String,
@@ -18,7 +17,6 @@ pub struct ShaderCode {
 
 impl ShaderCode {
     pub fn new(path: &str) -> Self {
-
         (ShaderCode {
             contents: String::new(),
             path: path.to_string(),

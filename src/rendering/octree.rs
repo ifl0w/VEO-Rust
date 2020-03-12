@@ -52,7 +52,6 @@ impl Component for Octree {}
 
 impl Octree {
     pub fn new(depth: i32, size: Option<Vector3<f32>>) -> Self {
-
         let size = if size.is_none() {
             vec3(0.0, 0.0, 0.0)
         } else {

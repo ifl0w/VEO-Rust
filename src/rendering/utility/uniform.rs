@@ -1,16 +1,15 @@
-use gfx_hal::device::Device;
+use std::{iter, ptr};
+use std::borrow::{Borrow, BorrowMut};
+use std::mem::{ManuallyDrop, size_of};
+use std::sync::Arc;
+
+use gfx_hal::{Backend, buffer, memory, pso};
+use gfx_hal::adapter::{Adapter, MemoryType};
 use gfx_hal::adapter::PhysicalDevice;
-use gfx_hal::adapter::{MemoryType, Adapter};
-use gfx_hal::{Backend, memory, buffer, pso};
+use gfx_hal::device::Device;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 
-use std::sync::Arc;
-use std::mem::{size_of, ManuallyDrop};
-use std::{ptr, iter};
-use std::borrow::{Borrow, BorrowMut};
-
 use crate::rendering::renderer::Renderer;
-
 
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,
@@ -23,7 +22,7 @@ pub struct GPUBuffer<B: Backend> {
 }
 
 impl<B: Backend> GPUBuffer<B> {
-    pub (in crate::rendering)  fn get_buffer(&self) -> &B::Buffer {
+    pub(in crate::rendering) fn get_buffer(&self) -> &B::Buffer {
         &self.buffer
     }
 
@@ -70,7 +69,7 @@ impl<B: Backend> GPUBuffer<B> {
             size = mem_req.size;
 
             // TODO: check transitions: read/write mapping and vertex buffer read
-            let mapping = device.map_memory(&memory, 0 .. size).unwrap();
+            let mapping = device.map_memory(&memory, 0..size).unwrap();
             ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);
             device.unmap_memory(&memory);
         }
@@ -97,7 +96,7 @@ impl<B: Backend> GPUBuffer<B> {
         let memory = &self.memory;
 
         unsafe {
-            let mapping = device.map_memory(memory, offset .. self.size).unwrap();
+            let mapping = device.map_memory(memory, offset..self.size).unwrap();
             ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);
             device.unmap_memory(memory);
         }
@@ -131,7 +130,6 @@ impl<B: Backend> Uniform<B> {
         desc_sets: &Vec<B::DescriptorSet>,
     ) -> Self
         where T: Copy {
-
         let mut buffers: Vec<GPUBuffer<B>> = Vec::new();
         for idx in 0..renderer.frames_in_flight {
             let buffer = unsafe {
@@ -160,7 +158,7 @@ impl<B: Backend> Uniform<B> {
         Uniform {
             device: renderer.device.clone(),
             adapter: renderer.adapter.clone(),
-            buffers
+            buffers,
         }
     }
 }

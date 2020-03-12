@@ -1,11 +1,11 @@
 use std::mem::ManuallyDrop;
+use std::ptr;
 use std::sync::Arc;
 
 use gfx_hal::Backend;
 
 pub use forward_pipeline::ForwardPipeline;
 pub use resolve_pipeline::ResolvePipeline;
-use std::ptr;
 
 mod forward_pipeline;
 mod resolve_pipeline;
@@ -27,5 +27,4 @@ pub trait Pipeline<B: Backend> {
                        render_pass: &B::RenderPass,
                        set_layout: &B::DescriptorSetLayout)
                        -> Option<(ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>)>;
-
 }

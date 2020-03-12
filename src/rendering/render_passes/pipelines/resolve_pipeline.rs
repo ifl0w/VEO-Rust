@@ -16,7 +16,7 @@ use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFl
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
-use crate::rendering::{Pipeline, ShaderCode, Vertex, ENTRY_NAME};
+use crate::rendering::{ENTRY_NAME, Pipeline, ShaderCode, Vertex};
 
 pub struct ResolvePipeline<B: Backend> {
     device: Arc<B::Device>,
