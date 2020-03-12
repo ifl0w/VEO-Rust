@@ -39,7 +39,7 @@ fn main() {
     let octree = Entity::new();
     let size = Vector3::new(25.0, 25.0, 25.0);
     octree.lock().unwrap()
-        .add_component(Octree::new(4, Some(size)))
+        .add_component(Octree::new(&render_system, 4, Some(size)))
         .add_component(Transformation::new().position(size / 2.0))
         .add_component(Mesh::new::<Cube>(&render_system));
     engine.add_entity(octree);

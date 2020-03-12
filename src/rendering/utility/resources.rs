@@ -29,14 +29,15 @@ use gfx_hal::adapter::PhysicalDevice;
 
 use crate::rendering::renderer::Renderer;
 use crate::rendering::utility::{GPUBuffer, Index, Vertex};
+use crate::rendering::BufferID;
 
 pub struct ResourceManager<B>
     where B: gfx_hal::Backend {
     device: Arc<B::Device>,
     adapter: Arc<Adapter<B>>,
 
-    pub(in crate::rendering) meshes: HashMap<MeshID, Arc<GPUMesh<B>>>,
-//    pub(in crate::rendering) buffers: HashMap<BufferID, Arc<GPUBuffer<B>>>,
+    pub(in crate::rendering::utility) meshes: HashMap<MeshID, Arc<GPUMesh<B>>>,
+    pub(in crate::rendering::utility) buffers: HashMap<BufferID, Arc<GPUBuffer<B>>>,
 //    pub(in crate::rendering) shaders: HashMap<ShaderID, Arc<Shader<B>>>,
 }
 
@@ -48,7 +49,7 @@ impl<B> ResourceManager<B>
             adapter: renderer.adapter.clone(),
 
             meshes: HashMap::new(),
-//            buffers: HashMap::new(),
+            buffers: HashMap::new(),
         }))
     }
 
@@ -57,6 +58,22 @@ impl<B> ResourceManager<B>
             Some(m) => m,
             None => panic!("Mesh not stored on GPU")
         }
+    }
+
+    pub fn get_buffer(&self, id: BufferID) -> &GPUBuffer<B> {
+        match self.buffers.get(&id) {
+            Some(buffer) => &*buffer,
+            None => panic!("Buffer not stored on GPU")
+        }
+    }
+
+    pub fn add_buffer(&mut self, buffer: GPUBuffer<B>) -> BufferID {
+        let id = self.buffers.len();
+
+        // store in map
+        self.buffers.insert(id, Arc::new(buffer));
+
+        id
     }
 }
 

@@ -4,11 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Matrix4, vec3, Vector3};
+use gfx_hal::buffer;
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, System};
-use crate::rendering::{Camera, InstanceData, RenderSystem, Transformation};
+use crate::rendering::{Camera, GPUBuffer, InstanceData, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::UpdateOctree;
+use crate::rendering::utility::BufferID;
 
 //use winit::Event;
 
@@ -45,28 +47,52 @@ impl TryFrom<i32> for NodePosition {
 pub struct Octree {
     pub scale: Vector3<f32>,
     pub root: Arc<Mutex<Option<Node>>>,
-//    pub instance_data_buffer: Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<StdMemoryPool>>>>,
+    pub instance_data_buffer: Vec<BufferID>,
+    // indirect reference to the GPU buffers
+    pub active_instance_buffer_idx: Option<u32>,
+    // points into the instance_data_buffer vec
     pub depth: i32,
-    pub byte_size: Option<i64>,
-    pub max_byte_size: i64,
+    pub byte_size: Option<usize>,
+    pub max_byte_size: usize,
 }
 
 impl Component for Octree {}
 
 impl Octree {
-    pub fn new(depth: i32, size: Option<Vector3<f32>>) -> Self {
+    pub fn new(render_system: &Arc<Mutex<RenderSystem>>, depth: i32, size: Option<Vector3<f32>>) -> Self {
         let size = if size.is_none() {
             vec3(0.0, 0.0, 0.0)
         } else {
             size.unwrap()
         };
 
-        let max_byte_size = std::mem::size_of::<Octree>() as i64 * 8_i64.pow(depth.try_into().unwrap());
+        let max_num_nodes = 8_i64.pow(depth.try_into().unwrap()) as usize;
+        let max_byte_size = std::mem::size_of::<Octree>() * max_num_nodes;
+        let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_num_nodes;
+
+        let rm = render_system.lock().unwrap().resource_manager.clone();
+        let mut rm_lock = rm.lock().unwrap();
+
+        let dev = render_system.lock().unwrap().renderer.device.clone();
+        let adapter = render_system.lock().unwrap().renderer.adapter.clone();
+
+        let num_buffers = 2;
+        let mut instance_data_buffer = Vec::with_capacity(num_buffers);
+        for _ in 0..num_buffers {
+            unsafe {
+                let id = rm_lock.add_buffer(GPUBuffer::new_with_size(&dev,
+                                                                     &adapter,
+                                                                     max_gpu_byte_size,
+                                                                     buffer::Usage::STORAGE));
+                instance_data_buffer.push(id);
+            }
+        }
 
         let mut oct = Octree {
             scale: size,
             root: Arc::new(Mutex::new(None)),
-//            instance_data_buffer: None,
+            instance_data_buffer,
+            active_instance_buffer_idx: None,
             depth,
             byte_size: None,
             max_byte_size,
@@ -89,8 +115,8 @@ impl Octree {
         (*root).as_ref().unwrap().count_leaves()
     }
 
-    pub fn size_in_bytes(&self) -> i64 {
-        std::mem::size_of::<Octree>() as i64 * self.count_nodes( &self.root.lock().unwrap())
+    pub fn size_in_bytes(&self) -> usize {
+        std::mem::size_of::<Octree>() * self.count_nodes(&self.root.lock().unwrap()) as usize
     }
 
     fn count_nodes(&self, node: &Option<Node>) -> i64 {
@@ -319,24 +345,25 @@ impl System for OctreeSystem {
                 let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
                 if self.update_octrees {
-                    octree = Octree::new(self.octree_depth, Some(octree.scale));
+                    octree = Octree::new(&self.render_sys, self.octree_depth, Some(octree.scale));
                     self.update_octrees = false;
                 }
 
-                /*
-                if octree.instance_data_buffer.is_none() {
-                    { // scope to enclose mutex
-                        let root = octree.root.lock().unwrap();
-                        let model_matrices = OctreeSystem::generate_instance_data(&root, octree.scale);
 
+                { // scope to enclose mutex
+                    let root = octree.root.lock().unwrap();
+                    let model_matrices = OctreeSystem::generate_instance_data(&root, octree.scale);
 
-//                        octree.instance_data_buffer = Some(Arc::new(
-//                            self.render_sys.lock().unwrap().instance_buffer_pool.chunk(model_matrices).unwrap()));
-                    }
+                    let rm = self.render_sys.lock().unwrap().resource_manager.clone();
+                    let mut rm_lock = rm.lock().unwrap();
 
-                    entitiy_mutex.add_component(octree);
+                    let bufferID = octree.instance_data_buffer[0]; // TODO select correct idx
+                    let gpu_buffer = rm_lock.get_buffer(bufferID);
+
+                    gpu_buffer.update_data(0, &model_matrices);
                 }
-                */
+
+                entitiy_mutex.add_component(octree);
             }
         }
     }

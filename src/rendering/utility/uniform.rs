@@ -11,6 +11,8 @@ use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 
 use crate::rendering::renderer::Renderer;
 
+pub type BufferID = usize;
+
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,
     adapter: Arc<Adapter<B>>,
@@ -26,7 +28,7 @@ impl<B: Backend> GPUBuffer<B> {
         &self.buffer
     }
 
-    pub unsafe fn new<T>(
+    pub fn new<T>(
         device: &Arc<B::Device>,
         adapter: &Arc<Adapter<B>>,
         data_source: &[T],
@@ -35,15 +37,28 @@ impl<B: Backend> GPUBuffer<B> {
         where
             T: Copy,
     {
+        let stride = size_of::<T>();
+        let upload_size = data_source.len() * stride;
+
+        let mut buf = Self::new_with_size(device, adapter, upload_size, usage);
+        buf.update_data(0, data_source);
+
+        buf
+    }
+
+    pub fn new_with_size(device: &Arc<B::Device>,
+                                adapter: &Arc<Adapter<B>>,
+                                byte_size: usize,
+                                usage: buffer::Usage) -> Self {
+
         let memory_types = adapter.physical_device.memory_properties().memory_types;
         let memory: B::Memory;
         let mut buffer: B::Buffer;
         let size: u64;
 
-        let stride = size_of::<T>();
-        let upload_size = data_source.len() * stride;
+        let upload_size = byte_size;
 
-        {
+        unsafe {
             buffer = device.create_buffer(upload_size as u64, usage).unwrap();
             let mem_req = device.get_buffer_requirements(&buffer);
 
@@ -67,11 +82,6 @@ impl<B: Backend> GPUBuffer<B> {
             memory = device.allocate_memory(upload_type, mem_req.size).unwrap();
             device.bind_buffer_memory(&memory, 0, &mut buffer).unwrap();
             size = mem_req.size;
-
-            // TODO: check transitions: read/write mapping and vertex buffer read
-            let mapping = device.map_memory(&memory, 0..size).unwrap();
-            ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);
-            device.unmap_memory(&memory);
         }
 
         GPUBuffer {
@@ -83,7 +93,7 @@ impl<B: Backend> GPUBuffer<B> {
         }
     }
 
-    pub fn update_data<T>(&mut self, offset: u64, data_source: &[T])
+    pub fn update_data<T>(&self, offset: u64, data_source: &[T])
         where
             T: Copy,
     {
