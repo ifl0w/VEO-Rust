@@ -28,6 +28,10 @@ pub struct OctreeGuiSystem {
 
     // octree data
     octree_depth: i32,
+
+    // profiling data
+    profiling_data: ProfilingData,
+
     frame_times: VecDeque<f32>,
 
     // message passing
@@ -86,6 +90,8 @@ impl OctreeGuiSystem {
             display,
 
             octree_depth: 5,
+
+            profiling_data: ProfilingData::default(),
             frame_times,
 
             messages: vec![],
@@ -143,7 +149,26 @@ impl System for OctreeGuiSystem {
         platform.handle_event(imgui.io_mut(), &gl_window.window(), &_event); // step 3
     }
 
-    fn consume_messages(&mut self, _: &Vec<Message>) {}
+    fn consume_messages(&mut self, messages: &Vec<Message>) {
+        for m in messages {
+            if m.is_type::<ProfilingData>() {
+                let data = m.get_payload::<ProfilingData>().unwrap();
+
+                match data.rendered_nodes {
+                    Some(v) => self.profiling_data.rendered_nodes.replace(v),
+                    None => None
+                };
+                match data.render_time {
+                    Some(v) => self.profiling_data.render_time.replace(v),
+                    None => None
+                };
+                match data.instance_data_generation {
+                    Some(v) => self.profiling_data.instance_data_generation.replace(v),
+                    None => None
+                };
+            }
+        }
+    }
 
     fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, delta_time: Duration) {
         let ui = self.imgui.frame();
@@ -156,35 +181,53 @@ impl System for OctreeGuiSystem {
 
         let octree_depth = &mut self.octree_depth;
 
+        let rendered_nodes = &mut self.profiling_data.rendered_nodes.unwrap_or(0);
+        let render_time = self.profiling_data.render_time.unwrap_or(0) as f64 / 1e6 as f64;
+
         let frame_times = &mut self.frame_times;
         frame_times.pop_front();
         frame_times.push_back(delta_time.as_secs_f32());
 
         let f_times: Vec<f32> = frame_times.iter().cloned().collect();
 
-        Window::new(im_str!("Hello world"))
+        Window::new(im_str!("Octree"))
             .size([300.0, 0.0], Condition::FirstUseEver)
             .build(&ui, || {
-                ui.text(im_str!("Hello world! {}", delta_time.as_millis()));
-                ui.text(im_str!("This...is...imgui-rs!"));
-                ui.button(im_str!("Test Button"), [0.0, 0.0]);
+                if ui.collapsing_header(im_str!("Settings")).default_open(true).build() {
+                    ui.new_line();
 
-                // Plot some values
-                ui.plot_lines(im_str!("Frame Times"), &f_times[..]).build();
+                    Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 10))
+                        .build(&ui, octree_depth);
+                    if ui.button(im_str!("Update Octree"), [0.0, 0.0]) {
+                        messages.push(Message::new(UpdateOctree { octree_depth: *octree_depth }));
+                    };
 
-                Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 10))
-                    .build(&ui, octree_depth);
+                    ui.new_line();
+                }
 
-                if ui.button(im_str!("Update Octree"), [0.0, 0.0]) {
-                    messages.push(Message::new(UpdateOctree { octree_depth: *octree_depth }));
-                };
+                if ui.collapsing_header(im_str!("Profiling")).default_open(true).build() {
+                    ui.new_line();
+                    // Plot Frame Times
+                    ui.plot_lines(im_str!("Frame Times"), &f_times[..])
+                        .graph_size([0.0, 50.0])
+                        .overlay_text(&im_str!("{} ms", delta_time.as_millis()))
+                        .build();
 
-                ui.separator();
-                let mouse_pos = ui.io().mouse_pos;
-                ui.text(format!(
-                    "Mouse Position: ({:.1},{:.1})",
-                    mouse_pos[0], mouse_pos[1]
-                ));
+                    ui.separator();
+
+                    ui.text(im_str!("Rendered Nodes: {}", rendered_nodes));
+
+                    ui.text(im_str!("Render Time Nodes: {:.2} ms", render_time));
+
+                    ui.separator();
+
+                    let mouse_pos = ui.io().mouse_pos;
+                    ui.text(format!(
+                        "Mouse Position: ({:.1},{:.1})",
+                        mouse_pos[0], mouse_pos[1]
+                    ));
+                    ui.new_line();
+                }
             });
 
         // construct the UI
@@ -218,3 +261,12 @@ pub struct UpdateOctree {
 }
 
 impl Payload for UpdateOctree {}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProfilingData {
+    pub rendered_nodes: Option<u32>,
+    pub instance_data_generation: Option<u64>,
+    pub render_time: Option<u64>, // in nano seconds
+}
+
+impl Payload for ProfilingData {}

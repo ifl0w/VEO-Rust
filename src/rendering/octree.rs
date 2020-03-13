@@ -9,7 +9,7 @@ use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, System};
 use crate::rendering::{Camera, GPUBuffer, InstanceData, RenderSystem, Transformation};
-use crate::rendering::nse_gui::octree_gui::UpdateOctree;
+use crate::rendering::nse_gui::octree_gui::{UpdateOctree, ProfilingData};
 use crate::rendering::utility::BufferID;
 use std::iter;
 use gfx_hal::pso::{DescriptorSetWrite, Descriptor};
@@ -279,6 +279,8 @@ pub struct OctreeSystem {
 
     update_octrees: bool,
     octree_depth: i32,
+
+    messages: Vec<Message>,
 }
 
 impl OctreeSystem {
@@ -287,6 +289,7 @@ impl OctreeSystem {
             render_sys,
             update_octrees: false,
             octree_depth: 5,
+            messages: Vec::new(),
         }))
     }
 
@@ -362,7 +365,6 @@ impl System for OctreeSystem {
                     self.update_octrees = false;
                 }
 
-
                 { // scope to enclose mutex
                     let root = octree.root.lock().unwrap();
                     let model_matrices = OctreeSystem::generate_instance_data(&root, octree.scale);
@@ -376,6 +378,12 @@ impl System for OctreeSystem {
                     gpu_buffer_lock.replace_data(&model_matrices);
                     octree.active_instance_buffer_idx = Some(0);
                     octree.render_count = model_matrices.len();
+
+                    self.messages.push(Message::new(
+                        ProfilingData {
+                            rendered_nodes: Some(octree.render_count as u32),
+                            ..Default::default()
+                        }));
                 } // drop locks
 
                 entitiy_mutex.add_component(octree);
@@ -383,5 +391,14 @@ impl System for OctreeSystem {
         }
     }
 
-    fn get_messages(&mut self) -> Vec<Message> { vec![] }
+    fn get_messages(&mut self) -> Vec<Message> {
+        let mut ret = vec![];
+
+        if !self.messages.is_empty() {
+            ret = self.messages.clone();
+            self.messages.clear();
+        }
+
+        ret
+    }
 }

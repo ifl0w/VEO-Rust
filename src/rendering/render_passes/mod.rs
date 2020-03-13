@@ -29,4 +29,6 @@ pub trait RenderPass<B: Backend> {
     fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet;
     fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize, acquire_semaphore: &B::Semaphore) -> &B::Semaphore;
     fn record(&mut self, frame_idx: usize);
+
+    fn execution_time(&mut self, frame_idx: usize) -> u64;
 }

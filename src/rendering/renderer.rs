@@ -85,6 +85,7 @@ use crate::core::{Exit, Filter, MainWindow, Message, System};
 use crate::NSE;
 use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree, Plane, RenderPass, SwapchainWrapper, Transformation};
 use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
+use crate::rendering::nse_gui::octree_gui::ProfilingData;
 
 /* Constants */
 // Window
@@ -259,11 +260,16 @@ impl System for RenderSystem {
         // renderer instead of the render passes
         self.renderer.render(&self.forward_render_pass);
 
+        // send execution time
+        let execution_time  = self.forward_render_pass.lock().unwrap().execution_time(frame_idx);
+        self.messages.push(Message::new(ProfilingData { render_time: Some(execution_time), ..Default::default() }));
+
         self.window.request_redraw();
     }
 
     fn get_messages(&mut self) -> Vec<Message> {
         let mut ret = vec![];
+
         if !self.messages.is_empty() {
             ret = self.messages.clone();
             self.messages = vec![];

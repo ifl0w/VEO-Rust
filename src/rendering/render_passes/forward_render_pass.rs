@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, Weak};
 
 use cgmath::{Matrix, Matrix4, SquareMatrix};
-use gfx_hal::{Backend, command, format, format::Format, image, IndexType, memory, pass, pass::Attachment, pso};
+use gfx_hal::{Backend, command, format, format::Format, image, IndexType, memory, pass, pass::Attachment, pso, query};
 use gfx_hal::buffer::IndexBufferView;
 use gfx_hal::command::{ClearColor, ClearDepthStencil, ClearValue, CommandBuffer, ImageBlit, ImageCopy, SubpassContents};
 use gfx_hal::device::Device;
@@ -27,6 +27,7 @@ use gfx_hal::memory::Barrier;
 use gfx_hal::pass::{Subpass, SubpassDependency, SubpassRef};
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{Comparison, DepthTest, Descriptor, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
+use gfx_hal::query::Query;
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::range::RangeArg;
 use gfx_hal::window::{Extent2D, Surface, SwapImageIndex};
@@ -36,6 +37,7 @@ use winit::event::WindowEvent::CursorMoved;
 use crate::rendering::{BufferID, CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
+use bytes::{Bytes, Buf};
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -53,6 +55,8 @@ pub struct ForwardRenderPass<B: Backend> {
 
     pub render_pass: ManuallyDrop<B::RenderPass>,
 
+    frames_in_flight: u32,
+
     forward_pipeline: ForwardPipeline<B>,
 
     extent: Extent2D,
@@ -62,6 +66,8 @@ pub struct ForwardRenderPass<B: Backend> {
     pub desc_set: Vec<B::DescriptorSet>,
     pub render_set_layout: ManuallyDrop<B::DescriptorSetLayout>,
     framebuffer: Framebuffer<B, B::Device>,
+
+    timestamp_query_pool: ManuallyDrop<B::QueryPool>,
 
     pub cmd_buffers: Vec<B::CommandBuffer>,
 
@@ -220,7 +226,7 @@ impl<B: Backend> ForwardRenderPass<B> {
 
         // instance/draw buffer
         let instance_buffer = GPUBuffer::new_with_size(device, adapter,
-                                                       std::mem::size_of::<InstanceData>()*1000,
+                                                       std::mem::size_of::<InstanceData>() * 1000,
                                                        gfx_hal::buffer::Usage::STORAGE);
         for idx in 0..renderer.frames_in_flight {
             unsafe {
@@ -263,12 +269,20 @@ impl<B: Backend> ForwardRenderPass<B> {
             depth: 0.0..1.0,
         };
 
+        let timestamp_query_pool = unsafe {
+            ManuallyDrop::new(device.create_query_pool(
+                query::Type::Timestamp,
+                renderer.frames_in_flight as u32 * 2) // * 2 for start and end time stamp
+                .expect("Failed to create query pool"))
+        };
+
         ForwardRenderPass {
             device: device.clone(),
 
             resource_manager: resource_manager.clone(),
 
             render_pass,
+            frames_in_flight: renderer.frames_in_flight as u32,
 
             forward_pipeline,
 
@@ -279,6 +293,8 @@ impl<B: Backend> ForwardRenderPass<B> {
             desc_set,
             render_set_layout,
             framebuffer,
+
+            timestamp_query_pool,
 
             cmd_buffers,
 
@@ -367,6 +383,9 @@ impl<B: Backend> Drop for ForwardRenderPass<B> {
 
             self.device
                 .destroy_render_pass(ManuallyDrop::into_inner(ptr::read(&self.render_pass)));
+
+            self.device
+                .destroy_query_pool(ManuallyDrop::into_inner(ptr::read(&self.timestamp_query_pool)));
         }
     }
 }
@@ -601,6 +620,13 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
 
+            command_buffer.reset_query_pool(&self.timestamp_query_pool, 0 .. self.frames_in_flight * 2);
+
+            command_buffer.write_timestamp(pso::PipelineStage::TOP_OF_PIPE, Query {
+                pool: &*self.timestamp_query_pool,
+                id: (frame_idx * 2) as u32,
+            });
+
             command_buffer.set_viewports(0, &[self.viewport.clone()]);
             command_buffer.set_scissors(0, &[self.viewport.rect]);
 
@@ -705,9 +731,36 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             command_buffer.end_render_pass();
 
+            command_buffer.write_timestamp(pso::PipelineStage::BOTTOM_OF_PIPE, Query {
+                pool: &*self.timestamp_query_pool,
+                id: (frame_idx * 2  + 1) as u32,
+            });
+
             command_buffer.finish();
 
             command_buffers.push(command_buffer);
         }
+    }
+
+    /// Return the execution time of this pass in nano seconds
+    fn execution_time(&mut self, frame_idx: usize) -> u64 {
+        let mut data: [u8; 16] = [0u8; 16];
+
+        unsafe {
+            self.device.get_query_pool_results(
+                &self.timestamp_query_pool,
+                (frame_idx * 2) as u32 .. ((frame_idx * 2) + 2) as u32,
+                &mut data,
+                0,
+                gfx_hal::query::ResultFlags::WAIT | gfx_hal::query::ResultFlags::BITS_64).unwrap();
+
+        }
+
+        // TODO: check if VkQueueFamilyProperties::timestampValidBits and timestampPeriod is already handled by gfx_hal
+        // https://www.reddit.com/r/vulkan/comments/b6m6wx/how_to_use_timestamps/
+        let start = Bytes::copy_from_slice(&data[0..8]).get_u64_le();
+        let end = Bytes::copy_from_slice(&data[8..16]).get_u64_le();
+
+        return end - start;
     }
 }
