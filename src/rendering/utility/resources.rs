@@ -37,7 +37,7 @@ pub struct ResourceManager<B>
     adapter: Arc<Adapter<B>>,
 
     pub(in crate::rendering::utility) meshes: HashMap<MeshID, Arc<GPUMesh<B>>>,
-    pub(in crate::rendering::utility) buffers: HashMap<BufferID, Arc<GPUBuffer<B>>>,
+    pub(in crate::rendering::utility) buffers: HashMap<BufferID, Arc<Mutex<GPUBuffer<B>>>>,
 //    pub(in crate::rendering) shaders: HashMap<ShaderID, Arc<Shader<B>>>,
 }
 
@@ -60,9 +60,9 @@ impl<B> ResourceManager<B>
         }
     }
 
-    pub fn get_buffer(&self, id: BufferID) -> &GPUBuffer<B> {
+    pub fn get_buffer(&self, id: BufferID) -> &Arc<Mutex<GPUBuffer<B>>> {
         match self.buffers.get(&id) {
-            Some(buffer) => &*buffer,
+            Some(buffer) => buffer,
             None => panic!("Buffer not stored on GPU")
         }
     }
@@ -71,7 +71,7 @@ impl<B> ResourceManager<B>
         let id = self.buffers.len();
 
         // store in map
-        self.buffers.insert(id, Arc::new(buffer));
+        self.buffers.insert(id, Arc::new(Mutex::new(buffer)));
 
         id
     }

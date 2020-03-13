@@ -26,13 +26,14 @@ use gfx_hal::image::ViewError::Layer;
 use gfx_hal::memory::Barrier;
 use gfx_hal::pass::{Subpass, SubpassDependency, SubpassRef};
 use gfx_hal::pool::CommandPool;
-use gfx_hal::pso::{Comparison, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
+use gfx_hal::pso::{Comparison, DepthTest, Descriptor, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
 use gfx_hal::queue::{CommandQueue, Submission};
+use gfx_hal::range::RangeArg;
 use gfx_hal::window::{Extent2D, Surface, SwapImageIndex};
 use glium::draw_parameters::sync;
 use winit::event::WindowEvent::CursorMoved;
 
-use crate::rendering::{CameraData, ForwardPipeline, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResolvePipeline, ResourceManager, ShaderCode, Uniform, Vertex};
+use crate::rendering::{BufferID, CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
 
@@ -53,7 +54,6 @@ pub struct ForwardRenderPass<B: Backend> {
     pub render_pass: ManuallyDrop<B::RenderPass>,
 
     forward_pipeline: ForwardPipeline<B>,
-    resolve_pipeline: ResolvePipeline<B>,
 
     extent: Extent2D,
     viewport: pso::Viewport,
@@ -67,8 +67,12 @@ pub struct ForwardRenderPass<B: Backend> {
 
     // uniforms
     camera_uniform: Uniform<B>,
+    //    instance_ssbo: Uniform<B>,
+    instance_buffer: GPUBuffer<B>,
+    instance_buffer_id: Option<BufferID>,
 
-    instances: HashMap<MeshID, Vec<Matrix4<f32>>>,
+    meshes: HashMap<MeshID, Vec<Matrix4<f32>>>,
+    instanced_meshes: HashMap<MeshID, Vec<Range<usize>>>,
 }
 
 impl<B: Backend> ForwardRenderPass<B> {
@@ -81,9 +85,16 @@ impl<B: Backend> ForwardRenderPass<B> {
             unsafe {
                 device.create_descriptor_set_layout(
                     &[
-                        DescriptorSetLayoutBinding {
+                        DescriptorSetLayoutBinding { // Camera UBO
                             binding: 0,
                             ty: DescriptorType::UniformBuffer,
+                            count: 1,
+                            stage_flags: ShaderStageFlags::all(),
+                            immutable_samplers: false,
+                        },
+                        DescriptorSetLayoutBinding { // Instance Data SSBO
+                            binding: 1,
+                            ty: DescriptorType::StorageBuffer,
                             count: 1,
                             stage_flags: ShaderStageFlags::all(),
                             immutable_samplers: false,
@@ -102,6 +113,10 @@ impl<B: Backend> ForwardRenderPass<B> {
                     &[
                         DescriptorRangeDesc {
                             ty: DescriptorType::UniformBuffer,
+                            count: renderer.frames_in_flight,
+                        },
+                        DescriptorRangeDesc {
+                            ty: DescriptorType::StorageBuffer,
                             count: renderer.frames_in_flight,
                         }
                     ],
@@ -203,6 +218,23 @@ impl<B: Backend> ForwardRenderPass<B> {
                                           CAMERA_UNIFORM_BINDING,
                                           &desc_set);
 
+        // instance/draw buffer
+        let instance_buffer = GPUBuffer::new_with_size(device, adapter,
+                                                       std::mem::size_of::<InstanceData>()*1000,
+                                                       gfx_hal::buffer::Usage::STORAGE);
+        for idx in 0..renderer.frames_in_flight {
+            unsafe {
+                device.write_descriptor_sets(iter::once(DescriptorSetWrite {
+                    set: &desc_set[idx],
+                    binding: 1,
+                    array_offset: 0,
+                    descriptors: iter::once(
+                        Descriptor::Buffer(instance_buffer.get_buffer(), None..None)
+                    ),
+                }));
+            }
+        }
+
         let mut cmd_buffers = Vec::with_capacity(renderer.frames_in_flight);
         for i in 0..renderer.frames_in_flight {
             unsafe {
@@ -211,7 +243,6 @@ impl<B: Backend> ForwardRenderPass<B> {
         }
 
         let forward_pipeline = ForwardPipeline::new(device, render_pass.deref(), render_set_layout.deref());
-        let resolve_pipeline = ResolvePipeline::new(device, render_pass.deref(), render_set_layout.deref());
 
         let mut framebuffer = Framebuffer::new(device,
                                                adapter,
@@ -240,7 +271,6 @@ impl<B: Backend> ForwardRenderPass<B> {
             render_pass,
 
             forward_pipeline,
-            resolve_pipeline,
 
             extent: renderer.dimensions,
             viewport,
@@ -253,13 +283,15 @@ impl<B: Backend> ForwardRenderPass<B> {
             cmd_buffers,
 
             camera_uniform,
+            instance_buffer,
+            instance_buffer_id: None,
 
-            instances: HashMap::new(),
+            meshes: HashMap::new(),
+            instanced_meshes: HashMap::new(),
         }
     }
 
     pub fn recreate_pipeline(&mut self) {
-        self.resolve_pipeline = ResolvePipeline::new(&self.device, self.render_pass.deref(), self.render_set_layout.deref());
         self.forward_pipeline = ForwardPipeline::new(&self.device, self.render_pass.deref(), self.render_set_layout.deref());
     }
 
@@ -267,21 +299,57 @@ impl<B: Backend> ForwardRenderPass<B> {
         self.camera_uniform.buffers[frame_idx].update_data(0, &[camera_data]);
     }
 
-    pub fn reset_instances(&mut self) {
-        for (_, transforms) in self.instances.iter_mut() {
+    pub fn reset(&mut self) {
+        for (_, transforms) in self.meshes.iter_mut() {
             transforms.clear();
+        }
+        for (_, ranges) in self.instanced_meshes.iter_mut() {
+            ranges.clear();
         }
     }
 
-    pub fn add_instance(&mut self, mesh_id: MeshID, transform: Matrix4<f32>) {
-        match self.instances.get_mut(&mesh_id) {
+    pub fn add_mesh(&mut self, mesh_id: MeshID, transform: Matrix4<f32>) {
+        match self.meshes.get_mut(&mesh_id) {
             Some(transforms) => {
                 transforms.push(transform);
             }
             None => {
-                self.instances.insert(mesh_id, vec![transform]);
+                self.meshes.insert(mesh_id, vec![transform]);
             }
         };
+    }
+
+    /// Adds a given mesh and buffer to the recorded instances for rendering.
+    /// The buffer is assumed to contain mat4 data. (model matrices)
+    ///
+    /// Replaces instance buffer if it was already added.
+    ///
+    /// TODO: type checking of buffer (probably requires refactoring of buffers)
+    pub fn add_instances(&mut self, mesh_id: MeshID, instance_data_range: Range<usize>) {
+        match self.instanced_meshes.get_mut(&mesh_id) {
+            Some(instances) => {
+                instances.push(instance_data_range);
+            }
+            None => {
+                self.instanced_meshes.insert(mesh_id, vec![instance_data_range]);
+            }
+        };
+    }
+
+    pub fn use_instance_buffer(&mut self, buffer: BufferID, frame_idx: usize) {
+        let rm_lock = self.resource_manager.lock().unwrap();
+        let buf_lock = rm_lock.get_buffer(buffer).lock().unwrap();
+
+        unsafe {
+            self.device.write_descriptor_sets(iter::once(DescriptorSetWrite {
+                set: &self.desc_set[frame_idx],
+                binding: 1,
+                array_offset: 0,
+                descriptors: iter::once(
+                    Descriptor::Buffer(buf_lock.get_buffer(), None..None)
+                ),
+            }));
+        }
     }
 }
 
@@ -535,14 +603,6 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             command_buffer.set_viewports(0, &[self.viewport.clone()]);
             command_buffer.set_scissors(0, &[self.viewport.rect]);
-            command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline());
-
-            command_buffer.bind_graphics_descriptor_sets(
-                &self.forward_pipeline.get_layout(),
-                0,
-                iter::once(&self.desc_set[frame_idx]),
-                &[],
-            );
 
             command_buffer.begin_render_pass(
                 &self.render_pass,
@@ -564,32 +624,84 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 command::SubpassContents::Inline,
             );
 
-            let resource_manager = self.resource_manager.lock().unwrap();
-            for (id, transforms) in self.instances.iter() {
-                let mesh = resource_manager.get_mesh(id);
-                let vert_buf = &**mesh.vertex_buffer;
-                let ind_buf = &**mesh.index_buffer;
 
-                for transform in transforms {
-                    let mut data: &[f32; 16] = transform.as_ref();
-                    let push_data: [u32; 16] = std::mem::transmute_copy(data);
+            {
+                let rm_lock = self.resource_manager.lock().unwrap();
 
-                    command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(),
-                                                           ShaderStageFlags::VERTEX,
-                                                           0,
-                                                           &push_data);
-
-                    command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
-
-                    let index_buffer_view = IndexBufferView {
-                        buffer: ind_buf,
-                        offset: 0,
-                        index_type: mesh.index_type,
-                    };
-                    command_buffer.bind_index_buffer(index_buffer_view);
-                    command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                if !self.meshes.is_empty() {
+                    command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline(false));
+                    command_buffer.bind_graphics_descriptor_sets(
+                        &self.forward_pipeline.get_layout(false),
+                        0,
+                        iter::once(&self.desc_set[frame_idx]),
+                        &[],
+                    );
                 }
-            }
+
+                // generate simple draw calls
+                for (id, transforms) in self.meshes.iter() {
+                    let mesh = rm_lock.get_mesh(id);
+                    let vert_buf = &**mesh.vertex_buffer;
+                    let ind_buf = &**mesh.index_buffer;
+
+                    for transform in transforms {
+                        let mut data: &[f32; 16] = transform.as_ref();
+                        let push_data: [u32; 16] = std::mem::transmute_copy(data);
+
+                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(false),
+                                                               ShaderStageFlags::VERTEX,
+                                                               0,
+                                                               &push_data);
+
+                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+
+                        let index_buffer_view = IndexBufferView {
+                            buffer: ind_buf,
+                            offset: 0,
+                            index_type: mesh.index_type,
+                        };
+                        command_buffer.bind_index_buffer(index_buffer_view);
+                        command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                    }
+                }
+            } // drop lock
+
+            {
+                let rm_lock = self.resource_manager.lock().unwrap();
+
+                if !self.instanced_meshes.is_empty() {
+                    command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline(true));
+                    command_buffer.bind_graphics_descriptor_sets(
+                        &self.forward_pipeline.get_layout(true),
+                        0,
+                        iter::once(&self.desc_set[frame_idx]),
+                        &[],
+                    );
+                }
+
+                // generate instanced draw calls
+                for (id, instance_ranges) in self.instanced_meshes.iter() {
+                    let mesh = rm_lock.get_mesh(id);
+                    let vert_buf = &**mesh.vertex_buffer;
+                    let ind_buf = &**mesh.index_buffer;
+
+                    for range in instance_ranges {
+                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(true),
+                                                               ShaderStageFlags::VERTEX,
+                                                               64,
+                                                               &[range.start as u32]);
+
+                        let index_buffer_view = IndexBufferView {
+                            buffer: ind_buf,
+                            offset: 0,
+                            index_type: mesh.index_type,
+                        };
+                        command_buffer.bind_index_buffer(index_buffer_view);
+                        command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..range.end as u32);
+                    }
+                }
+            } // drop lock
 
             command_buffer.end_render_pass();
 

@@ -20,7 +20,8 @@ pub struct GPUBuffer<B: Backend> {
     buffer: ManuallyDrop<B::Buffer>,
     memory: ManuallyDrop<B::Memory>,
 
-    size: u64,
+    element_count: usize,
+    size: usize,
 }
 
 impl<B: Backend> GPUBuffer<B> {
@@ -42,6 +43,7 @@ impl<B: Backend> GPUBuffer<B> {
 
         let mut buf = Self::new_with_size(device, adapter, upload_size, usage);
         buf.update_data(0, data_source);
+        buf.element_count = data_source.len();
 
         buf
     }
@@ -54,7 +56,7 @@ impl<B: Backend> GPUBuffer<B> {
         let memory_types = adapter.physical_device.memory_properties().memory_types;
         let memory: B::Memory;
         let mut buffer: B::Buffer;
-        let size: u64;
+        let size: usize;
 
         let upload_size = byte_size;
 
@@ -81,7 +83,7 @@ impl<B: Backend> GPUBuffer<B> {
 
             memory = device.allocate_memory(upload_type, mem_req.size).unwrap();
             device.bind_buffer_memory(&memory, 0, &mut buffer).unwrap();
-            size = mem_req.size;
+            size = mem_req.size as usize;
         }
 
         GPUBuffer {
@@ -89,11 +91,15 @@ impl<B: Backend> GPUBuffer<B> {
             adapter: adapter.clone(),
             buffer: ManuallyDrop::new(buffer),
             memory: ManuallyDrop::new(memory),
+            element_count: 0,
             size,
         }
     }
 
-    pub fn update_data<T>(&self, offset: u64, data_source: &[T])
+    /// updates a section of the buffer.
+    /// does not change the stored length. The user has to ensure that elements in the buffer are
+    /// updated correctly
+    pub fn update_data<T>(&self, offset: usize, data_source: &[T])
         where
             T: Copy,
     {
@@ -102,14 +108,27 @@ impl<B: Backend> GPUBuffer<B> {
         let stride = size_of::<T>();
         let upload_size = data_source.len() * stride;
 
-        assert!(offset + upload_size as u64 <= self.size);
+        assert!(offset + upload_size <= self.size);
         let memory = &self.memory;
 
         unsafe {
-            let mapping = device.map_memory(memory, offset..self.size).unwrap();
+            let mapping = device.map_memory(memory, offset as u64 .. self.size as u64).unwrap();
             ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);
             device.unmap_memory(memory);
         }
+    }
+
+    /// invalidates the buffer content and replaces the data.
+    /// Changes the number of elements tracked in the buffer.
+    pub fn replace_data<T>(&mut self, data_source: &[T])
+        where
+            T: Copy {
+        self.update_data(0, data_source);
+        self.element_count = data_source.len();
+    }
+
+    pub fn len(&self) -> usize {
+        self.element_count
     }
 }
 

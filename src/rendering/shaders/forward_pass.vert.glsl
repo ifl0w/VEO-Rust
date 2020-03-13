@@ -1,5 +1,8 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(constant_id = 0) const bool use_instancing = false;
 
 // Uniforms
 layout(binding = 0) uniform UniformBufferObject {
@@ -8,47 +11,35 @@ layout(binding = 0) uniform UniformBufferObject {
     vec4 position;
 } camera_ubo;
 
+layout(binding = 1) buffer InstanceDataBuffer {
+    mat4 model_matrix[];
+} instance_ssbo;
+
 layout(push_constant) uniform PushConsts {
     mat4 model_matrix;
+    int instance_data_offset;
 } pushConsts;
-
-//layout(location = 1) uniform ModelMatrix {
-//    mat4 model_matrix;
-//};
 
 // The per-vertex data
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 color;
 
-// The per-instance data
-//layout(location = 3) in mat4 instance_model_matrix;
-
-/*
-layout(location = 0) out FragmentData {
-    vec3 color;
-    vec3 normal;
-    vec3 position;
-} frag;*/
-
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec3 fragPosition;
 
-
-//layout(location = 0) out fragment_data frag;
-
 void main() {
-    vec4 worldCoords = pushConsts.model_matrix * vec4(position, 1.0);
-    //    vec4 worldCoords = vec4(position + vec3(0,0,-10), 1.0);
-    //    gl_Position = vec4(position.xy, 0.0, 1.0); //camera_ubo.proj * camera_ubo.view * worldCoords;
+    mat4 model_matrix;
+    if (use_instancing) {
+        model_matrix = instance_ssbo.model_matrix[pushConsts.instance_data_offset + gl_InstanceIndex];
+    } else {
+        model_matrix = pushConsts.model_matrix;
+    }
+
+    vec4 worldCoords = model_matrix * vec4(position, 1.0);
     gl_Position = camera_ubo.proj * camera_ubo.view * worldCoords;
 
-    /*
-    frag.color = normal;
-    frag.normal = normal;
-    frag.position = gl_Position.xyz;
-    */
     fragColor = normal;
     fragNormal = normal;
     fragPosition = worldCoords.xyz;

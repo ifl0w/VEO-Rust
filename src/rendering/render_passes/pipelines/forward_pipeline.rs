@@ -17,39 +17,23 @@ use gfx_hal::pso::{Comparison, DepthStencilDesc, DepthTest, DescriptorPool, Desc
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
-use crate::rendering::{ENTRY_NAME, Pipeline, ShaderCode, Vertex};
+use crate::rendering::{ENTRY_NAME, InstanceData, Pipeline, ShaderCode, Vertex};
 
 pub struct ForwardPipeline<B: Backend> {
     device: Arc<B::Device>,
     info: (ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>),
+    info_instanced: (ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>),
 }
 
-impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
-    fn new(device: &Arc<B::Device>,
-           render_pass: &B::RenderPass,
-           set_layout: &B::DescriptorSetLayout) -> Self {
-        ForwardPipeline {
-            device: device.clone(),
-            info: Self::create_pipeline(device, render_pass, set_layout).unwrap(),
-        }
-    }
-
-    fn get_pipeline(&self) -> &B::GraphicsPipeline {
-        &self.info.0
-    }
-
-    fn get_layout(&self) -> &B::PipelineLayout {
-        &self.info.1
-    }
-
-    fn create_pipeline(device: &Arc<B::Device>, render_pass: &B::RenderPass, set_layout: &B::DescriptorSetLayout)
+impl<B: Backend> ForwardPipeline<B> {
+    fn create_pipeline(device: &Arc<B::Device>, render_pass: &B::RenderPass, set_layout: &B::DescriptorSetLayout, enable_instancing: bool)
                        -> Option<(ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>)> {
         let pipeline_layout = ManuallyDrop::new(
             unsafe {
                 device.create_pipeline_layout(
                     iter::once(set_layout),
                     &[
-                        (ShaderStageFlags::VERTEX, 0..64) // model matrix push constant
+                        (ShaderStageFlags::VERTEX, 0..68), // model matrix and offset into instance data
                     ],
                 )
             }
@@ -80,13 +64,16 @@ impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
 
-
             let pipeline = {
                 let (vs_entry, fs_entry) = (
                     pso::EntryPoint {
                         entry: ENTRY_NAME,
                         module: &vs_module,
-                        specialization: pso::Specialization::default(),
+                        specialization: if enable_instancing {
+                            gfx_hal::spec_const_list![true]
+                        } else {
+                            pso::Specialization::default()
+                        },
                     },
                     pso::EntryPoint {
                         entry: ENTRY_NAME,
@@ -137,11 +124,6 @@ impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
                     stride: mem::size_of::<Vertex>() as u32,
                     rate: VertexInputRate::Vertex,
                 });
-//                pipeline_desc.vertex_buffers.push(pso::VertexBufferDesc {
-//                    binding: 1,
-//                    stride: mem::size_of::<InstanceData>() as u32,
-//                    rate: VertexInputRate::Instance(1),
-//                });
 
                 pipeline_desc.attributes.push(pso::AttributeDesc {
                     location: 0,
@@ -167,14 +149,6 @@ impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
                         offset: 24,
                     },
                 });
-//                pipeline_desc.attributes.push(pso::AttributeDesc {
-//                    location: 3,
-//                    binding: 1,
-//                    element: pso::Element {
-//                        format: Format::Rgb32Sfloat,
-//                        offset: 36,
-//                    },
-//                });
 
                 unsafe { device.create_graphics_pipeline(&pipeline_desc, None) }
             };
@@ -190,6 +164,34 @@ impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
         };
 
         Some((pipeline, pipeline_layout))
+    }
+}
+
+impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
+    fn new(device: &Arc<B::Device>,
+           render_pass: &B::RenderPass,
+           set_layout: &B::DescriptorSetLayout) -> Self {
+        ForwardPipeline {
+            device: device.clone(),
+            info: Self::create_pipeline(device, render_pass, set_layout, false).unwrap(),
+            info_instanced: Self::create_pipeline(device, render_pass, set_layout, true).unwrap(),
+        }
+    }
+
+    fn get_pipeline(&self, instanced: bool) -> &B::GraphicsPipeline {
+        if instanced {
+            &self.info_instanced.0
+        } else {
+            &self.info.0
+        }
+    }
+
+    fn get_layout(&self, instanced: bool) -> &B::PipelineLayout {
+        if instanced {
+            &self.info_instanced.1
+        } else {
+            &self.info.1
+        }
     }
 }
 

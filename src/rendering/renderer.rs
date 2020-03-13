@@ -221,16 +221,39 @@ impl System for RenderSystem {
 
         let frame_idx = self.renderer.current_swap_chain_image;
 
-        self.forward_render_pass.lock().unwrap().reset_instances();
-        for mesh_entity in &filter[0].lock().unwrap().entities {
-            let mutex = mesh_entity.lock().unwrap();
-            let mesh = mutex.get_component::<Mesh>().unwrap();
-            let trans = mutex.get_component::<Transformation>().unwrap();
+        {
+            let mut fwp_lock = self.forward_render_pass.lock().unwrap();
 
-            self.forward_render_pass.lock().unwrap().add_instance(mesh.id, trans.model_matrix);
-        }
+            fwp_lock.reset(); // reset render state of last frame
 
-        self.forward_render_pass.lock().unwrap().update_camera(camera_data, frame_idx);
+            // add single meshes
+            for mesh_entity in &filter[0].lock().unwrap().entities {
+                let mutex = mesh_entity.lock().unwrap();
+                let mesh = mutex.get_component::<Mesh>().unwrap();
+                let trans = mutex.get_component::<Transformation>().unwrap();
+
+                fwp_lock.add_mesh(mesh.id, trans.model_matrix);
+            }
+
+            // add octree instances
+            for octree_entity in &filter[2].lock().unwrap().entities {
+                let mutex = octree_entity.lock().unwrap();
+                let mesh = mutex.get_component::<Mesh>().unwrap();
+                let _trans = mutex.get_component::<Transformation>().unwrap();
+                let octree = mutex.get_component::<Octree>().unwrap();
+
+                match octree.get_instance_buffer() {
+                    Some(ib) => {
+                        // TODO somehow rework instancing. This is not a good solution.
+                        fwp_lock.add_instances(mesh.id, 0 .. octree.render_count);
+                        fwp_lock.use_instance_buffer(ib, frame_idx);
+                    },
+                    None => ()
+                }
+            }
+
+            fwp_lock.update_camera(camera_data, frame_idx);
+        } // drop lock after block
 
         // Currently only a single pass can be rendered since fences and semaphores are in the
         // renderer instead of the render passes
@@ -291,7 +314,12 @@ impl<B> Renderer<B>
         let mut gpu = unsafe {
             adapter
                 .physical_device
-                .open(&[(family, &[1.0])], gfx_hal::Features::empty())
+                .open(&[(family, &[1.0])],
+                      gfx_hal::Features::VERTEX_STORES_AND_ATOMICS
+                          | gfx_hal::Features::FRAGMENT_STORES_AND_ATOMICS
+                          | gfx_hal::Features::SHADER_STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING
+                          | gfx_hal::Features::SHADER_UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING
+                )
                 .unwrap()
         };
         let mut queue_group = gpu.queue_groups.pop().unwrap();
@@ -439,8 +467,6 @@ impl<B> Renderer<B>
             // blitting
             render_pass_lock.blit_to_surface(queue, image, frame_idx, acquire_semaphore)
         };
-
-        // TODO Submit rendering and then generate a second pass to blit to swapchain
 
         unsafe {
             self.swapchain.present(queue, swap_idx, Some(vec![&present_semaphore]));

@@ -11,6 +11,8 @@ use crate::core::{Component, Filter, Message, System};
 use crate::rendering::{Camera, GPUBuffer, InstanceData, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::UpdateOctree;
 use crate::rendering::utility::BufferID;
+use std::iter;
+use gfx_hal::pso::{DescriptorSetWrite, Descriptor};
 
 //use winit::Event;
 
@@ -47,10 +49,12 @@ impl TryFrom<i32> for NodePosition {
 pub struct Octree {
     pub scale: Vector3<f32>,
     pub root: Arc<Mutex<Option<Node>>>,
-    pub instance_data_buffer: Vec<BufferID>,
-    // indirect reference to the GPU buffers
-    pub active_instance_buffer_idx: Option<u32>,
-    // points into the instance_data_buffer vec
+
+    pub instance_data_buffer: Vec<BufferID>, /// indirect reference to the GPU buffers
+    pub active_instance_buffer_idx: Option<usize>, /// points into the instance_data_buffer vec
+
+    pub render_count: usize,
+
     pub depth: i32,
     pub byte_size: Option<usize>,
     pub max_byte_size: usize,
@@ -83,7 +87,7 @@ impl Octree {
                 let id = rm_lock.add_buffer(GPUBuffer::new_with_size(&dev,
                                                                      &adapter,
                                                                      max_gpu_byte_size,
-                                                                     buffer::Usage::STORAGE));
+                                                                     buffer::Usage::STORAGE | buffer::Usage::VERTEX));
                 instance_data_buffer.push(id);
             }
         }
@@ -93,6 +97,7 @@ impl Octree {
             root: Arc::new(Mutex::new(None)),
             instance_data_buffer,
             active_instance_buffer_idx: None,
+            render_count: 0,
             depth,
             byte_size: None,
             max_byte_size,
@@ -108,6 +113,14 @@ impl Octree {
 
         println!("SIZE: {} MB", (oct.byte_size.unwrap() as f32 / (1024_f32 * 1024_f32)));
         oct
+    }
+
+    pub fn get_instance_buffer(&self) -> Option<BufferID> {
+        if self.active_instance_buffer_idx.is_some() {
+            Some(*self.instance_data_buffer.get(self.active_instance_buffer_idx.unwrap()).unwrap())
+        } else {
+            None
+        }
     }
 
     pub fn count_leaves(&self) -> i64 {
@@ -358,10 +371,12 @@ impl System for OctreeSystem {
                     let mut rm_lock = rm.lock().unwrap();
 
                     let bufferID = octree.instance_data_buffer[0]; // TODO select correct idx
-                    let gpu_buffer = rm_lock.get_buffer(bufferID);
+                    let mut gpu_buffer_lock = rm_lock.get_buffer(bufferID).lock().unwrap();
 
-                    gpu_buffer.update_data(0, &model_matrices);
-                }
+                    gpu_buffer_lock.replace_data(&model_matrices);
+                    octree.active_instance_buffer_idx = Some(0);
+                    octree.render_count = model_matrices.len();
+                } // drop locks
 
                 entitiy_mutex.add_component(octree);
             }
