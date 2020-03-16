@@ -92,9 +92,14 @@ impl Entity {
     }
 
     pub fn match_filter(&self, filter: &Filter) -> bool {
-        self.components.keys().into_iter().all(|t| {
+        let is_subset_1 = self.components.keys().into_iter().all(|t| {
             filter.types.contains(t)
-        })
+        });
+        let is_subset_2 = filter.types.iter().all(|t| {
+            self.components.contains_key(t)
+        });
+
+        is_subset_1 && is_subset_2
     }
 }
 
