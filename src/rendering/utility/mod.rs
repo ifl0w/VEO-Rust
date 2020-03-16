@@ -9,7 +9,6 @@ pub use swapchain::SwapchainWrapper;
 pub use uniform::GPUBuffer;
 pub use uniform::Uniform;
 pub use uniform::UniformID;
-pub use uniform::BufferID;
 
 //pub use uniform::Uniform;
 pub mod uniform;

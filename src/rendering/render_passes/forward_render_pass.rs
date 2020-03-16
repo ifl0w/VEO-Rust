@@ -34,10 +34,11 @@ use gfx_hal::window::{Extent2D, Surface, SwapImageIndex};
 use glium::draw_parameters::sync;
 use winit::event::WindowEvent::CursorMoved;
 
-use crate::rendering::{BufferID, CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResourceManager, ShaderCode, Uniform, Vertex};
+use crate::rendering::{CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
 use bytes::{Bytes, Buf};
+use crate::rendering::utility::resources::BufferID;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -352,9 +353,9 @@ impl<B: Backend> ForwardRenderPass<B> {
         };
     }
 
-    pub fn use_instance_buffer(&mut self, buffer: BufferID, frame_idx: usize) {
+    pub fn use_instance_buffer(&mut self, buffer: &Arc<Mutex<GPUBuffer<B>>>, frame_idx: usize) {
         let rm_lock = self.resource_manager.lock().unwrap();
-        let buf_lock = rm_lock.get_buffer(buffer).lock().unwrap();
+        let buf_lock = buffer.lock().unwrap();
 
         unsafe {
             self.device.write_descriptor_sets(iter::once(DescriptorSetWrite {
@@ -757,6 +758,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         }
 
         // TODO: check if VkQueueFamilyProperties::timestampValidBits and timestampPeriod is already handled by gfx_hal
+        // It seems like this is not done. Has to be investigated further.
         // https://www.reddit.com/r/vulkan/comments/b6m6wx/how_to_use_timestamps/
         let start = Bytes::copy_from_slice(&data[0..8]).get_u64_le();
         let end = Bytes::copy_from_slice(&data[8..16]).get_u64_le();

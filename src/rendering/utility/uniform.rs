@@ -11,8 +11,6 @@ use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 
 use crate::rendering::renderer::Renderer;
 
-pub type BufferID = usize;
-
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,
     adapter: Arc<Adapter<B>>,

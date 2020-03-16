@@ -10,11 +10,31 @@ use winit::event::Event;
 use crate::core::{Component, Filter, Message, System};
 use crate::rendering::{Camera, GPUBuffer, InstanceData, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::{UpdateOctree, ProfilingData};
-use crate::rendering::utility::BufferID;
+
 use std::iter;
 use gfx_hal::pso::{DescriptorSetWrite, Descriptor};
+use crate::rendering::utility::resources::BufferID;
+use std::borrow::Borrow;
 
-//use winit::Event;
+#[cfg(feature = "dx11")]
+pub extern crate gfx_backend_dx11 as Backend;
+#[cfg(feature = "dx12")]
+pub extern crate gfx_backend_dx12 as Backend;
+#[cfg(
+not(any(
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
+)))]
+pub extern crate gfx_backend_empty as Backend;
+#[cfg(any(feature = "gl", feature = "wgl"))]
+pub extern crate gfx_backend_gl as Backend;
+#[cfg(feature = "metal")]
+pub extern crate gfx_backend_metal as Backend;
+#[cfg(feature = "vulkan")]
+pub extern crate gfx_backend_vulkan as Backend;
 
 enum NodePosition {
     Flt = 0,
@@ -50,7 +70,7 @@ pub struct Octree {
     pub scale: Vector3<f32>,
     pub root: Arc<Mutex<Option<Node>>>,
 
-    pub instance_data_buffer: Vec<BufferID>, /// indirect reference to the GPU buffers
+    pub instance_data_buffer: Vec<Arc<Mutex<GPUBuffer<Backend::Backend>>>>, /// indirect reference to the GPU buffers
     pub active_instance_buffer_idx: Option<usize>, /// points into the instance_data_buffer vec
 
     pub render_count: usize,
@@ -84,11 +104,12 @@ impl Octree {
         let mut instance_data_buffer = Vec::with_capacity(num_buffers);
         for _ in 0..num_buffers {
             unsafe {
-                let id = rm_lock.add_buffer(GPUBuffer::new_with_size(&dev,
-                                                                     &adapter,
-                                                                     max_gpu_byte_size,
-                                                                     buffer::Usage::STORAGE | buffer::Usage::VERTEX));
-                instance_data_buffer.push(id);
+                let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(&dev,
+                                                                         &adapter,
+                                                                         max_gpu_byte_size,
+                                                                         buffer::Usage::STORAGE | buffer::Usage::VERTEX));
+
+                instance_data_buffer.push(buffer);
             }
         }
 
@@ -115,9 +136,9 @@ impl Octree {
         oct
     }
 
-    pub fn get_instance_buffer(&self) -> Option<BufferID> {
+    pub fn get_instance_buffer(&self) -> Option<&Arc<Mutex<GPUBuffer<Backend::Backend>>>> {
         if self.active_instance_buffer_idx.is_some() {
-            Some(*self.instance_data_buffer.get(self.active_instance_buffer_idx.unwrap()).unwrap())
+            Some(self.instance_data_buffer.get(self.active_instance_buffer_idx.unwrap()).unwrap())
         } else {
             None
         }
@@ -372,8 +393,8 @@ impl System for OctreeSystem {
                     let rm = self.render_sys.lock().unwrap().resource_manager.clone();
                     let mut rm_lock = rm.lock().unwrap();
 
-                    let bufferID = octree.instance_data_buffer[0]; // TODO select correct idx
-                    let mut gpu_buffer_lock = rm_lock.get_buffer(bufferID).lock().unwrap();
+                    let buffer = &octree.instance_data_buffer[0]; // TODO select correct idx
+                    let mut gpu_buffer_lock = buffer.lock().unwrap();
 
                     gpu_buffer_lock.replace_data(&model_matrices);
                     octree.active_instance_buffer_idx = Some(0);

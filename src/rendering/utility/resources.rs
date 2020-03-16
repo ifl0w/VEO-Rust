@@ -29,15 +29,21 @@ use gfx_hal::adapter::PhysicalDevice;
 
 use crate::rendering::renderer::Renderer;
 use crate::rendering::utility::{GPUBuffer, Index, Vertex};
-use crate::rendering::BufferID;
+use std::ops::Deref;
+
+pub type MeshID = usize;
+pub type BufferID = usize;
 
 pub struct ResourceManager<B>
     where B: gfx_hal::Backend {
     device: Arc<B::Device>,
     adapter: Arc<Adapter<B>>,
 
-    pub(in crate::rendering::utility) meshes: HashMap<MeshID, Arc<GPUMesh<B>>>,
-    pub(in crate::rendering::utility) buffers: HashMap<BufferID, Arc<Mutex<GPUBuffer<B>>>>,
+    last_mesh_id: MeshID,
+    last_buffer_id: MeshID,
+
+    pub(in crate::rendering::utility) meshes: HashMap<MeshID, Weak<GPUMesh<B>>>,
+    pub(in crate::rendering::utility) buffers: HashMap<BufferID, Weak<Mutex<GPUBuffer<B>>>>,
 //    pub(in crate::rendering) shaders: HashMap<ShaderID, Arc<Shader<B>>>,
 }
 
@@ -48,55 +54,74 @@ impl<B> ResourceManager<B>
             device: renderer.device.clone(),
             adapter: renderer.adapter.clone(),
 
+            last_mesh_id: 0,
+            last_buffer_id: 0,
+
             meshes: HashMap::new(),
             buffers: HashMap::new(),
         }))
     }
 
-    pub fn get_mesh(&self, id: &MeshID) -> &GPUMesh<B> {
+    pub fn get_mesh(&self, id: &MeshID) -> Arc<GPUMesh<B>> {
         match self.meshes.get(id) {
-            Some(m) => m,
+            Some(weak_mesh) => {
+                match weak_mesh.upgrade() {
+                    Some(mesh) => mesh,
+                    None => panic!("Resource not valid.")
+                }
+            },
             None => panic!("Mesh not stored on GPU")
         }
     }
 
-    pub fn get_buffer(&self, id: BufferID) -> &Arc<Mutex<GPUBuffer<B>>> {
+    pub fn add_mesh(&mut self, mesh: GPUMesh<B>) -> (MeshID, Arc<GPUMesh<B>>) {
+        let id = self.last_mesh_id + 1;
+
+        let arc = Arc::new(mesh);
+        // store in map
+        self.meshes.insert(id, Arc::downgrade(&arc));
+        self.last_mesh_id = id;
+
+        (id, arc)
+    }
+
+    pub fn get_buffer(&self, id: BufferID) -> Arc<Mutex<GPUBuffer<B>>> {
         match self.buffers.get(&id) {
-            Some(buffer) => buffer,
+            Some(weak_buffer) => {
+                match weak_buffer.upgrade() {
+                    Some(buffer) => buffer,
+                    None => panic!("Resource not valid.")
+                }
+            },
             None => panic!("Buffer not stored on GPU")
         }
     }
 
-    pub fn add_buffer(&mut self, buffer: GPUBuffer<B>) -> BufferID {
-        let id = self.buffers.len();
+    pub fn add_buffer(&mut self, buffer: GPUBuffer<B>) -> (BufferID, Arc<Mutex<GPUBuffer<B>>>) {
+        let id = self.last_buffer_id + 1;
 
+        let arc = Arc::new(Mutex::new(buffer));
         // store in map
-        self.buffers.insert(id, Arc::new(Mutex::new(buffer)));
+        self.buffers.insert(id, Arc::downgrade(&arc));
+        self.last_buffer_id = id;
 
-        id
+        (id, arc)
     }
-}
 
-pub type MeshID = u64;
+}
 
 pub trait MeshGenerator {
     fn get_vertices() -> Vec<Vertex>;
     fn get_indices() -> Vec<Index>;
 
     fn generate<T: MeshGenerator, B: gfx_hal::Backend>(rm: &mut ResourceManager<B>)
-                                                       -> (MeshID, Weak<GPUMesh<B>>) {
+                                                       -> (MeshID, Arc<GPUMesh<B>>) {
         let device = rm.device.clone();
         let adapter = rm.adapter.clone();
 
-        let m = Arc::new(GPUMesh::new::<T>(device, adapter));
+        let mesh = GPUMesh::new::<T>(device, adapter);
 
-        let id = rm.meshes.len() as u64;
-
-        // store in map
-        rm.meshes.insert(id, m.clone());
-
-        // return non owning pointer
-        (id, Arc::downgrade(&m))
+        rm.add_mesh(mesh)
     }
 }
 
