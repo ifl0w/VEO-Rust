@@ -8,7 +8,7 @@ use gfx_hal::buffer;
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, System};
-use crate::rendering::{Camera, GPUBuffer, InstanceData, RenderSystem, Transformation};
+use crate::rendering::{Camera, GPUBuffer, InstanceData, RenderSystem, Transformation, Mesh};
 use crate::rendering::nse_gui::octree_gui::{UpdateOctree, ProfilingData};
 
 use std::iter;
@@ -357,7 +357,7 @@ impl OctreeSystem {
 impl System for OctreeSystem {
     fn get_filter(&mut self) -> Vec<Filter> {
         vec![
-            crate::filter!(Octree, Transformation),
+            crate::filter!(Octree, Mesh, Transformation),
             crate::filter!(Camera, Transformation)
         ]
     }

@@ -91,9 +91,10 @@ impl Entity {
         return contains;
     }
 
-    pub fn match_filter<>(&self, filter: &Filter) -> bool {
-        filter.types.iter()
-            .all(|t| { self.components.contains_key(t) })
+    pub fn match_filter(&self, filter: &Filter) -> bool {
+        self.components.keys().into_iter().all(|t| {
+            filter.types.contains(t)
+        })
     }
 }
 
