@@ -1,21 +1,3 @@
-use std::convert::{TryFrom, TryInto};
-use std::f32::consts::PI;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use cgmath::{Matrix4, vec3, Vector3};
-use gfx_hal::buffer;
-use winit::event::Event;
-
-use crate::core::{Component, Filter, Message, System};
-use crate::rendering::{Camera, GPUBuffer, InstanceData, RenderSystem, Transformation, Mesh};
-use crate::rendering::nse_gui::octree_gui::{UpdateOctree, ProfilingData};
-
-use std::iter;
-use gfx_hal::pso::{DescriptorSetWrite, Descriptor};
-use crate::rendering::utility::resources::BufferID;
-use std::borrow::Borrow;
-
 #[cfg(feature = "dx11")]
 pub extern crate gfx_backend_dx11 as Backend;
 #[cfg(feature = "dx12")]
@@ -35,6 +17,23 @@ pub extern crate gfx_backend_gl as Backend;
 pub extern crate gfx_backend_metal as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
+
+use std::borrow::Borrow;
+use std::convert::{TryFrom, TryInto};
+use std::f32::consts::PI;
+use std::iter;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use cgmath::{Matrix4, vec3, Vector3, Vector4};
+use gfx_hal::buffer;
+use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
+use winit::event::Event;
+
+use crate::core::{Component, Filter, Message, System};
+use crate::rendering::{Camera, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation, AABB, Frustum};
+use crate::rendering::nse_gui::octree_gui::{ProfilingData, UpdateOctree};
+use crate::rendering::utility::resources::BufferID;
 
 enum NodePosition {
     Flt = 0,
@@ -70,8 +69,10 @@ pub struct Octree {
     pub scale: Vector3<f32>,
     pub root: Arc<Mutex<Option<Node>>>,
 
-    pub instance_data_buffer: Vec<Arc<Mutex<GPUBuffer<Backend::Backend>>>>, /// indirect reference to the GPU buffers
-    pub active_instance_buffer_idx: Option<usize>, /// points into the instance_data_buffer vec
+    pub instance_data_buffer: Vec<Arc<Mutex<GPUBuffer<Backend::Backend>>>>,
+    /// indirect reference to the GPU buffers
+    pub active_instance_buffer_idx: Option<usize>,
+    /// points into the instance_data_buffer vec
 
     pub render_count: usize,
 
@@ -105,9 +106,9 @@ impl Octree {
         for _ in 0..num_buffers {
             unsafe {
                 let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(&dev,
-                                                                         &adapter,
-                                                                         max_gpu_byte_size,
-                                                                         buffer::Usage::STORAGE | buffer::Usage::VERTEX));
+                                                                              &adapter,
+                                                                              max_gpu_byte_size,
+                                                                              buffer::Usage::STORAGE | buffer::Usage::VERTEX));
 
                 instance_data_buffer.push(buffer);
             }
@@ -185,10 +186,7 @@ impl Octree {
                 None => {
                     let new_depth = current_depth + 1;
 
-                    let mut new_child = Node::new();
                     let s = (0.5 as f32).powf(new_depth as f32);
-                    new_child.scale = vec3(s, s, s);
-
                     let mut t = translate;
                     match (idx as i32).try_into() {
                         Ok(NodePosition::Flt) => t += vec3(-0.5, -0.5, -0.5) * s,
@@ -201,7 +199,8 @@ impl Octree {
                         Ok(NodePosition::Brb) => t += vec3(0.5, 0.5, 0.5) * s,
                         Err(_) => panic!("Octree node has more than 8 children!")
                     }
-                    new_child.position = t;
+
+                    let mut new_child = Node::new_inner(t, s);
 
                     let node_origin = t;
 
@@ -259,6 +258,7 @@ pub struct Node {
     children: Vec<Option<Node>>,
     position: Vector3<f32>,
     scale: Vector3<f32>,
+    aabb: AABB,
 }
 
 impl Node {
@@ -267,7 +267,26 @@ impl Node {
             children: vec![],
             position: vec3(0.0, 0.0, 0.0),
             scale: vec3(1.0, 1.0, 1.0),
+            aabb: AABB::new(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0))
         };
+
+        tmp.children.resize(8, None);
+
+        tmp
+    }
+
+    pub fn new_inner(position: Vector3<f32>, scale: f32) -> Self {
+        let scale_vec = vec3(scale, scale, scale);
+        let min = (position - scale_vec / 2.0);
+        let max = (position + scale_vec / 2.0);
+
+        let mut tmp = Node {
+            children: vec![],
+            position,
+            scale: scale_vec,
+            aabb: AABB::new(min, max)
+        };
+
         tmp.children.resize(8, None);
 
         tmp
@@ -301,6 +320,12 @@ pub struct OctreeSystem {
     update_octrees: bool,
     octree_depth: i32,
 
+    // optimization flags
+    frustum_culling: Option<bool>,
+    limit_depth: Option<f64>,
+    ignore_full: Option<bool>,
+    ignore_inner: Option<bool>,
+
     messages: Vec<Message>,
 }
 
@@ -310,11 +335,22 @@ impl OctreeSystem {
             render_sys,
             update_octrees: false,
             octree_depth: 5,
+
+            frustum_culling: None,
+            limit_depth: None,
+            ignore_full: None,
+            ignore_inner: None,
+
             messages: Vec::new(),
         }))
     }
 
-    fn generate_instance_data(node: &Option<Node>, scale: Vector3<f32>) -> Vec<InstanceData> {
+    fn generate_instance_data(optimization_data: &OptimizationData,
+                              node: &Option<Node>,
+                              scale: Vector3<f32>,
+                              traversal_criteria: &Vec<&TraversalFunction>,
+                              filter_functions: &Vec<&FilterFunction>)
+                              -> Vec<InstanceData> {
         if node.is_none() {
             return vec![];
         }
@@ -323,30 +359,40 @@ impl OctreeSystem {
 
         let mut model_matrices: Vec<InstanceData> = vec![];
 
-        if !node_copy.is_leaf() {
-            let children = node_copy.children;
-            children.iter().enumerate().for_each(|(_i, child)| {
-                match child {
-                    Some(_) => {
-                        let new_mat = &mut OctreeSystem::generate_instance_data(child, scale);
-                        model_matrices.append(new_mat);
-                    }
-                    None => {}
-                }
-            });
+        // add model matrices
+        let include = filter_functions.iter().all(|fnc| {
+            fnc(optimization_data, node, scale)
+        });
 
-            // generate matrices for all nodes (debugging)
-//            let mat = Matrix4::from_translation(node_copy.position)
-//                * Matrix4::from_scale(node_copy.scale.x);
-//            model_matrices.push(InstanceData {
-//                model_matrix: mat.into()
-//            });
-        } else {
+        if include {
             let mat = Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
                 * Matrix4::from_translation(node_copy.position)
                 * Matrix4::from_scale(node_copy.scale.x);
             model_matrices.push(InstanceData {
                 model_matrix: mat.into()
+            });
+        }
+
+        // traverse
+        let continue_traversal = traversal_criteria.iter().all(|fnc| {
+            fnc(optimization_data, node, scale)
+        });
+
+        if continue_traversal {
+            let children = node_copy.children;
+            children.iter().enumerate().for_each(|(_i, child)| {
+                match child {
+                    Some(real_child) => {
+                        let new_mat =
+                            &mut OctreeSystem::generate_instance_data(optimization_data,
+                                                                      child,
+                                                                      scale,
+                                                                      traversal_criteria,
+                                                                      filter_functions);
+                        model_matrices.append(new_mat);
+                    }
+                    None => {}
+                }
             });
         }
 
@@ -373,42 +419,72 @@ impl System for OctreeSystem {
     }
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _delta_time: Duration) {
-        let entities = &filter[0].lock().unwrap().entities;
+        let octree_entities = &filter[0].lock().unwrap().entities;
+        let camera_entities = &filter[1].lock().unwrap().entities;
 
-        if !entities.is_empty() {
-            for entity in entities {
-                let mut entitiy_mutex = entity.lock().unwrap();
-                let _transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
-                let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
-                if self.update_octrees {
-                    octree = Octree::new(&self.render_sys, self.octree_depth, Some(octree.scale));
-                    self.update_octrees = false;
-                }
+        for entity in octree_entities {
+            let mut entitiy_mutex = entity.lock().unwrap();
+            let _transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
+            let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
-                { // scope to enclose mutex
-                    let root = octree.root.lock().unwrap();
-                    let model_matrices = OctreeSystem::generate_instance_data(&root, octree.scale);
-
-                    let rm = self.render_sys.lock().unwrap().resource_manager.clone();
-                    let mut rm_lock = rm.lock().unwrap();
-
-                    let buffer = &octree.instance_data_buffer[0]; // TODO select correct idx
-                    let mut gpu_buffer_lock = buffer.lock().unwrap();
-
-                    gpu_buffer_lock.replace_data(&model_matrices);
-                    octree.active_instance_buffer_idx = Some(0);
-                    octree.render_count = model_matrices.len();
-
-                    self.messages.push(Message::new(
-                        ProfilingData {
-                            rendered_nodes: Some(octree.render_count as u32),
-                            ..Default::default()
-                        }));
-                } // drop locks
-
-                entitiy_mutex.add_component(octree);
+            if self.update_octrees {
+                octree = Octree::new(&self.render_sys, self.octree_depth, Some(octree.scale));
+                self.update_octrees = false;
             }
+
+            if !camera_entities.is_empty() { // scope to enclose mutex
+                let root = octree.root.lock().unwrap();
+
+                // camera data
+                let mut camera_mutex = camera_entities[0].lock().unwrap();
+                let mut camera_transform = camera_mutex.get_component::<Transformation>().ok().unwrap().clone();
+                let mut camera = camera_mutex.get_component::<Camera>().ok().unwrap().clone();
+
+                // filter config
+                let mut traversal_fnc: Vec<&TraversalFunction> = Vec::new();
+                traversal_fnc.push(&continue_to_leaf);
+
+                let mut filter_fnc: Vec<&FilterFunction> = Vec::new();
+//                filter_fnc.push(&cull_frustum); // TODO Fix broken culling
+                filter_fnc.push(&generate_leaf_model_matrix);
+
+                let optimization_data = OptimizationData {
+                    camera: &camera,
+                    camera_transform: &camera_transform,
+                    frustum: camera.frustum.transformed(camera_transform.get_model_matrix())
+                };
+
+                // building matrices
+                let model_matrices = OctreeSystem::generate_instance_data(
+                    &optimization_data,
+                    &root,
+                    octree.scale,
+                    &traversal_fnc,
+                    &filter_fnc
+                );
+
+                // store data
+                let rm = self.render_sys.lock().unwrap().resource_manager.clone();
+                let mut rm_lock = rm.lock().unwrap();
+
+                let buffer = &octree.instance_data_buffer[0]; // TODO select correct idx
+                let mut gpu_buffer_lock = buffer.lock().unwrap();
+
+                gpu_buffer_lock.replace_data(&model_matrices);
+                octree.active_instance_buffer_idx = Some(0);
+                octree.render_count = model_matrices.len();
+
+                self.messages.push(Message::new(
+                    ProfilingData {
+                        rendered_nodes: Some(octree.render_count as u32),
+                        ..Default::default()
+                    }));
+            } else { // drop locks
+                println!("no camera provided");
+            }
+
+            entitiy_mutex.add_component(octree);
         }
     }
 
@@ -421,5 +497,40 @@ impl System for OctreeSystem {
         }
 
         ret
+    }
+}
+
+type FilterFunction = dyn Fn(&OptimizationData, &Option<Node>, Vector3<f32>) -> bool;
+type TraversalFunction = dyn Fn(&OptimizationData, &Option<Node>, Vector3<f32>) -> bool;
+
+struct OptimizationData<'a> {
+    camera: &'a Camera,
+    camera_transform: &'a Transformation,
+    frustum: Frustum,
+}
+
+fn continue_to_leaf(optimization_data: &OptimizationData, node: &Option<Node>, scale: Vector3<f32>) -> bool {
+//    if node.is_some() && node.as_ref().unwrap().is_leaf() {
+//        false
+//    } else {
+//        true
+//    }
+    true
+}
+
+fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>, scale: Vector3<f32>) -> bool {
+    if node.is_some() {
+        let node = node.as_ref().unwrap();
+        optimization_data.frustum.intersect(&node.aabb)
+    } else {
+        false
+    }
+}
+
+fn generate_leaf_model_matrix(optimization_data: &OptimizationData, node: &Option<Node>, scale: Vector3<f32>) -> bool {
+    if node.is_some() && node.as_ref().unwrap().is_leaf() {
+        true
+    } else {
+        false
     }
 }

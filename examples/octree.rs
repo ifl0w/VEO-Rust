@@ -3,7 +3,7 @@ use cgmath::{Vector3, Quaternion, Euler, Deg};
 use nse;
 use nse::core::Entity;
 use nse::NSE;
-use nse::rendering::{Camera, Cube, Mesh, Octree, OctreeGuiSystem, OctreeSystem, RenderSystem, Transformation};
+use nse::rendering::{Camera, Cube, Mesh, Octree, OctreeGuiSystem, OctreeSystem, RenderSystem, Transformation, Frustum};
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
 
@@ -28,7 +28,7 @@ fn main() {
     // add camera
     let camera = Entity::new();
     camera.lock().unwrap()
-        .add_component(Camera::new(0.1, 1000.0, 90.0, [800.0, 600.0]))
+        .add_component(Camera::new(0.1, 1000.0, 90.0, [1024.0, 768.0]))
         .add_component(Transformation::new()
             .position(Vector3::new(0.0, 10.0, 30.0))
             .rotation(Quaternion::from(Euler::new(Deg(-15.0), Deg(0.0), Deg(0.0))))
