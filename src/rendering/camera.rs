@@ -1,15 +1,35 @@
+#[cfg(feature = "dx11")]
+pub extern crate gfx_backend_dx11 as Backend;
+#[cfg(feature = "dx12")]
+pub extern crate gfx_backend_dx12 as Backend;
+#[cfg(
+not(any(
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
+)))]
+pub extern crate gfx_backend_empty as Backend;
+#[cfg(any(feature = "gl", feature = "wgl"))]
+pub extern crate gfx_backend_gl as Backend;
+#[cfg(feature = "metal")]
+pub extern crate gfx_backend_metal as Backend;
+#[cfg(feature = "vulkan")]
+pub extern crate gfx_backend_vulkan as Backend;
+
+use std::collections::HashMap;
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
-use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector3, Vector4, Vector2, InnerSpace, vec3};
+use cgmath::{Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, Vector2, Vector3, Vector4};
+use cgmath::num_traits::{Float, FromPrimitive, ToPrimitive};
+use cgmath::num_traits::real::Real;
 
 use crate::core::Component;
-use crate::rendering::{RenderSystem, AABB};
-use crate::rendering::utility::Uniform;
+use crate::rendering::{AABB, GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex};
 use crate::rendering::camera::FrustumPlanes::BottomPlane;
-use std::collections::HashMap;
-use cgmath::num_traits::{FromPrimitive, Float, ToPrimitive};
-use cgmath::num_traits::real::Real;
-use std::convert::TryInto;
+use crate::rendering::utility::Uniform;
 
 #[derive(Clone)]
 pub struct Camera {
@@ -43,7 +63,7 @@ impl Camera {
             fov,
             projection: proj,
 
-            frustum: Frustum::new(fov_x, fov_y, near, far)
+            frustum: Frustum::new(fov_x, fov_y, near, far),
         }
     }
 }
@@ -154,7 +174,7 @@ pub enum FrustumPlanes {
     LeftPlane,
     RightPlane,
     TopPlane,
-    BottomPlane
+    BottomPlane,
 }
 
 #[derive(Clone)]
@@ -169,16 +189,16 @@ pub struct Frustum {
 
     near_dimensions: Vector2<f32>,
     far_dimensions: Vector2<f32>,
+
+    pub debug_mesh: Option<(MeshID, Arc<GPUMesh<Backend::Backend>>)>,
 }
 
 impl Component for Frustum {}
 
 impl Frustum {
-
     pub fn new(fov_x: Rad<f32>, fov_y: Rad<f32>, near_distance: f32, far_distance: f32) -> Self {
         let mut frustum = Frustum {
-            planes: [(vec3(0.0,0.0,0.0), vec3(0.0,0.0,0.0)); 6],
-
+            planes: [(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0)); 6],
 
             near_distance,
             far_distance,
@@ -192,7 +212,8 @@ impl Frustum {
             far_dimensions: Vector2 {
                 x: far_distance * (fov_x.0 / 2.0).tan(),
                 y: far_distance * (fov_y.0 / 2.0).tan(),
-            }
+            },
+            debug_mesh: None,
         };
 
         frustum
@@ -200,7 +221,7 @@ impl Frustum {
 
     pub fn intersect(&self, aabb: &AABB) -> bool {
         //for each plane do ...
-        self.planes.iter().all(|(normal, point)| {
+        self.planes.iter().enumerate().all(|(i, (normal, point))| {
             let mut p = aabb.min.clone();
             p.x = if normal.x > 0.0 { aabb.max.x } else { p.x };
             p.y = if normal.y > 0.0 { aabb.max.y } else { p.y };
@@ -226,7 +247,7 @@ impl Frustum {
     }
 
     pub fn transformed(&self, camera_transform: Matrix4<f32>) -> Frustum {
-        let mut new = Frustum::new(self.fov_x,self.fov_y, self.near_distance, self.far_distance);
+        let mut new = Frustum::new(self.fov_x, self.fov_y, self.near_distance, self.far_distance);
 
         // base axis of camera space
         let x: Vector3<f32> = (camera_transform * cgmath::vec4(1.0, 0.0, 0.0, 0.0)).normalize().truncate();
@@ -246,7 +267,7 @@ impl Frustum {
 
         let point_on_plane = near_center - &y * self.near_dimensions.y;
         let normal = (point_on_plane - cam_pos).normalize().cross(x).normalize();
-        new.planes[3] = (normal, point_on_plane);
+        new.planes[3] = (-normal, point_on_plane);
 
         let point_on_plane = near_center - &x * self.near_dimensions.x;
         let normal = (point_on_plane - cam_pos).normalize().cross(y).normalize();
@@ -254,9 +275,82 @@ impl Frustum {
 
         let point_on_plane = near_center + &x * self.near_dimensions.x;
         let normal = (point_on_plane - cam_pos).normalize().cross(y).normalize();
-        new.planes[5] = (normal, point_on_plane);
+        new.planes[5] = (-normal, point_on_plane);
 
         new
     }
 
+    pub fn update_debug_mesh(&mut self, render_system: &Arc<Mutex<RenderSystem>>, ) -> MeshID {
+        let mut rend_lock = render_system.lock().unwrap();
+        let mut rm_lock = rend_lock.resource_manager.lock().unwrap();
+
+        let gpu_mesh = GPUMesh::new_dynamic(&rm_lock.device, &rm_lock.adapter, self);
+        let (id, mesh) = rm_lock.add_mesh(gpu_mesh);
+
+        self.debug_mesh = Some((id, mesh.clone()));
+
+        id
+    }
+}
+
+impl MeshGenerator for Frustum {
+    fn get_vertices_dynamic(&self) -> Vec<Vertex> {
+        let tanHalfHorizonalFOV = (self.fov_x.0 / 2.0).tan();
+        let tanHalfVerticalFOV = (self.fov_y.0 / 2.0).tan();
+
+        let xn = self.near_distance * tanHalfHorizonalFOV;
+        let xf = self.far_distance * tanHalfHorizonalFOV;
+        let yn = self.near_distance * tanHalfVerticalFOV;
+        let yf = self.far_distance * tanHalfVerticalFOV;
+
+//        vec4(-xn, yn, -self.near_distance, 1.0),
+//        vec4(xn, yn, -self.near_distance, 1.0),
+//        vec4(-xn, -yn, -self.near_distance, 1.0),
+//        vec4(xn, -yn, -self.near_distance, 1.0),
+
+        // far face (ftl, ftr, fbl, fbr)
+//        vec4(-xf, yf, -self.far_distance, 1.0),
+//        vec4(xf, yf, -self.far_distance, 1.0),
+//        vec4(-xf, -yf, -self.far_distance, 1.0),
+//        vec4(xf, -yf, -self.far_distance, 1.0)
+
+        vec![
+            Vertex::new([-xf, -yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new([-xn, -yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new([-xf, yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new([-xn, yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new([xf, -yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new([xf, yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new([xn, -yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new([xn, yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+        ]
+    }
+
+    fn get_indices_dynamic(&self) -> Vec<u32> {
+        vec![
+            // left
+            0, 1, 2,
+            2, 1, 3,
+
+            // right
+            4, 5, 6,
+            5, 7, 6,
+
+            // front
+            1, 6, 7,
+            1, 7, 3,
+
+            // back
+            0, 2, 5,
+            4, 0, 5,
+
+            // top
+            3, 7, 2,
+            2, 7, 5,
+
+            // bottom
+            0, 6, 1,
+            0, 4, 6,
+        ]
+    }
 }

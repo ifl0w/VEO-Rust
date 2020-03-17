@@ -6,6 +6,7 @@ use nse::NSE;
 use nse::rendering::{Camera, Mesh, RenderSystem, Transformation, utility::Cube, Frustum, AABB};
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
+use glium::RawUniformValue::Vec3;
 
 mod shared;
 
@@ -17,9 +18,13 @@ fn main() {
 
     fps_camera_system.lock().unwrap().set_mouse_speed(2.0);
 
-    let f = Frustum::new(Rad::from(Deg(90.0f32)), Rad::from(Deg(90.0f32)), 1.0, 10.0);
+    let mut f = Frustum::new(Rad::from(Deg(90.0f32)), Rad::from(Deg(90.0f32)), 1.0, 10.0);
+
+    f = f.transformed(Matrix4::from_translation(vec3(10.0,10.0,10.0)));//Matrix4::from_angle_y(Deg(45.0)));
+
     let mut aabb = AABB::new(vec3(-1.0,-1.0, -6.0), vec3(1.0,1.0, -3.0));
     aabb.update_debug_mesh(&render_system);
+    f.update_debug_mesh(&render_system);
 
     let intersect = f.transformed(Matrix4::identity()).intersect(&aabb);
 
@@ -35,6 +40,11 @@ fn main() {
     entity = Entity::new();
     entity.lock().unwrap()
         .add_component(aabb);
+    engine.add_entity(entity);
+
+    entity = Entity::new();
+    entity.lock().unwrap()
+        .add_component(f);
     engine.add_entity(entity);
 
     let camera = Entity::new();

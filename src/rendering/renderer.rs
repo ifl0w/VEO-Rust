@@ -242,13 +242,13 @@ impl System for RenderSystem {
             for octree_entity in &filter[2].lock().unwrap().entities {
                 let mutex = octree_entity.lock().unwrap();
                 let mesh = mutex.get_component::<Mesh>().unwrap();
-                let _trans = mutex.get_component::<Transformation>().unwrap();
+                let octree_trans = mutex.get_component::<Transformation>().unwrap();
                 let octree = mutex.get_component::<Octree>().unwrap();
 
                 match octree.get_instance_buffer() {
                     Some(ib) => {
                         // TODO somehow rework instancing. This is not a good solution.
-                        fwp_lock.add_instances(mesh.id, 0..octree.render_count);
+                        fwp_lock.add_instances(mesh.id, (0..octree.render_count, octree_trans.get_model_matrix()));
                         fwp_lock.use_instance_buffer(ib, frame_idx);
                     }
                     None => ()
@@ -272,7 +272,22 @@ impl System for RenderSystem {
                 }
             }
 
-            for frustum_entities in &filter[4].lock().unwrap().entities {}
+            for frustum_entities in &filter[4].lock().unwrap().entities {
+                let mut mutex = frustum_entities.lock().unwrap();
+                let mut frustum = mutex.get_component::<Frustum>().unwrap().clone();
+
+                let debug_mesh = frustum.debug_mesh;
+
+//                aabb.update_debug_mesh(&self.resource_manager);
+//                mutex.add_component(aabb);
+
+                match debug_mesh {
+                    Some((id, _)) => {
+                        fwp_lock.add_mesh(id, Matrix4::identity(), PipelineOptions::Wireframe);
+                    },
+                    None => {}
+                }
+            }
 
             fwp_lock.update_camera(camera_data, frame_idx);
         } // drop lock after block

@@ -88,7 +88,7 @@ pub struct ForwardRenderPass<B: Backend> {
 
     meshes: HashMap<MeshID, Vec<Matrix4<f32>>>,
     meshes_wireframe: HashMap<MeshID, Vec<Matrix4<f32>>>,
-    instanced_meshes: HashMap<MeshID, Vec<Range<usize>>>,
+    instanced_meshes: HashMap<MeshID, Vec<(Range<usize>, Matrix4<f32>)>>,
 }
 
 impl<B: Backend> ForwardRenderPass<B> {
@@ -359,7 +359,7 @@ impl<B: Backend> ForwardRenderPass<B> {
     /// Replaces instance buffer if it was already added.
     ///
     /// TODO: type checking of buffer (probably requires refactoring of buffers)
-    pub fn add_instances(&mut self, mesh_id: MeshID, instance_data_range: Range<usize>) {
+    pub fn add_instances(&mut self, mesh_id: MeshID, instance_data_range: (Range<usize>, Matrix4<f32>)) {
         match self.instanced_meshes.get_mut(&mesh_id) {
             Some(instances) => {
                 instances.push(instance_data_range);
@@ -766,8 +766,16 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                     let vert_buf = &**mesh.vertex_buffer;
                     let ind_buf = &**mesh.index_buffer;
 
-                    for range in instance_ranges {
+                    for (range, transform) in instance_ranges {
                         command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+
+                        let mut data: &[f32; 16] = transform.as_ref();
+                        let push_data: [u32; 16] = std::mem::transmute_copy(data);
+
+                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(true),
+                                                               ShaderStageFlags::VERTEX,
+                                                               0,
+                                                               &push_data);
                         command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(true),
                                                                ShaderStageFlags::VERTEX,
                                                                64,

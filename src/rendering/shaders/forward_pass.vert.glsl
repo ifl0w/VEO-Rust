@@ -32,7 +32,7 @@ layout(location = 2) out vec3 fragPosition;
 void main() {
     mat4 model_matrix;
     if (use_instancing) {
-        model_matrix = instance_ssbo.model_matrix[pushConsts.instance_data_offset + gl_InstanceIndex];
+        model_matrix = pushConsts.model_matrix * instance_ssbo.model_matrix[pushConsts.instance_data_offset + gl_InstanceIndex];
     } else {
         model_matrix = pushConsts.model_matrix;
     }

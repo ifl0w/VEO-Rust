@@ -25,7 +25,7 @@ use std::iter;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cgmath::{Matrix4, vec3, Vector3, Vector4};
+use cgmath::{Matrix4, vec3, Vector3, Vector4, Transform};
 use gfx_hal::buffer;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 use winit::event::Event;
@@ -66,7 +66,6 @@ impl TryFrom<i32> for NodePosition {
 
 #[derive(Clone)]
 pub struct Octree {
-    pub scale: Vector3<f32>,
     pub root: Arc<Mutex<Option<Node>>>,
 
     pub instance_data_buffer: Vec<Arc<Mutex<GPUBuffer<Backend::Backend>>>>,
@@ -84,13 +83,7 @@ pub struct Octree {
 impl Component for Octree {}
 
 impl Octree {
-    pub fn new(render_system: &Arc<Mutex<RenderSystem>>, depth: i32, size: Option<Vector3<f32>>) -> Self {
-        let size = if size.is_none() {
-            vec3(0.0, 0.0, 0.0)
-        } else {
-            size.unwrap()
-        };
-
+    pub fn new(render_system: &Arc<Mutex<RenderSystem>>, depth: i32) -> Self {
         let max_num_nodes = 8_i64.pow(depth.try_into().unwrap()) as usize;
         let max_byte_size = std::mem::size_of::<Octree>() * max_num_nodes;
         let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_num_nodes;
@@ -115,7 +108,6 @@ impl Octree {
         }
 
         let mut oct = Octree {
-            scale: size,
             root: Arc::new(Mutex::new(None)),
             instance_data_buffer,
             active_instance_buffer_idx: None,
@@ -347,7 +339,6 @@ impl OctreeSystem {
 
     fn generate_instance_data(optimization_data: &OptimizationData,
                               node: &Option<Node>,
-                              scale: Vector3<f32>,
                               traversal_criteria: &Vec<&TraversalFunction>,
                               filter_functions: &Vec<&FilterFunction>)
                               -> Vec<InstanceData> {
@@ -361,12 +352,11 @@ impl OctreeSystem {
 
         // add model matrices
         let include = filter_functions.iter().all(|fnc| {
-            fnc(optimization_data, node, scale)
+            fnc(optimization_data, node)
         });
 
         if include {
-            let mat = Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
-                * Matrix4::from_translation(node_copy.position)
+            let mat = Matrix4::from_translation(node_copy.position)
                 * Matrix4::from_scale(node_copy.scale.x);
             model_matrices.push(InstanceData {
                 model_matrix: mat.into()
@@ -375,7 +365,7 @@ impl OctreeSystem {
 
         // traverse
         let continue_traversal = traversal_criteria.iter().all(|fnc| {
-            fnc(optimization_data, node, scale)
+            fnc(optimization_data, node)
         });
 
         if continue_traversal {
@@ -386,7 +376,6 @@ impl OctreeSystem {
                         let new_mat =
                             &mut OctreeSystem::generate_instance_data(optimization_data,
                                                                       child,
-                                                                      scale,
                                                                       traversal_criteria,
                                                                       filter_functions);
                         model_matrices.append(new_mat);
@@ -425,11 +414,11 @@ impl System for OctreeSystem {
 
         for entity in octree_entities {
             let mut entitiy_mutex = entity.lock().unwrap();
-            let _transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
+            let octree_transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
             let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
             if self.update_octrees {
-                octree = Octree::new(&self.render_sys, self.octree_depth, Some(octree.scale));
+                octree = Octree::new(&self.render_sys, self.octree_depth);
                 self.update_octrees = false;
             }
 
@@ -446,20 +435,24 @@ impl System for OctreeSystem {
                 traversal_fnc.push(&continue_to_leaf);
 
                 let mut filter_fnc: Vec<&FilterFunction> = Vec::new();
-//                filter_fnc.push(&cull_frustum); // TODO Fix broken culling
+                filter_fnc.push(&cull_frustum); // TODO Fix broken culling
                 filter_fnc.push(&generate_leaf_model_matrix);
 
                 let optimization_data = OptimizationData {
                     camera: &camera,
                     camera_transform: &camera_transform,
-                    frustum: camera.frustum.transformed(camera_transform.get_model_matrix())
+                    frustum: camera.frustum
+                        .transformed(
+                            // TODO: investigate whether this space transformation is the a good approach for frustum culling
+                            Matrix4::inverse_transform(&octree_transform.get_model_matrix()).unwrap()
+                                * camera_transform.get_model_matrix()
+                        )
                 };
 
                 // building matrices
                 let model_matrices = OctreeSystem::generate_instance_data(
                     &optimization_data,
                     &root,
-                    octree.scale,
                     &traversal_fnc,
                     &filter_fnc
                 );
@@ -500,8 +493,8 @@ impl System for OctreeSystem {
     }
 }
 
-type FilterFunction = dyn Fn(&OptimizationData, &Option<Node>, Vector3<f32>) -> bool;
-type TraversalFunction = dyn Fn(&OptimizationData, &Option<Node>, Vector3<f32>) -> bool;
+type FilterFunction = dyn Fn(&OptimizationData, &Option<Node>) -> bool;
+type TraversalFunction = dyn Fn(&OptimizationData, &Option<Node>) -> bool;
 
 struct OptimizationData<'a> {
     camera: &'a Camera,
@@ -509,7 +502,7 @@ struct OptimizationData<'a> {
     frustum: Frustum,
 }
 
-fn continue_to_leaf(optimization_data: &OptimizationData, node: &Option<Node>, scale: Vector3<f32>) -> bool {
+fn continue_to_leaf(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
 //    if node.is_some() && node.as_ref().unwrap().is_leaf() {
 //        false
 //    } else {
@@ -518,7 +511,7 @@ fn continue_to_leaf(optimization_data: &OptimizationData, node: &Option<Node>, s
     true
 }
 
-fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>, scale: Vector3<f32>) -> bool {
+fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() {
         let node = node.as_ref().unwrap();
         optimization_data.frustum.intersect(&node.aabb)
@@ -527,7 +520,7 @@ fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>, scale
     }
 }
 
-fn generate_leaf_model_matrix(optimization_data: &OptimizationData, node: &Option<Node>, scale: Vector3<f32>) -> bool {
+fn generate_leaf_model_matrix(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() && node.as_ref().unwrap().is_leaf() {
         true
     } else {
