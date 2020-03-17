@@ -67,7 +67,22 @@ impl Mesh {
     pub fn new<T: MeshGenerator>(render_system: &Arc<Mutex<RenderSystem>>) -> Self {
         let render_system = render_system.lock().unwrap();
         let mut resource_manager = render_system.resource_manager.lock().unwrap();
-        let (id, mesh) = T::generate::<T, _>(resource_manager.borrow_mut());
+
+        let gpu_mesh = GPUMesh::new::<T>(&resource_manager.device, &resource_manager.adapter);
+        let (id, mesh) = resource_manager.add_mesh(gpu_mesh);
+
+        Mesh {
+            id,
+            mesh,
+        }
+    }
+
+    pub fn new_dynamic<T: MeshGenerator>(generator_instance: T, render_system: &Arc<Mutex<RenderSystem>>) -> Self {
+        let render_system = render_system.lock().unwrap();
+        let mut resource_manager = render_system.resource_manager.lock().unwrap();
+
+        let gpu_mesh = GPUMesh::new::<T>(&resource_manager.device, &resource_manager.adapter);
+        let (id, mesh) = resource_manager.add_mesh(gpu_mesh);
 
         Mesh {
             id,

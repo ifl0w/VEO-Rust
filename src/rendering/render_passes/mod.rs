@@ -11,6 +11,7 @@ use gfx_hal::queue::Submission;
 use gfx_hal::window::PresentationSurface;
 
 pub use forward_render_pass::ForwardRenderPass;
+pub use forward_render_pass::PipelineOptions;
 pub use pipelines::*;
 pub use shader::ShaderCode;
 

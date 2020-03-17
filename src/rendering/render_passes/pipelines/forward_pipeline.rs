@@ -13,7 +13,7 @@ use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers};
 use gfx_hal::image::Layout::{TransferDstOptimal, TransferSrcOptimal};
 use gfx_hal::pass::Subpass;
 use gfx_hal::pool::CommandPool;
-use gfx_hal::pso::{Comparison, DepthStencilDesc, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
+use gfx_hal::pso::{Comparison, DepthStencilDesc, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, PolygonMode, ShaderStageFlags, VertexInputRate};
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Surface, SwapImageIndex};
 
@@ -26,7 +26,11 @@ pub struct ForwardPipeline<B: Backend> {
 }
 
 impl<B: Backend> ForwardPipeline<B> {
-    fn create_pipeline(device: &Arc<B::Device>, render_pass: &B::RenderPass, set_layout: &B::DescriptorSetLayout, enable_instancing: bool)
+    fn create_pipeline(device: &Arc<B::Device>,
+                       render_pass: &B::RenderPass,
+                       set_layout: &B::DescriptorSetLayout,
+                       enable_instancing: bool,
+                       polygon_mode: PolygonMode)
                        -> Option<(ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>)> {
         let pipeline_layout = ManuallyDrop::new(
             unsafe {
@@ -105,6 +109,7 @@ impl<B: Backend> ForwardPipeline<B> {
 
                 pipeline_desc.rasterizer.cull_face = pso::Face::BACK;
                 pipeline_desc.rasterizer.front_face = FrontFace::CounterClockwise;
+                pipeline_desc.rasterizer.polygon_mode = polygon_mode;
 
                 pipeline_desc.depth_stencil = DepthStencilDesc {
                     depth: Some(DepthTest {
@@ -170,11 +175,12 @@ impl<B: Backend> ForwardPipeline<B> {
 impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
     fn new(device: &Arc<B::Device>,
            render_pass: &B::RenderPass,
-           set_layout: &B::DescriptorSetLayout) -> Self {
+           set_layout: &B::DescriptorSetLayout,
+           polygon_mode: PolygonMode) -> Self {
         ForwardPipeline {
             device: device.clone(),
-            info: Self::create_pipeline(device, render_pass, set_layout, false).unwrap(),
-            info_instanced: Self::create_pipeline(device, render_pass, set_layout, true).unwrap(),
+            info: Self::create_pipeline(device, render_pass, set_layout, false, polygon_mode).unwrap(),
+            info_instanced: Self::create_pipeline(device, render_pass, set_layout, true, polygon_mode).unwrap(),
         }
     }
 

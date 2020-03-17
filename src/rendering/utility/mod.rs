@@ -27,7 +27,7 @@ pub struct Vertex {
 }
 
 impl Vertex {
-    fn new(position: [f32; 3], normal: [f32; 3], color: [f32; 3]) -> Self {
+    pub fn new(position: [f32; 3], normal: [f32; 3], color: [f32; 3]) -> Self {
         Self {
             position,
             normal,

@@ -39,6 +39,7 @@ use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
 use bytes::{Bytes, Buf};
 use crate::rendering::utility::resources::BufferID;
+use gfx_hal::pso::State::Static;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -48,6 +49,12 @@ const ENTRY_NAME: &str = "main";
 // Uniform
 const CAMERA_UNIFORM_BINDING: u32 = 0;
 const MODEL_MATRIX_UNIFORM_BINDING: u32 = 1;
+
+// Pipeline options
+pub enum PipelineOptions {
+    Default,
+    Wireframe,
+}
 
 pub struct ForwardRenderPass<B: Backend> {
     device: Arc<B::Device>,
@@ -59,6 +66,7 @@ pub struct ForwardRenderPass<B: Backend> {
     frames_in_flight: u32,
 
     forward_pipeline: ForwardPipeline<B>,
+    forward_wireframe_pipeline: ForwardPipeline<B>,
 
     extent: Extent2D,
     viewport: pso::Viewport,
@@ -79,6 +87,7 @@ pub struct ForwardRenderPass<B: Backend> {
     instance_buffer_id: Option<BufferID>,
 
     meshes: HashMap<MeshID, Vec<Matrix4<f32>>>,
+    meshes_wireframe: HashMap<MeshID, Vec<Matrix4<f32>>>,
     instanced_meshes: HashMap<MeshID, Vec<Range<usize>>>,
 }
 
@@ -249,8 +258,8 @@ impl<B: Backend> ForwardRenderPass<B> {
             }
         }
 
-        let forward_pipeline = ForwardPipeline::new(device, render_pass.deref(), render_set_layout.deref());
-
+        let forward_pipeline = ForwardPipeline::new(device, render_pass.deref(), render_set_layout.deref(), pso::PolygonMode::Fill);
+        let forward_wireframe_pipeline = ForwardPipeline::new(device, render_pass.deref(), render_set_layout.deref(), pso::PolygonMode::Line(Static(1.0)));
         let mut framebuffer = Framebuffer::new(device,
                                                adapter,
                                                &renderer.queue_group,
@@ -286,6 +295,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             frames_in_flight: renderer.frames_in_flight as u32,
 
             forward_pipeline,
+            forward_wireframe_pipeline,
 
             extent: renderer.dimensions,
             viewport,
@@ -304,12 +314,14 @@ impl<B: Backend> ForwardRenderPass<B> {
             instance_buffer_id: None,
 
             meshes: HashMap::new(),
+            meshes_wireframe: HashMap::new(),
             instanced_meshes: HashMap::new(),
         }
     }
 
     pub fn recreate_pipeline(&mut self) {
-        self.forward_pipeline = ForwardPipeline::new(&self.device, self.render_pass.deref(), self.render_set_layout.deref());
+        self.forward_pipeline = ForwardPipeline::new(&self.device, self.render_pass.deref(), self.render_set_layout.deref(), pso::PolygonMode::Fill);
+        self.forward_wireframe_pipeline = ForwardPipeline::new(&self.device, self.render_pass.deref(), self.render_set_layout.deref(), pso::PolygonMode::Line(Static(1.0)));
     }
 
     pub fn update_camera(&mut self, camera_data: CameraData, frame_idx: usize) {
@@ -325,13 +337,18 @@ impl<B: Backend> ForwardRenderPass<B> {
         }
     }
 
-    pub fn add_mesh(&mut self, mesh_id: MeshID, transform: Matrix4<f32>) {
-        match self.meshes.get_mut(&mesh_id) {
+    pub fn add_mesh(&mut self, mesh_id: MeshID, transform: Matrix4<f32>, pipeline: PipelineOptions) {
+        let mut mesh_collection = match pipeline {
+            PipelineOptions::Default => &mut self.meshes,
+            PipelineOptions::Wireframe => &mut self.meshes_wireframe
+        };
+
+        match mesh_collection.get_mut(&mesh_id) {
             Some(transforms) => {
                 transforms.push(transform);
             }
             None => {
-                self.meshes.insert(mesh_id, vec![transform]);
+                mesh_collection.insert(mesh_id, vec![transform]);
             }
         };
     }
@@ -667,6 +684,43 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
                 // generate simple draw calls
                 for (id, transforms) in self.meshes.iter() {
+                    let mesh = rm_lock.get_mesh(id);
+                    let vert_buf = &**mesh.vertex_buffer;
+                    let ind_buf = &**mesh.index_buffer;
+
+                    for transform in transforms {
+                        let mut data: &[f32; 16] = transform.as_ref();
+                        let push_data: [u32; 16] = std::mem::transmute_copy(data);
+
+                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(false),
+                                                               ShaderStageFlags::VERTEX,
+                                                               0,
+                                                               &push_data);
+
+                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+
+                        let index_buffer_view = IndexBufferView {
+                            buffer: ind_buf,
+                            offset: 0,
+                            index_type: mesh.index_type,
+                        };
+                        command_buffer.bind_index_buffer(index_buffer_view);
+                        command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                    }
+                }
+
+                if !self.meshes.is_empty() {
+                    command_buffer.bind_graphics_pipeline(&self.forward_wireframe_pipeline.get_pipeline(false));
+                    command_buffer.bind_graphics_descriptor_sets(
+                        &self.forward_wireframe_pipeline.get_layout(false),
+                        0,
+                        iter::once(&self.desc_set[frame_idx]),
+                        &[],
+                    );
+                }
+
+                // generate simple draw calls for wire frames
+                for (id, transforms) in self.meshes_wireframe.iter() {
                     let mesh = rm_lock.get_mesh(id);
                     let vert_buf = &**mesh.vertex_buffer;
                     let ind_buf = &**mesh.index_buffer;

@@ -171,6 +171,8 @@ pub struct Frustum {
     far_dimensions: Vector2<f32>,
 }
 
+impl Component for Frustum {}
+
 impl Frustum {
 
     pub fn new(fov_x: Rad<f32>, fov_y: Rad<f32>, near_distance: f32, far_distance: f32) -> Self {

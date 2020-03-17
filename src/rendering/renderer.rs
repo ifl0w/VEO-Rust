@@ -83,9 +83,9 @@ use winit::window::Window;
 
 use crate::core::{Exit, Filter, MainWindow, Message, System};
 use crate::NSE;
-use crate::rendering::{Camera, CameraData, Cube, ForwardRenderPass, Mesh, Octree, Plane, RenderPass, SwapchainWrapper, Transformation};
-use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
+use crate::rendering::{AABB, Camera, CameraData, Cube, ForwardRenderPass, Frustum, Mesh, Octree, PipelineOptions, Plane, RenderPass, SwapchainWrapper, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
+use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
 
 /* Constants */
 // Window
@@ -176,6 +176,8 @@ impl System for RenderSystem {
             crate::filter!(Mesh, Transformation),
             crate::filter!(Camera, Transformation),
             crate::filter!(Octree, Mesh, Transformation),
+            crate::filter!(AABB),
+            crate::filter!(Frustum),
         ]
     }
 
@@ -233,7 +235,7 @@ impl System for RenderSystem {
                 let mesh = mutex.get_component::<Mesh>().unwrap();
                 let trans = mutex.get_component::<Transformation>().unwrap();
 
-                fwp_lock.add_mesh(mesh.id, trans.model_matrix);
+                fwp_lock.add_mesh(mesh.id, trans.model_matrix, PipelineOptions::Default);
             }
 
             // add octree instances
@@ -246,12 +248,31 @@ impl System for RenderSystem {
                 match octree.get_instance_buffer() {
                     Some(ib) => {
                         // TODO somehow rework instancing. This is not a good solution.
-                        fwp_lock.add_instances(mesh.id, 0 .. octree.render_count);
+                        fwp_lock.add_instances(mesh.id, 0..octree.render_count);
                         fwp_lock.use_instance_buffer(ib, frame_idx);
-                    },
+                    }
                     None => ()
                 }
             }
+
+            for aabb_entitiy in &filter[3].lock().unwrap().entities {
+                let mut mutex = aabb_entitiy.lock().unwrap();
+                let mut aabb = mutex.get_component::<AABB>().unwrap().clone();
+
+                let debug_mesh = aabb.debug_mesh;
+
+//                aabb.update_debug_mesh(&self.resource_manager);
+//                mutex.add_component(aabb);
+
+                match debug_mesh {
+                    Some((id, _)) => {
+                        fwp_lock.add_mesh(id, Matrix4::identity(), PipelineOptions::Wireframe);
+                    },
+                    None => {}
+                }
+            }
+
+            for frustum_entities in &filter[4].lock().unwrap().entities {}
 
             fwp_lock.update_camera(camera_data, frame_idx);
         } // drop lock after block
@@ -261,7 +282,7 @@ impl System for RenderSystem {
         self.renderer.render(&self.forward_render_pass);
 
         // send execution time
-        let execution_time  = self.forward_render_pass.lock().unwrap().execution_time(frame_idx);
+        let execution_time = self.forward_render_pass.lock().unwrap().execution_time(frame_idx);
         self.messages.push(Message::new(ProfilingData { render_time: Some(execution_time), ..Default::default() }));
 
         self.window.request_redraw();
@@ -321,10 +342,11 @@ impl<B> Renderer<B>
             adapter
                 .physical_device
                 .open(&[(family, &[1.0])],
-                      gfx_hal::Features::VERTEX_STORES_AND_ATOMICS
+                      gfx_hal::Features::NON_FILL_POLYGON_MODE
+                          | gfx_hal::Features::VERTEX_STORES_AND_ATOMICS
                           | gfx_hal::Features::FRAGMENT_STORES_AND_ATOMICS
                           | gfx_hal::Features::SHADER_STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING
-                          | gfx_hal::Features::SHADER_UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING
+                          | gfx_hal::Features::SHADER_UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING,
                 )
                 .unwrap()
         };

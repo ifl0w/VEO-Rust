@@ -36,8 +36,8 @@ pub type BufferID = usize;
 
 pub struct ResourceManager<B>
     where B: gfx_hal::Backend {
-    device: Arc<B::Device>,
-    adapter: Arc<Adapter<B>>,
+    pub(in crate::rendering) device: Arc<B::Device>,
+    pub(in crate::rendering) adapter: Arc<Adapter<B>>,
 
     last_mesh_id: MeshID,
     last_buffer_id: MeshID,
@@ -111,18 +111,11 @@ impl<B> ResourceManager<B>
 }
 
 pub trait MeshGenerator {
-    fn get_vertices() -> Vec<Vertex>;
-    fn get_indices() -> Vec<Index>;
+    fn get_vertices() -> Vec<Vertex> { vec![] }
+    fn get_indices() -> Vec<Index> { vec![] }
 
-    fn generate<T: MeshGenerator, B: gfx_hal::Backend>(rm: &mut ResourceManager<B>)
-                                                       -> (MeshID, Arc<GPUMesh<B>>) {
-        let device = rm.device.clone();
-        let adapter = rm.adapter.clone();
-
-        let mesh = GPUMesh::new::<T>(device, adapter);
-
-        rm.add_mesh(mesh)
-    }
+    fn get_vertices_dynamic(&self) -> Vec<Vertex> { vec![] }
+    fn get_indices_dynamic(&self) -> Vec<Index> { vec![] }
 }
 
 pub struct GPUMesh<B>
@@ -141,12 +134,15 @@ pub struct GPUMesh<B>
 
 impl<B> GPUMesh<B>
     where B: gfx_hal::Backend {
-    pub fn new<T: MeshGenerator>(device: Arc<B::Device>, adapter: Arc<Adapter<B>>) -> Self {
-        let vertex_buffer_info = Self::create_vertex_buffer::<T>(&device, &adapter);
-        let index_buffer_info = Self::create_index_buffer::<T>(&device, &adapter);
+    pub fn new<T: MeshGenerator>(device: &Arc<B::Device>, adapter: &Arc<Adapter<B>>) -> Self {
+        let vertices = T::get_vertices();
+        let indices = T::get_indices();
+
+        let vertex_buffer_info = Self::create_vertex_buffer::<T>(device, adapter, &vertices);
+        let index_buffer_info = Self::create_index_buffer::<T>(device, adapter, &indices);
 
         GPUMesh {
-            device,
+            device: device.clone(),
 
             num_vertices: vertex_buffer_info.0,
             vertex_buffer: Arc::new(vertex_buffer_info.1),
@@ -159,7 +155,28 @@ impl<B> GPUMesh<B>
         }
     }
 
-    fn create_vertex_buffer<T: MeshGenerator>(device: &B::Device, adapter: &Adapter<B>)
+    pub fn new_dynamic<T: MeshGenerator>(device: &Arc<B::Device>, adapter: &Arc<Adapter<B>>, generator_instance: &T) -> Self {
+        let vertices = generator_instance.get_vertices_dynamic();
+        let indices = generator_instance.get_indices_dynamic();
+
+        let vertex_buffer_info = Self::create_vertex_buffer::<T>(device, adapter, &vertices);
+        let index_buffer_info = Self::create_index_buffer::<T>(device, adapter, &indices);
+
+        GPUMesh {
+            device: device.clone(),
+
+            num_vertices: vertex_buffer_info.0,
+            vertex_buffer: Arc::new(vertex_buffer_info.1),
+            vertex_memory: Arc::new(vertex_buffer_info.2),
+
+            num_indices: index_buffer_info.0,
+            index_type: IndexType::U32,
+            index_buffer: Arc::new(index_buffer_info.1),
+            index_memory: Arc::new(index_buffer_info.2),
+        }
+    }
+
+    fn create_vertex_buffer<T: MeshGenerator>(device: &B::Device, adapter: &Adapter<B>, vertices: &Vec<Vertex>)
                                               -> (u32,
                                                   ManuallyDrop<B::Buffer>,
                                                   ManuallyDrop<B::Memory>) {
@@ -167,8 +184,6 @@ impl<B> GPUMesh<B>
         let limits = adapter.physical_device.limits();
 
         let non_coherent_alignment = limits.non_coherent_atom_size as u64;
-
-        let vertices = T::get_vertices();
 
         let buffer_stride = mem::size_of::<Vertex>() as u64;
         let buffer_len = vertices.len() as u64 * buffer_stride;
@@ -216,7 +231,7 @@ impl<B> GPUMesh<B>
         (vertices.len() as u32, vertex_buffer, buffer_memory)
     }
 
-    fn create_index_buffer<T: MeshGenerator>(device: &B::Device, adapter: &Adapter<B>)
+    fn create_index_buffer<T: MeshGenerator>(device: &B::Device, adapter: &Adapter<B>, indices: &Vec<Index>)
                                              -> (u32,
                                                  ManuallyDrop<B::Buffer>,
                                                  ManuallyDrop<B::Memory>) {
@@ -225,8 +240,6 @@ impl<B> GPUMesh<B>
 
         println!("Memory types: {:?}", memory_types);
         let non_coherent_alignment = limits.non_coherent_atom_size as u64;
-
-        let indices = T::get_indices();
 
         let buffer_stride = mem::size_of::<Index>() as u64;
         let buffer_len = indices.len() as u64 * buffer_stride;
