@@ -30,9 +30,9 @@ use gfx_hal::buffer;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 use winit::event::Event;
 
-use crate::core::{Component, Filter, Message, System};
+use crate::core::{Component, Filter, Message, System, Payload};
 use crate::rendering::{AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
-use crate::rendering::nse_gui::octree_gui::{ProfilingData, UpdateOctree};
+use crate::rendering::nse_gui::octree_gui::{ProfilingData};
 use crate::rendering::utility::resources::BufferID;
 
 enum NodePosition {
@@ -73,30 +73,71 @@ pub struct Octree {
     pub active_instance_buffer_idx: Option<usize>,
     /// points into the instance_data_buffer vec
 
-    pub render_count: usize,
+    pub config: OctreeConfig,
+    pub info: OctreeInfo,
+}
 
-    pub depth: i32,
-    pub byte_size: Option<usize>,
-    pub max_byte_size: usize,
+#[derive(Clone, Debug)]
+pub struct OctreeConfig {
+    pub max_rendered_nodes: Option<u64>,
+    pub depth: Option<u64>,
+}
+
+impl Default for OctreeConfig {
+    fn default() -> Self {
+        OctreeConfig {
+            max_rendered_nodes: Some(5e5 as u64),
+            depth: Some(5),
+        }
+    }
+}
+
+impl OctreeConfig {
+    pub fn merge(&mut self, other: &OctreeConfig) {
+        if other.depth.is_some() {
+            self.depth = other.depth
+        };
+
+        if other.max_rendered_nodes.is_some() {
+            self.max_rendered_nodes = other.max_rendered_nodes
+        };
+    }
+}
+
+impl Payload for OctreeConfig { }
+
+#[derive(Default, Clone)]
+pub struct OctreeInfo {
+    pub render_count: usize,
+    pub max_num_nodes: usize,
+
+    pub byte_size: usize, // Size of the data structure in RAM
+    pub max_byte_size: usize, // size of the data structure if filled completely in RAM
+    pub gpu_byte_size: usize, // allocated storage on the GPU
 }
 
 impl Component for Octree {}
 
 impl Octree {
-    pub fn new(render_system: &Arc<Mutex<RenderSystem>>, depth: i32) -> Self {
-        let max_num_nodes = 8_i64.pow(depth.try_into().unwrap()) as usize;
-        let max_byte_size = std::mem::size_of::<Octree>() * max_num_nodes;
-        let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_num_nodes;
-
+    pub fn new(render_system: &Arc<Mutex<RenderSystem>>, config: OctreeConfig) -> Self {
         let rm = render_system.lock().unwrap().resource_manager.clone();
         let mut rm_lock = rm.lock().unwrap();
 
         let dev = render_system.lock().unwrap().renderer.device.clone();
         let adapter = render_system.lock().unwrap().renderer.adapter.clone();
 
-        let num_buffers = 2;
-        let mut instance_data_buffer = Vec::with_capacity(num_buffers);
-        for _ in 0..num_buffers {
+        // read config
+        let depth = config.depth.unwrap_or(5);
+        let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(5e5 as u64);
+
+        // byte size calculations
+        let max_num_nodes = 8_i64.pow(depth.try_into().unwrap()) as usize;
+        let max_byte_size = std::mem::size_of::<Octree>() * max_num_nodes;
+        let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
+
+        let ring_buffer_length = 2;
+        let mut instance_data_buffer = Vec::with_capacity(ring_buffer_length);
+        for _ in 0..ring_buffer_length {
             unsafe {
                 let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(&dev,
                                                                               &adapter,
@@ -107,14 +148,21 @@ impl Octree {
             }
         }
 
+        let octree_info = OctreeInfo {
+            render_count: 0,
+            byte_size: 0,
+            max_num_nodes,
+            max_byte_size,
+            gpu_byte_size: max_gpu_byte_size * ring_buffer_length,
+        };
+
         let mut oct = Octree {
             root: Arc::new(Mutex::new(None)),
             instance_data_buffer,
             active_instance_buffer_idx: None,
-            render_count: 0,
-            depth,
-            byte_size: None,
-            max_byte_size,
+
+            config,
+            info: octree_info,
         };
 
         oct.root = Arc::new(Mutex::new(Octree::traverse(
@@ -123,9 +171,8 @@ impl Octree {
             0,
             depth)));
 
-        oct.byte_size = Some(self::Octree::size_in_bytes(&oct));
+        oct.info.byte_size = self::Octree::size_in_bytes(&oct);
 
-        println!("SIZE: {} MB", (oct.byte_size.unwrap() as f32 / (1024_f32 * 1024_f32)));
         oct
     }
 
@@ -164,7 +211,7 @@ impl Octree {
         count
     }
 
-    fn traverse(node: Option<Node>, translate: Vector3<f32>, current_depth: i32, target_depth: i32) -> Option<Node> {
+    fn traverse(node: Option<Node>, translate: Vector3<f32>, current_depth: u64, target_depth: u64) -> Option<Node> {
         if node.is_none() || current_depth == target_depth {
             return node;
         }
@@ -309,29 +356,43 @@ impl Node {
 pub struct OctreeSystem {
     render_sys: Arc<Mutex<RenderSystem>>,
 
-    update_octrees: bool,
-    octree_depth: i32,
+    update_config: Option<OctreeConfig>,
 
     // optimization flags
-    frustum_culling: Option<bool>,
-    limit_depth: Option<f64>,
-    ignore_full: Option<bool>,
-    ignore_inner: Option<bool>,
+    optimizations: OctreeOptimizations,
 
     messages: Vec<Message>,
 }
+
+#[derive(Debug, Copy, Clone)]
+pub struct OctreeOptimizations {
+    pub frustum_culling: bool,
+    pub limit_depth: f64,
+    pub ignore_full: bool,
+    pub ignore_inner: bool,
+}
+
+impl Default for OctreeOptimizations {
+    fn default() -> Self {
+        OctreeOptimizations {
+            frustum_culling: true,
+            limit_depth: -1.0,
+            ignore_full: false,
+            ignore_inner: false,
+        }
+    }
+}
+
+impl Payload for OctreeOptimizations { }
 
 impl OctreeSystem {
     pub fn new(render_sys: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(OctreeSystem {
             render_sys,
-            update_octrees: false,
-            octree_depth: 5,
 
-            frustum_culling: None,
-            limit_depth: None,
-            ignore_full: None,
-            ignore_inner: None,
+            update_config: None,
+
+            optimizations: OctreeOptimizations::default(),
 
             messages: Vec::new(),
         }))
@@ -388,13 +449,16 @@ impl System for OctreeSystem {
             crate::filter!(Camera, Transformation)
         ]
     }
+
     fn handle_input(&mut self, _event: &Event<()>) {}
 
     fn consume_messages(&mut self, messages: &Vec<Message>) {
         messages.iter().for_each(|msg| {
-            if msg.is_type::<UpdateOctree>() {
-                self.update_octrees = true;
-                self.octree_depth = msg.get_payload::<UpdateOctree>().unwrap().octree_depth
+            if msg.is_type::<OctreeConfig>() {
+                self.update_config = Some(msg.get_payload::<OctreeConfig>().unwrap().clone())
+            }
+            if msg.is_type::<OctreeOptimizations>() {
+                self.optimizations = msg.get_payload::<OctreeOptimizations>().unwrap().clone();
             }
         });
     }
@@ -409,9 +473,8 @@ impl System for OctreeSystem {
             let octree_transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
             let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
 
-            if self.update_octrees {
-                octree = Octree::new(&self.render_sys, self.octree_depth);
-                self.update_octrees = false;
+            if self.update_config.is_some() {
+                octree = Octree::new(&self.render_sys, self.update_config.take().unwrap());
             }
 
             if !camera_entities.is_empty() { // scope to enclose mutex
@@ -427,7 +490,9 @@ impl System for OctreeSystem {
                 traversal_fnc.push(&continue_to_leaf);
 
                 let mut filter_fnc: Vec<&FilterFunction> = Vec::new();
-                filter_fnc.push(&cull_frustum); // TODO Fix broken culling
+                if self.optimizations.frustum_culling {
+                    filter_fnc.push(&cull_frustum); // TODO Fix broken culling at near plane
+                }
                 filter_fnc.push(&generate_leaf_model_matrix);
 
                 let optimization_data = OptimizationData {
@@ -442,7 +507,7 @@ impl System for OctreeSystem {
                 };
 
                 // building matrices
-                let mut model_matrices = Vec::with_capacity(octree.render_count);
+                let mut model_matrices = Vec::with_capacity(octree.info.render_count);
 
                 OctreeSystem::generate_instance_data(
                     &optimization_data,
@@ -459,13 +524,16 @@ impl System for OctreeSystem {
                 let buffer = &octree.instance_data_buffer[0]; // TODO select correct idx
                 let mut gpu_buffer_lock = buffer.lock().unwrap();
 
-                gpu_buffer_lock.replace_data(&model_matrices);
+                gpu_buffer_lock.replace_data(
+                    &model_matrices[0..
+                        model_matrices.len().min(octree
+                            .config.max_rendered_nodes.unwrap_or(1e3 as u64) as usize)]);
                 octree.active_instance_buffer_idx = Some(0);
-                octree.render_count = model_matrices.len();
+                octree.info.render_count = model_matrices.len();
 
                 self.messages.push(Message::new(
                     ProfilingData {
-                        rendered_nodes: Some(octree.render_count as u32),
+                        rendered_nodes: Some(octree.info.render_count as u32),
                         ..Default::default()
                     }));
             } else { // drop locks

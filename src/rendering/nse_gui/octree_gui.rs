@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::ops::RangeInclusive;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use glium::{Display, Surface};
@@ -18,16 +18,21 @@ use winit::event::{ElementState, Event, VirtualKeyCode};
 
 use crate::core::{Filter, Message, Payload, System};
 use crate::NSE;
-use crate::rendering::RenderSystem;
+use crate::rendering::{Camera, Mesh, Octree, OctreeConfig, RenderSystem, Transformation, OctreeInfo, OctreeOptimizations};
+use std::rc::Rc;
+use mopa::Any;
+use std::cell::RefCell;
+use cgmath::{Transform, Vector3, Vector4};
 
 pub struct OctreeGuiSystem {
-    imgui: Context,
+    imgui: Arc<Mutex<Context>>,
     platform: WinitPlatform,
     renderer: Renderer,
-    display: glium::Display,
+    display: Arc<Mutex<glium::Display>>,
 
     // octree data
-    octree_depth: i32,
+    octree_config: OctreeConfig,
+    octree_optimizations: OctreeOptimizations,
 
     // profiling data
     profiling_data: ProfilingData,
@@ -84,12 +89,13 @@ impl OctreeGuiSystem {
         frame_times.resize(500, 0.0);
 
         Arc::new(Mutex::new(OctreeGuiSystem {
-            imgui,
+            imgui: Arc::new(Mutex::new(imgui)),
             platform,
             renderer,
-            display,
+            display: Arc::new(Mutex::new(display)),
 
-            octree_depth: 5,
+            octree_config: OctreeConfig::default(),
+            octree_optimizations: OctreeOptimizations::default(),
 
             profiling_data: ProfilingData::default(),
             frame_times,
@@ -97,15 +103,105 @@ impl OctreeGuiSystem {
             messages: vec![],
         }))
     }
+
+    fn display_octree_ui(&mut self, ui: &Ui, config: &OctreeConfig, info: &OctreeInfo) {
+        if ui.collapsing_header(im_str!("Settings")).default_open(true).build() {
+            ui.text(format!("RAM Allocation: {:.2} MB", info.byte_size as f64 / (1024f64 * 1024f64)));
+            ui.text(format!("Max. number of rendered nodes: {}", config.max_rendered_nodes.unwrap_or(0)));
+            ui.text(format!("GPU Allocation: {:.2} MB", info.gpu_byte_size as f64 / (1024f64 * 1024f64)));
+
+            ui.separator();
+
+            ui.text(format!("Optimizations"));
+            if ui.checkbox(im_str!("Frustum Culling"), &mut self.octree_optimizations.frustum_culling) {
+                self.messages.push(Message::new(self.octree_optimizations.clone()));
+            }
+
+            ui.separator();
+
+            Slider::new(im_str!("Max. Rendered Nodes"), RangeInclusive::new(1e3 as u64, 5e6 as u64))
+                .power(100.0)
+                .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap());
+
+            Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 10))
+                .build(&ui, self.octree_config.depth.as_mut().unwrap());
+
+            if ui.button(im_str!("Regenerate Octree"), [0.0, 0.0]) {
+                self.messages.push(Message::new(self.octree_config.clone()));
+            };
+            if ui.button(im_str!("Reset Octree"), [0.0, 0.0]) {
+                self.octree_config = OctreeConfig::default();
+                self.messages.push(Message::new(self.octree_config.clone()));
+            };
+        }
+    }
+
+    fn display_profiling_ui(&mut self, delta_time: Duration, ui: &Ui) {
+        let rendered_nodes = &mut self.profiling_data.rendered_nodes.unwrap_or(0);
+        let render_time = self.profiling_data.render_time.unwrap_or(0) as f64 / 1e6 as f64;
+
+        let frame_times = &mut self.frame_times;
+        frame_times.pop_front();
+        frame_times.push_back(delta_time.as_secs_f32());
+
+        let f_times: Vec<f32> = frame_times.iter().cloned().collect();
+
+        if ui.collapsing_header(im_str!("Profiling")).default_open(true).build() {
+            // Plot Frame Times
+            ui.plot_lines(im_str!("Frame Times"), &f_times[..])
+                .graph_size([0.0, 50.0])
+                .overlay_text(&im_str!("{} ms", delta_time.as_millis()))
+                .build();
+
+            ui.separator();
+
+            ui.text(im_str!("Rendered Nodes: {}", rendered_nodes));
+
+            ui.text(im_str!("Render Time Nodes: {:.2} ms", render_time));
+
+            ui.separator();
+
+            let mouse_pos = ui.io().mouse_pos;
+            ui.text(format!(
+                "Mouse Position: ({:.1},{:.1})",
+                mouse_pos[0], mouse_pos[1]
+            ));
+        }
+    }
+
+    fn display_camera_ui(&mut self, ui: &Ui, camera: &Camera, camera_transform: &Transformation) {
+        if ui.collapsing_header(im_str!("Camera")).default_open(true).build() {
+
+            let view_dir = camera_transform.get_model_matrix() * (-Vector4::unit_z());
+
+            InputFloat3::new(&ui, im_str!("View Direction"), &mut [
+                view_dir.x,
+                view_dir.y,
+                view_dir.z,
+            ]).read_only(true).build();
+
+            InputFloat3::new(&ui, im_str!("Camera Position"), &mut [
+                camera_transform.position.x,
+                camera_transform.position.y,
+                camera_transform.position.z,
+            ]).read_only(true).build();
+        }
+    }
 }
 
 impl System for OctreeGuiSystem {
-    fn get_filter(&mut self) -> Vec<Filter> { vec![] }
+    fn get_filter(&mut self) -> Vec<Filter> {
+        vec![
+            crate::filter!(Octree, Mesh, Transformation),
+            crate::filter!(Camera, Transformation)
+        ]
+    }
 
     fn handle_input(&mut self, _event: &Event<()>) {
         let platform = &mut self.platform;
-        let gl_window = self.display.gl_window();
-        let imgui = &mut self.imgui;
+        let display = self.display.lock().unwrap();
+        let gl_window = display.gl_window();
+        let mut imgui = self.imgui.lock().unwrap();
 
         match _event {
             Event::MainEventsCleared => {
@@ -118,10 +214,10 @@ impl System for OctreeGuiSystem {
                 event: WindowEvent::CloseRequested,
                 window_id
             } => {
-                if *window_id == self.display.gl_window().window().id() {
+                if *window_id == gl_window.window().id() {
                     println!("Close Octree Config Window");
 
-                    self.display.gl_window().window().set_visible(false);
+                    gl_window.window().set_visible(false);
                     return;
                 }
             }
@@ -133,7 +229,7 @@ impl System for OctreeGuiSystem {
                                 match (virtual_keycode, state) {
                                     (Some(VirtualKeyCode::F12), ElementState::Pressed) => {
                                         println!("Open Octree Config Window");
-                                        self.display.gl_window().window().set_visible(true);
+                                        gl_window.window().set_visible(true);
                                     }
                                     _ => ()
                                 }
@@ -170,65 +266,48 @@ impl System for OctreeGuiSystem {
         }
     }
 
-    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, delta_time: Duration) {
-        let ui = self.imgui.frame();
-//        let render_system_lock = self.render_system.lock().unwrap();
-//        let window = render_system_lock.surface.window();
-        let gl_window = self.display.gl_window();
-        // application-specific rendering *under the UI*
+    fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, delta_time: Duration) {
+        let ctx = self.imgui.clone();
+        let display = self.display.clone();
+        let mut ctx_lock = ctx.lock().unwrap();
+        let mut display_lock = display.lock().unwrap();
 
-        let messages = &mut self.messages;
+        let ui = ctx_lock.frame();
+        let gl_window = display_lock.gl_window();
 
-        let octree_depth = &mut self.octree_depth;
+        let octree_entities = &filter[0].lock().unwrap().entities;
+        let camera_entities = &filter[1].lock().unwrap().entities;
 
-        let rendered_nodes = &mut self.profiling_data.rendered_nodes.unwrap_or(0);
-        let render_time = self.profiling_data.render_time.unwrap_or(0) as f64 / 1e6 as f64;
+        let window = Window::new(im_str!("Octree"))
+            .collapsible(false)
+            .movable(false)
+            .position([10.0, 10.0], Condition::FirstUseEver)
+            .size([400.0, 0.0], Condition::FirstUseEver);
+        let window_token = window.begin(&ui).unwrap();
 
-        let frame_times = &mut self.frame_times;
-        frame_times.pop_front();
-        frame_times.push_back(delta_time.as_secs_f32());
+        for entity in octree_entities {
+            let mut entitiy_mutex = entity.lock().unwrap();
+            let _octree_transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
+            let octree = entitiy_mutex.get_component::<Octree>().ok().unwrap();
 
-        let f_times: Vec<f32> = frame_times.iter().cloned().collect();
+            self.display_profiling_ui(delta_time, &ui);
 
-        Window::new(im_str!("Octree"))
-            .size([300.0, 0.0], Condition::FirstUseEver)
-            .build(&ui, || {
-                if ui.collapsing_header(im_str!("Settings")).default_open(true).build() {
-                    ui.new_line();
+            ui.new_line();
 
-                    Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 10))
-                        .build(&ui, octree_depth);
-                    if ui.button(im_str!("Update Octree"), [0.0, 0.0]) {
-                        messages.push(Message::new(UpdateOctree { octree_depth: *octree_depth }));
-                    };
+            self.display_octree_ui(&ui, &octree.config, &octree.info);
 
-                    ui.new_line();
-                }
+            ui.new_line();
+        }
 
-                if ui.collapsing_header(im_str!("Profiling")).default_open(true).build() {
-                    ui.new_line();
-                    // Plot Frame Times
-                    ui.plot_lines(im_str!("Frame Times"), &f_times[..])
-                        .graph_size([0.0, 50.0])
-                        .overlay_text(&im_str!("{} ms", delta_time.as_millis()))
-                        .build();
+        for entity in camera_entities {
+            let mut entitiy_mutex = entity.lock().unwrap();
+            let camera_transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
+            let camera = entitiy_mutex.get_component::<Camera>().ok().unwrap();
 
-                    ui.separator();
+            self.display_camera_ui(&ui, camera, camera_transform);
+        }
 
-                    ui.text(im_str!("Rendered Nodes: {}", rendered_nodes));
-
-                    ui.text(im_str!("Render Time Nodes: {:.2} ms", render_time));
-
-                    ui.separator();
-
-                    let mouse_pos = ui.io().mouse_pos;
-                    ui.text(format!(
-                        "Mouse Position: ({:.1},{:.1})",
-                        mouse_pos[0], mouse_pos[1]
-                    ));
-                    ui.new_line();
-                }
-            });
+        window_token.end(&ui);
 
         // construct the UI
         self.platform.prepare_render(&ui, &gl_window.window()); // step 5
@@ -236,7 +315,7 @@ impl System for OctreeGuiSystem {
         let draw_data = ui.render();
         // application-specific rendering *over the UI*
 
-        let mut target = self.display.draw();
+        let mut target = display_lock.draw();
         target.clear_color_srgb(0.1, 0.1, 0.11, 1.0);
 
         self.renderer
@@ -254,13 +333,6 @@ impl System for OctreeGuiSystem {
         ret
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct UpdateOctree {
-    pub octree_depth: i32
-}
-
-impl Payload for UpdateOctree {}
 
 #[derive(Debug, Clone, Default)]
 pub struct ProfilingData {

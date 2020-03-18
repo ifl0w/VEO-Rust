@@ -19,6 +19,8 @@ pub struct FPSCameraSystem {
     move_forward: bool,
     move_back: bool,
 
+    sprint: bool,
+
     movement_speed: f32,
     mouse_speed: f32,
 
@@ -35,6 +37,8 @@ impl FPSCameraSystem {
             move_right: false,
             move_forward: false,
             move_back: false,
+
+            sprint: false,
 
             movement_speed: 3.0,
             mouse_speed: 0.25,
@@ -71,29 +75,20 @@ impl System for FPSCameraSystem {
                         match input {
                             | KeyboardInput { virtual_keycode, state, .. } => {
                                 match (virtual_keycode, state) {
-                                    | (Some(VirtualKeyCode::W), ElementState::Pressed) => {
-                                        self.move_forward = true;
+                                    | (Some(VirtualKeyCode::W), state) => {
+                                        self.move_forward = *state == Pressed;
                                     }
-                                    | (Some(VirtualKeyCode::W), ElementState::Released) => {
-                                        self.move_forward = false;
+                                    | (Some(VirtualKeyCode::A), state) => {
+                                        self.move_left = *state == Pressed;
                                     }
-                                    | (Some(VirtualKeyCode::A), ElementState::Pressed) => {
-                                        self.move_left = true;
+                                    | (Some(VirtualKeyCode::S), state) => {
+                                        self.move_back = *state == Pressed;
                                     }
-                                    | (Some(VirtualKeyCode::A), ElementState::Released) => {
-                                        self.move_left = false;
+                                    | (Some(VirtualKeyCode::D), state) => {
+                                        self.move_right = *state == Pressed;
                                     }
-                                    | (Some(VirtualKeyCode::S), ElementState::Pressed) => {
-                                        self.move_back = true;
-                                    }
-                                    | (Some(VirtualKeyCode::S), ElementState::Released) => {
-                                        self.move_back = false;
-                                    }
-                                    | (Some(VirtualKeyCode::D), ElementState::Pressed) => {
-                                        self.move_right = true;
-                                    }
-                                    | (Some(VirtualKeyCode::D), ElementState::Released) => {
-                                        self.move_right = false;
+                                    | (Some(VirtualKeyCode::LShift), state) => {
+                                        self.sprint = *state == Pressed;
                                     }
                                     | _ => {}
                                 }
@@ -145,6 +140,9 @@ impl System for FPSCameraSystem {
         }
         if self.move_right {
             axis_aligned_translation.x += self.movement_speed * delta_time.as_secs_f32();
+        }
+        if self.sprint {
+            axis_aligned_translation *= 10.0;
         }
 
         if self.active {

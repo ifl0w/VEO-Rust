@@ -1,9 +1,9 @@
-use cgmath::{Vector3, Quaternion, Euler, Deg};
+use cgmath::{Vector3, Quaternion, Euler, Deg, vec3};
 
 use nse;
 use nse::core::Entity;
 use nse::NSE;
-use nse::rendering::{Camera, Cube, Mesh, Octree, OctreeGuiSystem, OctreeSystem, RenderSystem, Transformation, Frustum};
+use nse::rendering::{Camera, Cube, Mesh, Octree, OctreeGuiSystem, OctreeSystem, RenderSystem, Transformation, Frustum, OctreeConfig};
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
 
@@ -30,16 +30,17 @@ fn main() {
     camera.lock().unwrap()
         .add_component(Camera::new(0.1, 1000.0, 90.0, [1024.0, 768.0]))
         .add_component(Transformation::new()
-            .position(Vector3::new(0.0, 10.0, 30.0))
+            .position(vec3(0.0, 30.0, 50.0))
             .rotation(Quaternion::from(Euler::new(Deg(-15.0), Deg(0.0), Deg(0.0))))
         );
     engine.add_entity(camera);
 
     // add octree
     let octree = Entity::new();
-    let scale = Vector3::new(25.0, 25.0, 25.0);
+    let octree_config = OctreeConfig::default();
+    let scale = vec3(250.0, 250.0, 250.0);
     octree.lock().unwrap()
-        .add_component(Octree::new(&render_system, 4))
+        .add_component(Octree::new(&render_system, octree_config))
         .add_component(Transformation::new().scale(scale))//.position(size / 2.0))
         .add_component(Mesh::new::<Cube>(&render_system));
     engine.add_entity(octree);

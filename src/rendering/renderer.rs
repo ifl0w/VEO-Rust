@@ -248,7 +248,7 @@ impl System for RenderSystem {
                 match octree.get_instance_buffer() {
                     Some(ib) => {
                         // TODO somehow rework instancing. This is not a good solution.
-                        fwp_lock.add_instances(mesh.id, (0..octree.render_count, octree_trans.get_model_matrix()));
+                        fwp_lock.add_instances(mesh.id, (0..octree.info.render_count, octree_trans.get_model_matrix()));
                         fwp_lock.use_instance_buffer(ib, frame_idx);
                     }
                     None => ()
