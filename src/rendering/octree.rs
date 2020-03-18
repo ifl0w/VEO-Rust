@@ -165,8 +165,8 @@ impl Octree {
             info: octree_info,
         };
 
-        oct.root = Arc::new(Mutex::new(Octree::traverse(
-            Some(Node::new()),
+        Arc::new(Mutex::new(Octree::traverse(
+            &mut oct.root.lock().unwrap(),
             vec3(0.0, 0.0, 0.0),
             0,
             depth)));
@@ -197,10 +197,9 @@ impl Octree {
         let mut count = 0;
 
         if !node.is_none() {
-            let node_copy = node.clone().unwrap();
-
-            if !node_copy.is_leaf() {
-                let children = node_copy.children;
+            let n = node.as_ref().unwrap();
+            if !n.is_leaf() {
+                let children = &n.children;
                 children.iter().enumerate().for_each(|(_i, child)| {
                     count += self.count_nodes(child);
                 });
@@ -211,17 +210,18 @@ impl Octree {
         count
     }
 
-    fn traverse(node: Option<Node>, translate: Vector3<f32>, current_depth: u64, target_depth: u64) -> Option<Node> {
-        if node.is_none() || current_depth == target_depth {
-            return node;
+    fn traverse(node: &mut Option<Node>, translate: Vector3<f32>, current_depth: u64, target_depth: u64) {
+        if current_depth == target_depth {
+            return;
         }
 
-        let mut node_copy = node.clone().unwrap();
+        if node.is_none() {
+            *node = Some(Node::new());
+        }
 
-        let children = node_copy.children;
-        let new_children: Vec<_> = children.iter().enumerate().map(|(idx, child)| {
+        node.as_mut().unwrap().children.iter_mut().enumerate().for_each(|(idx, child)| {
             match child {
-                Some(node) => { Some(node.clone()) }
+                Some(node) => {} // do not modify existing nodes
                 None => {
                     let new_depth = current_depth + 1;
 
@@ -278,17 +278,12 @@ impl Octree {
                     // not indicate an intersection and thus leading to false negative intersection
                     // tests!
                     if intersect(node_origin, s, &sinc) {
-                        Octree::traverse(Option::Some(new_child), t, new_depth, target_depth)
-                    } else {
-                        None
+                        child.replace(new_child);
+                        Octree::traverse(child, t, new_depth, target_depth)
                     }
                 }
             }
-        }).collect();
-
-        node_copy.children = new_children;
-
-        Some(node_copy)
+        });
     }
 }
 
