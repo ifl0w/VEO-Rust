@@ -25,13 +25,13 @@ use std::iter;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cgmath::{Matrix4, vec3, Vector3, Vector4, Transform};
+use cgmath::{Matrix4, Transform, vec3, Vector3, Vector4};
 use gfx_hal::buffer;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, System};
-use crate::rendering::{Camera, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation, AABB, Frustum};
+use crate::rendering::{AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::{ProfilingData, UpdateOctree};
 use crate::rendering::utility::resources::BufferID;
 
@@ -259,7 +259,7 @@ impl Node {
             children: vec![],
             position: vec3(0.0, 0.0, 0.0),
             scale: vec3(1.0, 1.0, 1.0),
-            aabb: AABB::new(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0))
+            aabb: AABB::new(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0)),
         };
 
         tmp.children.resize(8, None);
@@ -276,7 +276,7 @@ impl Node {
             children: vec![],
             position,
             scale: scale_vec,
-            aabb: AABB::new(min, max)
+            aabb: AABB::new(min, max),
         };
 
         tmp.children.resize(8, None);
@@ -338,17 +338,13 @@ impl OctreeSystem {
     }
 
     fn generate_instance_data(optimization_data: &OptimizationData,
-                              node: &Option<Node>,
+                              node: &mut Option<Node>,
+                              collected_data: &mut Vec<InstanceData>,
                               traversal_criteria: &Vec<&TraversalFunction>,
-                              filter_functions: &Vec<&FilterFunction>)
-                              -> Vec<InstanceData> {
+                              filter_functions: &Vec<&FilterFunction>) {
         if node.is_none() {
-            return vec![];
+            return;
         }
-
-        let node_copy = node.clone().unwrap();
-
-        let mut model_matrices: Vec<InstanceData> = vec![];
 
         // add model matrices
         let include = filter_functions.iter().all(|fnc| {
@@ -356,9 +352,9 @@ impl OctreeSystem {
         });
 
         if include {
-            let mat = Matrix4::from_translation(node_copy.position)
-                * Matrix4::from_scale(node_copy.scale.x);
-            model_matrices.push(InstanceData {
+            let mat = Matrix4::from_translation(node.as_mut().unwrap().position)
+                * Matrix4::from_scale(node.as_mut().unwrap().scale.x);
+            collected_data.push(InstanceData {
                 model_matrix: mat.into()
             });
         }
@@ -369,23 +365,19 @@ impl OctreeSystem {
         });
 
         if continue_traversal {
-            let children = node_copy.children;
-            children.iter().enumerate().for_each(|(_i, child)| {
+            node.as_mut().unwrap().children.iter_mut().enumerate().for_each(|(_i, child)| {
                 match child {
                     Some(real_child) => {
-                        let new_mat =
-                            &mut OctreeSystem::generate_instance_data(optimization_data,
-                                                                      child,
-                                                                      traversal_criteria,
-                                                                      filter_functions);
-                        model_matrices.append(new_mat);
+                        &mut OctreeSystem::generate_instance_data(optimization_data,
+                                                                  child,
+                                                                  collected_data,
+                                                                  traversal_criteria,
+                                                                  filter_functions);
                     }
                     None => {}
                 }
             });
         }
-
-        model_matrices
     }
 }
 
@@ -423,7 +415,7 @@ impl System for OctreeSystem {
             }
 
             if !camera_entities.is_empty() { // scope to enclose mutex
-                let root = octree.root.lock().unwrap();
+                let mut root = octree.root.lock().unwrap();
 
                 // camera data
                 let mut camera_mutex = camera_entities[0].lock().unwrap();
@@ -446,15 +438,18 @@ impl System for OctreeSystem {
                             // TODO: investigate whether this space transformation is the a good approach for frustum culling
                             Matrix4::inverse_transform(&octree_transform.get_model_matrix()).unwrap()
                                 * camera_transform.get_model_matrix()
-                        )
+                        ),
                 };
 
                 // building matrices
-                let model_matrices = OctreeSystem::generate_instance_data(
+                let mut model_matrices = Vec::with_capacity(octree.render_count);
+
+                OctreeSystem::generate_instance_data(
                     &optimization_data,
-                    &root,
+                    &mut root,
+                    &mut model_matrices,
                     &traversal_fnc,
-                    &filter_fnc
+                    &filter_fnc,
                 );
 
                 // store data
