@@ -365,6 +365,7 @@ pub struct OctreeOptimizations {
     pub limit_depth: f64,
     pub ignore_full: bool,
     pub ignore_inner: bool,
+    pub depth_culling: bool,
 }
 
 impl Default for OctreeOptimizations {
@@ -374,6 +375,7 @@ impl Default for OctreeOptimizations {
             limit_depth: -1.0,
             ignore_full: false,
             ignore_inner: false,
+            depth_culling: true,
         }
     }
 }
@@ -482,15 +484,17 @@ impl System for OctreeSystem {
 
                 // filter config
                 let mut traversal_fnc: Vec<&TraversalFunction> = Vec::new();
-//                traversal_fnc.push(&continue_to_leaf);
-                traversal_fnc.push(&cull_depth);
                 if self.optimizations.frustum_culling {
 //                    traversal_fnc.push(&cull_frustum); // TODO Fix broken culling at near plane
                 }
 
                 let mut filter_fnc: Vec<&FilterFunction> = Vec::new();
-                filter_fnc.push(&tmp);
                 filter_fnc.push(&generate_leaf_model_matrix);
+
+                if self.optimizations.depth_culling {
+                    traversal_fnc.push(&cull_depth);
+                    filter_fnc.push(&cull_depth_traversal);
+                }
 
                 let optimization_data = OptimizationData {
                     camera: &camera,
@@ -585,7 +589,7 @@ fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bo
     }
 }
 
-fn tmp(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+fn cull_depth_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     !cull_depth(optimization_data, node)
 }
 
@@ -593,15 +597,11 @@ fn tmp(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
 fn cull_depth(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() {
         let node = node.as_ref().unwrap();
-        let corner_first = node.position - (node.scale / 2_f32);
-        let corner_second = node.position + (node.scale / 2_f32);
         let proj_matrix = optimization_data.octree_mvp;
 
-        let test = (proj_matrix * corner_first.extend(0_f32)) - (proj_matrix * corner_second.extend(0_f32));
-
-        let tmp = proj_matrix * node.position.extend(1.0);
-        let bla = (node.scale.x / tmp.w);
-        if bla < 0.0003 && bla > 0.0 {
+        let projected_position = proj_matrix * node.position.extend(1.0);
+        let projected_scale = (node.scale.x / projected_position.w);
+        if projected_scale < 0.0003 && projected_scale > 0.0 {
             return false;
         } else {
             return true;

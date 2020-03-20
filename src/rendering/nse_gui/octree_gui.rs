@@ -116,6 +116,9 @@ impl OctreeGuiSystem {
             if ui.checkbox(im_str!("Frustum Culling"), &mut self.octree_optimizations.frustum_culling) {
                 self.messages.push(Message::new(self.octree_optimizations.clone()));
             }
+            if ui.checkbox(im_str!("Depth Culling"), &mut self.octree_optimizations.depth_culling) {
+                self.messages.push(Message::new(self.octree_optimizations.clone()));
+            }
 
             ui.separator();
 
