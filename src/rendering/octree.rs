@@ -362,7 +362,7 @@ pub struct OctreeSystem {
 #[derive(Debug, Copy, Clone)]
 pub struct OctreeOptimizations {
     pub frustum_culling: bool,
-    pub limit_depth: f64,
+    pub depth_threshold: f64,
     pub ignore_full: bool,
     pub ignore_inner: bool,
     pub depth_culling: bool,
@@ -372,7 +372,7 @@ impl Default for OctreeOptimizations {
     fn default() -> Self {
         OctreeOptimizations {
             frustum_culling: true,
-            limit_depth: -1.0,
+            depth_threshold: -1.0,
             ignore_full: false,
             ignore_inner: false,
             depth_culling: true,
@@ -509,6 +509,7 @@ impl System for OctreeSystem {
                             Matrix4::inverse_transform(&octree_transform.get_model_matrix()).unwrap()
                                 * camera_transform.get_model_matrix()
                         ),
+                    depth_threshold: self.optimizations.depth_threshold,
                 };
 
                 // building matrices
@@ -569,6 +570,7 @@ struct OptimizationData<'a> {
     camera_transform: &'a Transformation,
     octree_mvp: Matrix4<f32>,
     frustum: Frustum,
+    depth_threshold: f64,
 }
 
 fn continue_to_leaf(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
@@ -599,9 +601,10 @@ fn cull_depth(optimization_data: &OptimizationData, node: &Option<Node>) -> bool
         let node = node.as_ref().unwrap();
         let proj_matrix = optimization_data.octree_mvp;
 
+
         let projected_position = proj_matrix * node.position.extend(1.0);
         let projected_scale = (node.scale.x / projected_position.w);
-        if projected_scale < 0.0003 && projected_scale > 0.0 {
+        if projected_scale < optimization_data.depth_threshold as f32 && projected_scale > 0.0 {
             return false;
         } else {
             return true;

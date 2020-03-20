@@ -120,13 +120,18 @@ impl OctreeGuiSystem {
                 self.messages.push(Message::new(self.octree_optimizations.clone()));
             }
 
+            if Slider::new(im_str!("Depth Culling Threshold"), RangeInclusive::new(0.0001, 0.001))
+                .build(&ui, &mut self.octree_optimizations.depth_threshold) {
+                self.messages.push(Message::new(self.octree_optimizations.clone()));
+            }
+
             ui.separator();
 
             Slider::new(im_str!("Max. Rendered Nodes"), RangeInclusive::new(1e3 as u64, 5e6 as u64))
                 .power(100.0)
                 .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap());
 
-            Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 10))
+            Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 11))
                 .build(&ui, self.octree_config.depth.as_mut().unwrap());
 
             if ui.button(im_str!("Regenerate Octree"), [0.0, 0.0]) {
