@@ -120,7 +120,7 @@ impl OctreeGuiSystem {
                 self.messages.push(Message::new(self.octree_optimizations.clone()));
             }
 
-            if Slider::new(im_str!("Depth Culling Threshold"), RangeInclusive::new(0.0001, 0.001))
+            if Slider::new(im_str!("Depth Culling Threshold"), RangeInclusive::new(0.00001, 0.001))
                 .build(&ui, &mut self.octree_optimizations.depth_threshold) {
                 self.messages.push(Message::new(self.octree_optimizations.clone()));
             }
