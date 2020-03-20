@@ -65,11 +65,17 @@ pub trait System {
     fn consume_messages(&mut self, _: &Vec<Message>) {}
     fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, _delta_time: Duration) {}
     fn get_messages(&mut self) -> Vec<Message> { vec![] }
+
+    fn get_name(&self) -> &str {
+        std::any::type_name::<Self>()
+    }
 }
 
 pub struct SystemManager {
     pub systems: HashMap<TypeId, Arc<Mutex<dyn System>>>,
     pub filter: HashMap<TypeId, Vec<Arc<Mutex<Filter>>>>,
+
+    system_names: HashMap<TypeId, String>,
 }
 
 impl SystemManager {
@@ -77,18 +83,28 @@ impl SystemManager {
         SystemManager {
             systems: HashMap::new(),
             filter: HashMap::new(),
+
+            system_names: HashMap::new(),
         }
     }
 
-    pub fn add_system<T: 'static + System>(&mut self, sys: Arc<Mutex<T>>)
+    pub fn add_system_with_name<T: 'static + System>(&mut self, name: String, sys: &Arc<Mutex<T>>)
         where T: 'static + System {
+
         self.filter.insert(TypeId::of::<T>(), sys.lock().unwrap()
             .get_filter()
             .iter()
             .map(|f| Arc::new(Mutex::new(f.clone())))
             .collect());
 
-        self.systems.insert(TypeId::of::<T>(), sys);
+        let id = TypeId::of::<T>();
+
+        self.system_names.insert(id, name);
+        self.systems.insert(TypeId::of::<T>(), sys.clone());
+    }
+
+    pub fn get_system_name(&self, typeid: &TypeId) -> &str {
+        self.system_names.get(typeid).expect("Requesting name of unknown system").as_str()
     }
 
     pub fn get_filter(&self, typeid: &TypeId) -> Option<&Vec<Arc<Mutex<Filter>>>> {

@@ -13,9 +13,9 @@ mod renderer;
 mod mesh;
 mod camera;
 mod octree;
-mod nse_gui;
 mod aabb;
 
+pub mod nse_gui;
 pub mod utility;
 pub mod render_passes;
 pub mod images;

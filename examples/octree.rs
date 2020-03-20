@@ -20,10 +20,10 @@ fn main() {
     let octree_sys = OctreeSystem::new(render_system.clone());
     let octree_gui_system = OctreeGuiSystem::new(&engine, render_system.clone());
 
-    engine.add_system(render_system.clone());
-    engine.add_system(fps_camera_system.clone());
-    engine.add_system(octree_sys.clone());
-    engine.add_system(octree_gui_system.clone());
+    engine.add_system_with_name("Render System", &render_system);
+    engine.add_system_with_name("Camera System", &fps_camera_system);
+    engine.add_system_with_name("Octree System", &octree_sys);
+    engine.add_system_with_name("GUI System", &octree_gui_system);
 
     // add camera
     let camera = Entity::new();
