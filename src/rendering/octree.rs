@@ -372,7 +372,7 @@ impl Default for OctreeOptimizations {
     fn default() -> Self {
         OctreeOptimizations {
             frustum_culling: true,
-            depth_threshold: -1.0,
+            depth_threshold: 0.0003,
             ignore_full: false,
             ignore_inner: false,
             depth_culling: true,
