@@ -488,6 +488,7 @@ impl System for OctreeSystem {
                 if self.optimizations.frustum_culling {
                     filter_fnc.push(&cull_frustum); // TODO Fix broken culling at near plane
                 }
+                filter_fnc.push(&cull_depth);
                 filter_fnc.push(&generate_leaf_model_matrix);
 
                 let optimization_data = OptimizationData {
@@ -576,6 +577,22 @@ fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bo
     } else {
         false
     }
+}
+
+fn cull_depth(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+    if node.is_some() {
+        let node = node.as_ref().unwrap();
+        let corner_first = node.position - (node.scale / 2_f32);
+        let corner_second = node.position + (node.scale / 2_f32);
+        let proj_matrix = optimization_data.camera.projection;
+
+        let test = (proj_matrix * corner_first.extend(0_f32)) - (proj_matrix * corner_second.extend(0_f32));
+        if test[0].abs() < 0.02_f32 {
+            return false
+        }
+    }
+
+    true
 }
 
 fn generate_leaf_model_matrix(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
