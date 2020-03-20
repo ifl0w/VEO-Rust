@@ -22,6 +22,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use crate::core::{EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
+use crate::rendering::nse_gui::octree_gui::{ProfilingData};
 
 //use winit::{Event, EventsLoop, WindowEvent};
 
@@ -67,6 +68,8 @@ impl NSE {
         let message_manager = self.message_manager.clone();
         let delta_time = self.delta_time.clone();
 
+        let mut profiling_data = ProfilingData::default();
+
         self.event_loop.run(move |event, _, control_flow| {
             let system_manager_lock = system_manager.lock().unwrap();
 
@@ -96,13 +99,26 @@ impl NSE {
                     let sys_iterator = system_manager_lock.systems.iter();
                     let mut msgs: Vec<Message> = vec![];
 
-                    for (typeid, sys) in sys_iterator {
-                        let filter = system_manager_lock.get_filter(&typeid).unwrap();
+                    let mut sys_times = Vec::with_capacity(sys_iterator.len());
+
+                    for (system_id, sys) in sys_iterator {
+                        let filter = system_manager_lock.get_filter(&system_id).unwrap();
+
+                        // everything of the system should be run here
+                        let system_start = Instant::now();
 
                         sys.lock().unwrap().consume_messages(&v);
                         sys.lock().unwrap().execute(filter, *delta_time.lock().unwrap());
                         msgs.append(&mut sys.lock().unwrap().get_messages());
+
+                        // system has completed execution
+                        let system_end = Instant::now();
+                        sys_times.push((system_manager_lock.get_system_name(system_id).into(), system_end - system_start));
                     }
+
+                    // store profiling data
+                    profiling_data.system_times = Some(sys_times);
+                    msgs.push(Message::new(profiling_data.clone()));
 
                     for msg in msgs.iter() {
                         let result = message_manager.lock().unwrap().sender.send(msg.clone());
@@ -112,18 +128,21 @@ impl NSE {
                     let frame_end = Instant::now();
 
                     *delta_time.lock().unwrap() = frame_end - frame_start
-//                    println!("Frame time: {} ", (frame_end - frame_start).as_millis());
                 }
                 _ => (),
             }
         });
     }
 
-    pub fn add_system<T: 'static + System>(&mut self, sys: Arc<Mutex<T>>) {
+    pub fn add_system<T: 'static + System>(&mut self, sys: &Arc<Mutex<T>>) {
+        self.add_system_with_name(std::any::type_name::<T>(), sys)
+    }
+
+    pub fn add_system_with_name<T: 'static + System>(&mut self, name: &str, sys: &Arc<Mutex<T>>) {
         let typeid = TypeId::of::<T>();
         let mut system_manager_lock = self.system_manager.lock().unwrap();
 
-        system_manager_lock.add_system(sys);
+        system_manager_lock.add_system_with_name(name.into(), sys);
 
         let entities = &self.entity_manager.lock().unwrap().entities.values().cloned().collect();
         let filter = system_manager_lock.get_filter(&typeid).unwrap();

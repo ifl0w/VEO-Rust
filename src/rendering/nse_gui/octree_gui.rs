@@ -153,6 +153,13 @@ impl OctreeGuiSystem {
                 .overlay_text(&im_str!("{} ms", delta_time.as_millis()))
                 .build();
 
+            // print times of seperate systems
+            if self.profiling_data.system_times.is_some() {
+                for (system_name, system_time) in self.profiling_data.system_times.as_ref().unwrap() {
+                    ui.text(im_str!("{}: {}", system_name, system_time.as_millis()));
+                }
+            }
+
             ui.separator();
 
             ui.text(im_str!("Rendered Nodes: {}", rendered_nodes));
@@ -249,19 +256,7 @@ impl System for OctreeGuiSystem {
         for m in messages {
             if m.is_type::<ProfilingData>() {
                 let data = m.get_payload::<ProfilingData>().unwrap();
-
-                match data.rendered_nodes {
-                    Some(v) => self.profiling_data.rendered_nodes.replace(v),
-                    None => None
-                };
-                match data.render_time {
-                    Some(v) => self.profiling_data.render_time.replace(v),
-                    None => None
-                };
-                match data.instance_data_generation {
-                    Some(v) => self.profiling_data.instance_data_generation.replace(v),
-                    None => None
-                };
+                self.profiling_data.replace(data);
             }
         }
     }
@@ -339,6 +334,24 @@ pub struct ProfilingData {
     pub rendered_nodes: Option<u32>,
     pub instance_data_generation: Option<u64>,
     pub render_time: Option<u64>, // in nano seconds
+    pub system_times: Option<Vec<(String, Duration)>>
+}
+
+impl ProfilingData {
+    pub fn replace(&mut self, other: &Self) {
+        Self::replace_option(&mut self.rendered_nodes, &other.rendered_nodes);
+        Self::replace_option(&mut self.instance_data_generation, &other.instance_data_generation);
+        Self::replace_option(&mut self.render_time, &other.render_time);
+        Self::replace_option(&mut self.system_times, &other.system_times);
+    }
+
+    fn replace_option<T>(target: &mut Option<T>, source: &Option<T>)
+        where T: Clone {
+        match source {
+            Some(val) => target.replace(val.clone()),
+            None => None
+        };
+    }
 }
 
 impl Payload for ProfilingData {}
