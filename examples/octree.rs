@@ -28,7 +28,7 @@ fn main() {
     // add camera
     let camera = Entity::new();
     camera.lock().unwrap()
-        .add_component(Camera::new(0.1, 1000.0, 90.0, [1024.0, 768.0]))
+        .add_component(Camera::new(0.001, 1000.0, 90.0, [1024.0, 768.0]))
         .add_component(Transformation::new()
             .position(vec3(0.0, 30.0, 50.0))
             .rotation(Quaternion::from(Euler::new(Deg(-15.0), Deg(0.0), Deg(0.0))))
