@@ -403,7 +403,7 @@ impl OctreeSystem {
         }
 
         // add model matrices
-        let include = filter_functions.iter().all(|fnc| {
+        let include = filter_functions.iter().any(|fnc| {
             fnc(optimization_data, node)
         });
 
@@ -482,18 +482,23 @@ impl System for OctreeSystem {
 
                 // filter config
                 let mut traversal_fnc: Vec<&TraversalFunction> = Vec::new();
-                traversal_fnc.push(&continue_to_leaf);
+//                traversal_fnc.push(&continue_to_leaf);
+                traversal_fnc.push(&cull_depth);
+                if self.optimizations.frustum_culling {
+//                    traversal_fnc.push(&cull_frustum); // TODO Fix broken culling at near plane
+                }
 
                 let mut filter_fnc: Vec<&FilterFunction> = Vec::new();
-                if self.optimizations.frustum_culling {
-                    filter_fnc.push(&cull_frustum); // TODO Fix broken culling at near plane
-                }
-                filter_fnc.push(&cull_depth);
+                filter_fnc.push(&tmp);
                 filter_fnc.push(&generate_leaf_model_matrix);
 
                 let optimization_data = OptimizationData {
                     camera: &camera,
                     camera_transform: &camera_transform,
+                    octree_mvp:
+                        camera.projection
+                            * Matrix4::inverse_transform(&camera_transform.get_model_matrix()).unwrap()
+                            * octree_transform.get_model_matrix(),
                     frustum: camera.frustum
                         .transformed(
                             // TODO: investigate whether this space transformation is the a good approach for frustum culling
@@ -558,6 +563,7 @@ type TraversalFunction = dyn Fn(&OptimizationData, &Option<Node>) -> bool;
 struct OptimizationData<'a> {
     camera: &'a Camera,
     camera_transform: &'a Transformation,
+    octree_mvp: Matrix4<f32>,
     frustum: Frustum,
 }
 
@@ -579,20 +585,30 @@ fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bo
     }
 }
 
+fn tmp(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+    !cull_depth(optimization_data, node)
+}
+
+
 fn cull_depth(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() {
         let node = node.as_ref().unwrap();
         let corner_first = node.position - (node.scale / 2_f32);
         let corner_second = node.position + (node.scale / 2_f32);
-        let proj_matrix = optimization_data.camera.projection;
+        let proj_matrix = optimization_data.octree_mvp;
 
         let test = (proj_matrix * corner_first.extend(0_f32)) - (proj_matrix * corner_second.extend(0_f32));
-        if test[0].abs() < 0.02_f32 {
-            return false
+
+        let tmp = proj_matrix * node.position.extend(1.0);
+        let bla = (node.scale.x / tmp.w);
+        if bla < 0.0003 && bla > 0.0 {
+            return false;
+        } else {
+            return true;
         }
     }
 
-    true
+    false
 }
 
 fn generate_leaf_model_matrix(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
