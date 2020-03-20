@@ -18,18 +18,24 @@ fn main() {
 
     fps_camera_system.lock().unwrap().set_mouse_speed(2.0);
 
-    let mut f = Frustum::new(Rad::from(Deg(90.0f32)), Rad::from(Deg(90.0f32)), 1.0, 10.0);
+//    let aspect = 1024.0 / 768.0;
+//
+//    let fov_y = Rad::from(Deg(90.0 / aspect));
+//    let fov_x = Rad::from(Deg(90.0));
+//
+//    let mut f = Frustum::new(fov_x, fov_y, 1.0, 10.0)
+//        .transformed(Matrix4::identity()); //Matrix4::from_translation(vec3(10.0,10.0,10.0)));
+//
+//    let mut aabb = AABB::new(vec3(-1.0,-10.0, -6.0), vec3(1.0,-5.0, -2.0));
+//    aabb.update_debug_mesh(&render_system);
+//    f.update_debug_mesh(&render_system);
+//
+//    let intersect = f.intersect(&aabb);
+//
+//    println!("intersect: {}", intersect);
 
-    f = f.transformed(Matrix4::from_translation(vec3(10.0,10.0,10.0)));//Matrix4::from_angle_y(Deg(45.0)));
-
-    let mut aabb = AABB::new(vec3(-1.0,-1.0, -6.0), vec3(1.0,1.0, -3.0));
-    aabb.update_debug_mesh(&render_system);
-    f.update_debug_mesh(&render_system);
-
-    let intersect = f.transformed(Matrix4::identity()).intersect(&aabb);
-
-    engine.add_system(render_system.clone());
-    engine.add_system(fps_camera_system.clone());
+    engine.add_system(&render_system);
+    engine.add_system(&fps_camera_system);
 
     let mut entity = Entity::new();
     entity.lock().unwrap()

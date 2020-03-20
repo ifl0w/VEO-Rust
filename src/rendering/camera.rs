@@ -48,10 +48,10 @@ impl Camera {
         let aspect = resolution[0] as f32 / resolution[1] as f32;
 
         let fov_y = Rad::from(Deg(fov / aspect));
-        let fov_x = Rad::from(Deg(fov * aspect));
+        let fov_x = Rad::from(Deg(fov));
 
         let proj = cgmath::perspective(
-            Rad::from(Deg(fov / aspect)),
+            fov_y,
             aspect,
             near,
             far,
@@ -190,6 +190,7 @@ pub struct Frustum {
     near_dimensions: Vector2<f32>,
     far_dimensions: Vector2<f32>,
 
+    transform: Matrix4<f32>,
     pub debug_mesh: Option<(MeshID, Arc<GPUMesh<Backend::Backend>>)>,
 }
 
@@ -213,6 +214,7 @@ impl Frustum {
                 x: far_distance * (fov_x.0 / 2.0).tan(),
                 y: far_distance * (fov_y.0 / 2.0).tan(),
             },
+            transform: Matrix4::identity(),
             debug_mesh: None,
         };
 
@@ -248,6 +250,7 @@ impl Frustum {
 
     pub fn transformed(&self, camera_transform: Matrix4<f32>) -> Frustum {
         let mut new = Frustum::new(self.fov_x, self.fov_y, self.near_distance, self.far_distance);
+        new.transform = camera_transform;
 
         // base axis of camera space
         let x: Vector3<f32> = (camera_transform * cgmath::vec4(1.0, 0.0, 0.0, 0.0)).normalize().truncate();
@@ -303,26 +306,24 @@ impl MeshGenerator for Frustum {
         let yn = self.near_distance * tanHalfVerticalFOV;
         let yf = self.far_distance * tanHalfVerticalFOV;
 
-//        vec4(-xn, yn, -self.near_distance, 1.0),
-//        vec4(xn, yn, -self.near_distance, 1.0),
-//        vec4(-xn, -yn, -self.near_distance, 1.0),
-//        vec4(xn, -yn, -self.near_distance, 1.0),
-
-        // far face (ftl, ftr, fbl, fbr)
-//        vec4(-xf, yf, -self.far_distance, 1.0),
-//        vec4(xf, yf, -self.far_distance, 1.0),
-//        vec4(-xf, -yf, -self.far_distance, 1.0),
-//        vec4(xf, -yf, -self.far_distance, 1.0)
+        let v1 = self.transform * vec3(-xf, -yf, -self.far_distance).extend(1.0);
+        let v2 = self.transform * vec3(-xn, -yn, -self.near_distance).extend(1.0);
+        let v3 = self.transform * vec3(-xf, yf, -self.far_distance).extend(1.0);
+        let v4 = self.transform * vec3(-xn, yn, -self.near_distance).extend(1.0);
+        let v5 = self.transform * vec3(xf, -yf, -self.far_distance).extend(1.0);
+        let v6 = self.transform * vec3(xf, yf, -self.far_distance).extend(1.0);
+        let v7 = self.transform * vec3(xn, -yn, -self.near_distance).extend(1.0);
+        let v8 = self.transform * vec3(xn, yn, -self.near_distance).extend(1.0);
 
         vec![
-            Vertex::new([-xf, -yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-            Vertex::new([-xn, -yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-            Vertex::new([-xf, yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-            Vertex::new([-xn, yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-            Vertex::new([xf, -yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-            Vertex::new([xf, yf, -self.far_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-            Vertex::new([xn, -yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-            Vertex::new([xn, yn, -self.near_distance], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v1.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v2.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v3.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v4.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v5.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v6.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v7.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            Vertex::new(v8.truncate().into(), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
         ]
     }
 

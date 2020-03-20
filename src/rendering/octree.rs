@@ -104,7 +104,7 @@ impl OctreeConfig {
     }
 }
 
-impl Payload for OctreeConfig { }
+impl Payload for OctreeConfig {}
 
 #[derive(Default, Clone)]
 pub struct OctreeInfo {
@@ -297,11 +297,12 @@ pub struct Node {
 
 impl Node {
     pub fn new() -> Self {
+        let scale = vec3(1.0, 1.0, 1.0);
         let mut tmp = Node {
             children: vec![],
             position: vec3(0.0, 0.0, 0.0),
-            scale: vec3(1.0, 1.0, 1.0),
-            aabb: AABB::new(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0)),
+            scale,
+            aabb: AABB::new(-scale/2.0, scale/2.0),
         };
 
         tmp.children.resize(8, None);
@@ -485,7 +486,7 @@ impl System for OctreeSystem {
                 // filter config
                 let mut traversal_fnc: Vec<&TraversalFunction> = Vec::new();
                 if self.optimizations.frustum_culling {
-//                    traversal_fnc.push(&cull_frustum); // TODO Fix broken culling at near plane
+                    traversal_fnc.push(&cull_frustum); // TODO Fix broken culling at near plane
                 }
 
                 let mut filter_fnc: Vec<&FilterFunction> = Vec::new();

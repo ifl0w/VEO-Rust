@@ -332,6 +332,9 @@ impl<B: Backend> ForwardRenderPass<B> {
         for (_, transforms) in self.meshes.iter_mut() {
             transforms.clear();
         }
+        for (_, transforms) in self.meshes_wireframe.iter_mut() {
+            transforms.clear();
+        }
         for (_, ranges) in self.instanced_meshes.iter_mut() {
             ranges.clear();
         }
@@ -709,7 +712,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                     }
                 }
 
-                if !self.meshes.is_empty() {
+                if !self.meshes_wireframe.is_empty() {
                     command_buffer.bind_graphics_pipeline(&self.forward_wireframe_pipeline.get_pipeline(false));
                     command_buffer.bind_graphics_descriptor_sets(
                         &self.forward_wireframe_pipeline.get_layout(false),
