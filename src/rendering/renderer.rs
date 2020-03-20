@@ -370,30 +370,7 @@ impl<B> Renderer<B>
 
         // Define maximum number of frames we want to be able to be "in flight" (being computed
         // simultaneously) at once
-        let frames_in_flight: usize = 2;
-
-        let mut caps = surface.capabilities(&adapter.physical_device);
-//        caps.image_count = RangeInclusive::new(frames_in_flight as u32, *caps.image_count.end()); // TODO Delete line when framebuffer is implemented correctly
-
-        let formats = surface.supported_formats(&adapter.physical_device);
-        println!("formats: {:?}", formats);
-        let format = formats.map_or(f::Format::Rgba8Srgb, |formats| {
-            formats
-                .iter()
-                .find(|format| format.base_format().1 == ChannelType::Srgb)
-                .map(|format| *format)
-                .unwrap_or(formats[0])
-        });
-
-        let mut swap_config = window::SwapchainConfig::from_caps(&caps, format, WINDOW_DIMENSIONS)
-            .with_present_mode(gfx_hal::window::PresentMode::IMMEDIATE);
-        println!("{:?}", swap_config);
-        let extent = swap_config.extent;
-//        unsafe {
-//            surface
-//                .configure_swapchain(&device, swap_config)
-//                .expect("Can't configure swapchain");
-//        };
+        let frames_in_flight: usize = 3;
 
         let swapchain = unsafe {
             SwapchainWrapper::new(&device, &adapter, &mut surface, WINDOW_DIMENSIONS)
@@ -440,8 +417,8 @@ impl<B> Renderer<B>
             rect: pso::Rect {
                 x: 0,
                 y: 0,
-                w: extent.width as _,
-                h: extent.height as _,
+                w: swapchain.extent.width as _,
+                h: swapchain.extent.height as _,
             },
             depth: 0.0..1.0,
         };
@@ -455,7 +432,7 @@ impl<B> Renderer<B>
             queue_group,
             surface: ManuallyDrop::new(surface),
             adapter,
-            format,
+            format: swapchain.format,
             dimensions: WINDOW_DIMENSIONS,
             viewport,
             submission_complete_semaphores,
