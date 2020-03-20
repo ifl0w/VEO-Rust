@@ -146,14 +146,14 @@ void main() {
     sun.direction = vec3(1.0, -0.5, -0.8);
 
     Material defaultMat;
-    defaultMat.albedo = clamp(abs(fragNormal) + vec3(0.5), vec3(0), vec3(1)) * 0.75;
+    defaultMat.albedo = clamp(abs(fragNormal) * 0.75, vec3(0), vec3(1));
     defaultMat.metallic = 0;
     defaultMat.roughness = 0.6;
 
     vec3 shadedColor = evaluateLight(sun, defaultMat, fragPosition, normalize(fragNormal));
     vec3 ambient_corrected_color = (shadedColor + ambient_light * defaultMat.albedo).xyz;
-    vec3 gamma_corrected_color = pow(ambient_corrected_color, vec3(2.2));
+//    vec3 gamma_corrected_color = pow(ambient_corrected_color, vec3(2.2));
 
-    outColor = vec4(gamma_corrected_color, 1.0);
+    outColor = vec4(ambient_corrected_color, 1.0);
     //outColor = vec4(fragColor, 1.0);
 }
