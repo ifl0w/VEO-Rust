@@ -137,6 +137,31 @@ vec3 evaluateLight(Light light, Material mat, vec3 position, vec3 normal) {
     return color;
 }
 
+vec3 applyFog(
+vec3 rgb, // original color of the pixel
+float distance, // camera to point distance
+vec3 rayDir, // camera to point vector
+vec3 sunDir)// sun light direction
+{
+    float falloff = 0.1;
+    float globalDensity = 1;
+    float cameraElevation = camera_ubo.position.y;
+
+    float c = globalDensity/falloff;
+    float fogAmount = exp(-cameraElevation * falloff) * (1.0-exp(-distance * rayDir.y * falloff)) / rayDir.y;
+
+    float sunAmount = max(dot(rayDir, sunDir)/2, 0.0);
+    vec3  fogColor  = mix(
+        vec3(0.5, 0.6, 0.7), // bluish
+        vec3(1.0, 0.9, 0.7), // yellowish
+        sunAmount
+    );
+
+    float fac = max(dot(rayDir, normalize(vec3(rayDir.x, 0, rayDir.z))) / 4, 0.0);
+    fac = pow(fac, 2.0);
+    return mix(rgb, fogColor, clamp(fogAmount * fac, 0, 0.5));
+}
+
 void main() {
     vec3 ambient_light = vec3(0.33, 0.33, 0.45);
 
@@ -152,8 +177,11 @@ void main() {
 
     vec3 shadedColor = evaluateLight(sun, defaultMat, fragPosition, normalize(fragNormal));
     vec3 ambient_corrected_color = (shadedColor + ambient_light * defaultMat.albedo).xyz;
-//    vec3 gamma_corrected_color = pow(ambient_corrected_color, vec3(2.2));
 
-    outColor = vec4(ambient_corrected_color, 1.0);
+    vec3 cam_to_frag = fragPosition.xyz - camera_ubo.position.xyz;
+    vec3 fog_added_color = applyFog(ambient_corrected_color, length(cam_to_frag), normalize(cam_to_frag), -sun.direction);
+    //    vec3 gamma_corrected_color = pow(ambient_corrected_color, vec3(2.2));
+
+    outColor = vec4(fog_added_color, 1.0);
     //outColor = vec4(fragColor, 1.0);
 }
