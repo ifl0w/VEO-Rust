@@ -30,9 +30,9 @@ use gfx_hal::buffer;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 use winit::event::Event;
 
-use crate::core::{Component, Filter, Message, System, Payload};
+use crate::core::{Component, Filter, Message, Payload, System};
 use crate::rendering::{AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
-use crate::rendering::nse_gui::octree_gui::{ProfilingData};
+use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use crate::rendering::utility::resources::BufferID;
 
 enum NodePosition {
@@ -111,8 +111,10 @@ pub struct OctreeInfo {
     pub render_count: usize,
     pub max_num_nodes: usize,
 
-    pub byte_size: usize, // Size of the data structure in RAM
-    pub max_byte_size: usize, // size of the data structure if filled completely in RAM
+    pub byte_size: usize,
+    // Size of the data structure in RAM
+    pub max_byte_size: usize,
+    // size of the data structure if filled completely in RAM
     pub gpu_byte_size: usize, // allocated storage on the GPU
 }
 
@@ -302,7 +304,7 @@ impl Node {
             children: vec![],
             position: vec3(0.0, 0.0, 0.0),
             scale,
-            aabb: AABB::new(-scale/2.0, scale/2.0),
+            aabb: AABB::new(-scale / 2.0, scale / 2.0),
         };
 
         tmp.children.resize(8, None);
@@ -373,7 +375,7 @@ impl Default for OctreeOptimizations {
     fn default() -> Self {
         OctreeOptimizations {
             frustum_culling: true,
-            depth_threshold: 0.0003,
+            depth_threshold: 50.0,
             ignore_full: false,
             ignore_inner: false,
             depth_culling: true,
@@ -381,7 +383,7 @@ impl Default for OctreeOptimizations {
     }
 }
 
-impl Payload for OctreeOptimizations { }
+impl Payload for OctreeOptimizations {}
 
 impl OctreeSystem {
     pub fn new(render_sys: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
@@ -493,17 +495,17 @@ impl System for OctreeSystem {
                 filter_fnc.push(&generate_leaf_model_matrix);
 
                 if self.optimizations.depth_culling {
-                    traversal_fnc.push(&cull_depth);
-                    filter_fnc.push(&cull_depth_traversal);
+                    traversal_fnc.push(&limit_depth_traversal);
+                    filter_fnc.push(&limit_depth_filter);
                 }
 
                 let optimization_data = OptimizationData {
                     camera: &camera,
                     camera_transform: &camera_transform,
                     octree_mvp:
-                        camera.projection
-                            * Matrix4::inverse_transform(&camera_transform.get_model_matrix()).unwrap()
-                            * octree_transform.get_model_matrix(),
+                    camera.projection
+                        * Matrix4::inverse_transform(&camera_transform.get_model_matrix()).unwrap()
+                        * octree_transform.get_model_matrix(),
                     frustum: camera.frustum
                         .transformed(
                             // TODO: investigate whether this space transformation is the a good approach for frustum culling
@@ -511,6 +513,7 @@ impl System for OctreeSystem {
                                 * camera_transform.get_model_matrix()
                         ),
                     depth_threshold: self.optimizations.depth_threshold,
+                    octree_scale: octree_transform.scale.x,
                 };
 
                 // building matrices
@@ -570,6 +573,7 @@ struct OptimizationData<'a> {
     camera: &'a Camera,
     camera_transform: &'a Transformation,
     octree_mvp: Matrix4<f32>,
+    octree_scale: f32,
     frustum: Frustum,
     depth_threshold: f64,
 }
@@ -592,20 +596,22 @@ fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bo
     }
 }
 
-fn cull_depth_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    !cull_depth(optimization_data, node)
+fn limit_depth_filter(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+    !limit_depth_traversal(optimization_data, node)
 }
 
 
-fn cull_depth(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() {
         let node = node.as_ref().unwrap();
         let proj_matrix = optimization_data.octree_mvp;
 
-
         let projected_position = proj_matrix * node.position.extend(1.0);
-        let projected_scale = (node.scale.x / projected_position.w);
-        if projected_scale < optimization_data.depth_threshold as f32 && projected_scale > 0.0 {
+        let mut projected_scale = (node.scale.x / projected_position.w);
+        projected_scale *= optimization_data.camera.resolution[0] / 2.0;
+
+        let target_size = optimization_data.depth_threshold as f32 / optimization_data.octree_scale;
+        if projected_scale < target_size as f32 && projected_scale > 0.0 {
             return false;
         } else {
             return true;

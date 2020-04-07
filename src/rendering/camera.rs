@@ -37,6 +37,7 @@ pub struct Camera {
     pub far: f32,
     pub fov: f32,
     pub projection: Matrix4<f32>,
+    pub resolution: [f32; 2],
 
     pub frustum: Frustum,
 }
@@ -62,6 +63,7 @@ impl Camera {
             far,
             fov,
             projection: proj,
+            resolution,
 
             frustum: Frustum::new(fov_x, fov_y, near, far),
         }
