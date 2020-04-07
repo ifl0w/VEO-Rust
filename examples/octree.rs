@@ -6,6 +6,7 @@ use nse::NSE;
 use nse::rendering::{Camera, Cube, Mesh, Octree, OctreeGuiSystem, OctreeSystem, RenderSystem, Transformation, Frustum, OctreeConfig};
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
+use crate::shared::benchmark_system::BenchmarkSystem;
 
 pub mod shared;
 
@@ -20,10 +21,13 @@ fn main() {
     let octree_sys = OctreeSystem::new(render_system.clone());
     let octree_gui_system = OctreeGuiSystem::new(&engine, render_system.clone());
 
+    let benchmark_system = BenchmarkSystem::new();
+
     engine.add_system_with_name("Camera System", &fps_camera_system);
     engine.add_system_with_name("GUI System", &octree_gui_system);
     engine.add_system_with_name("Octree System", &octree_sys);
     engine.add_system_with_name("Render System", &render_system);
+    engine.add_system_with_name("Benchmark System", &benchmark_system);
 
     // add camera
     let camera = Entity::new();
