@@ -266,6 +266,14 @@ impl System for OctreeGuiSystem {
                 let data = m.get_payload::<ProfilingData>().unwrap();
                 self.profiling_data.replace(data);
             }
+            if m.is_type::<OctreeOptimizations>() {
+                let data = m.get_payload::<OctreeOptimizations>().unwrap();
+                self.octree_optimizations = data.clone();
+            }
+            if m.is_type::<OctreeConfig>() {
+                let data = m.get_payload::<OctreeConfig>().unwrap();
+                self.octree_config.merge(data);
+            }
         }
     }
 

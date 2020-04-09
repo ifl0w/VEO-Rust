@@ -4,3 +4,6 @@ Cargo.lock
 
 # IDE
 .idea
+
+# stuff
+benchmark_results

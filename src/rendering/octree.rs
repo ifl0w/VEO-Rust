@@ -23,7 +23,7 @@ use std::convert::{TryFrom, TryInto};
 use std::f32::consts::PI;
 use std::iter;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cgmath::{Matrix4, Transform, vec3, Vector3, Vector4};
 use gfx_hal::buffer;
@@ -69,9 +69,8 @@ pub struct Octree {
     pub root: Arc<Mutex<Option<Node>>>,
 
     pub instance_data_buffer: Vec<Arc<Mutex<GPUBuffer<Backend::Backend>>>>,
-    /// indirect reference to the GPU buffers
-    pub active_instance_buffer_idx: Option<usize>,
     /// points into the instance_data_buffer vec
+    pub active_instance_buffer_idx: Option<usize>,
 
     pub config: OctreeConfig,
     pub info: OctreeInfo,
@@ -374,11 +373,11 @@ pub struct OctreeOptimizations {
 impl Default for OctreeOptimizations {
     fn default() -> Self {
         OctreeOptimizations {
-            frustum_culling: true,
+            frustum_culling: false,
             depth_threshold: 50.0,
             ignore_full: false,
             ignore_inner: false,
-            depth_culling: true,
+            depth_culling: false,
         }
     }
 }
@@ -519,6 +518,8 @@ impl System for OctreeSystem {
                 // building matrices
                 let mut model_matrices = Vec::with_capacity(octree.info.render_count);
 
+                let instance_data_start = Instant::now();
+
                 OctreeSystem::generate_instance_data(
                     &optimization_data,
                     &mut root,
@@ -531,15 +532,23 @@ impl System for OctreeSystem {
                 let rm = self.render_sys.lock().unwrap().resource_manager.clone();
                 let mut rm_lock = rm.lock().unwrap();
 
-                let buffer = &octree.instance_data_buffer[0]; // TODO select correct idx
+                let buffer_idx = octree.active_instance_buffer_idx.unwrap_or(0);
+                let buffer = &octree.instance_data_buffer[buffer_idx];
                 let mut gpu_buffer_lock = buffer.lock().unwrap();
 
                 gpu_buffer_lock.replace_data(
                     &model_matrices[0..
                         model_matrices.len().min(octree
                             .config.max_rendered_nodes.unwrap_or(1e3 as u64) as usize)]);
-                octree.active_instance_buffer_idx = Some(0);
+                octree.active_instance_buffer_idx = Some((buffer_idx + 1) % (octree.instance_data_buffer.len() - 1));
                 octree.info.render_count = model_matrices.len();
+
+                let instance_data_end = Instant::now();
+                let instance_data_duration = instance_data_end - instance_data_start;
+                self.messages.push(Message::new(ProfilingData {
+                    instance_data_generation: Some(instance_data_duration.as_millis() as u64),
+                    .. Default::default()
+                }));
 
                 self.messages.push(Message::new(
                     ProfilingData {
@@ -611,7 +620,7 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Option<Nod
         projected_scale *= optimization_data.camera.resolution[0] / 2.0;
 
         let target_size = optimization_data.depth_threshold as f32 / optimization_data.octree_scale;
-        if projected_scale < target_size as f32 && projected_scale > 0.0 {
+        if projected_scale.abs() < target_size as f32 {
             return false;
         } else {
             return true;

@@ -28,7 +28,7 @@ pub struct SwapchainWrapper<B: Backend, D: Device<B>> {
     pub extent: Extent,
     pub format: Format,
 
-    phantomData: std::marker::PhantomData<D>,
+    phantom_data: std::marker::PhantomData<D>,
 }
 
 impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
@@ -77,7 +77,7 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
             extent,
             format,
 
-            phantomData: PhantomData,
+            phantom_data: PhantomData,
         };
         swapchain
     }

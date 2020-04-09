@@ -171,7 +171,7 @@ void main() {
     sun.direction = vec3(1.0, -0.5, -0.8);
 
     Material defaultMat;
-    defaultMat.albedo = clamp(abs(fragNormal) * 0.75, vec3(0), vec3(1));
+    defaultMat.albedo = vec3(0.1, 0.1, 0.2);// clamp(abs(fragNormal) * 0.75, vec3(0), vec3(1));
     defaultMat.metallic = 0;
     defaultMat.roughness = 0.6;
 
