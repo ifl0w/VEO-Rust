@@ -26,7 +26,20 @@ impl ShaderCode {
         }).load_file(path)
     }
 
-    pub fn load_file(mut self, path: &str) -> Self {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        let mut sc = ShaderCode {
+            contents: String::new(),
+            path: String::new(),
+
+            binary_code: Vec::new(),
+            assembly_code: String::new(),
+        };
+        sc.contents = unsafe { String::from_utf8_unchecked(bytes) };
+
+        sc
+    }
+
+    fn load_file(mut self, path: &str) -> Self {
         let file = File::open(path).expect(format!("Failed to open file ({}).", path).as_str());
         let mut buf_reader = BufReader::new(file);
         let mut contents = String::new();
