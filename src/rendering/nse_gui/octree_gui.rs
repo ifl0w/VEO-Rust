@@ -109,10 +109,12 @@ impl OctreeGuiSystem {
     }
 
     fn display_octree_ui(&mut self, ui: &Ui, config: &OctreeConfig, info: &OctreeInfo) {
-        if ui
-            .collapsing_header(im_str!("Settings"))
+
+
+
+        if CollapsingHeader::new(im_str!("Settings"))
             .default_open(true)
-            .build()
+            .build(&ui)
         {
             ui.text(format!(
                 "RAM Allocation: {:.2} MB",
@@ -145,10 +147,8 @@ impl OctreeGuiSystem {
                     .push(Message::new(self.octree_optimizations.clone()));
             }
 
-            if Slider::new(
-                im_str!("Depth Culling Threshold (px)"),
-                RangeInclusive::new(1.0, 100.0),
-            )
+            if Slider::new(im_str!("Depth Culling Threshold (px)"))
+                .range(RangeInclusive::new(1.0, 100.0))
                 .build(&ui, &mut self.octree_optimizations.depth_threshold)
             {
                 self.messages
@@ -157,14 +157,12 @@ impl OctreeGuiSystem {
 
             ui.separator();
 
-            Slider::new(
-                im_str!("Max. Rendered Nodes"),
-                RangeInclusive::new(1e3 as u64, 5e6 as u64),
-            )
-                .power(100.0)
+            Slider::new(im_str!("Max. Rendered Nodes"))
+                .range(RangeInclusive::new(1e3 as u64, 5e6 as u64))
                 .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap());
 
-            Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 11))
+            Slider::new(im_str!("Octree Depth"))
+                .range(RangeInclusive::new(2, 11))
                 .build(&ui, self.octree_config.depth.as_mut().unwrap());
 
             if ui.button(im_str!("Regenerate Octree"), [0.0, 0.0]) {
@@ -187,10 +185,9 @@ impl OctreeGuiSystem {
 
         let f_times: Vec<f32> = frame_times.iter().cloned().collect();
 
-        if ui
-            .collapsing_header(im_str!("Profiling"))
+        if CollapsingHeader::new(im_str!("Profiling"))
             .default_open(true)
-            .build()
+            .build(&ui)
         {
             // Plot Frame Times
             ui.plot_lines(im_str!("Frame Times"), &f_times[..])
@@ -214,7 +211,7 @@ impl OctreeGuiSystem {
 
             ui.separator();
 
-            let mouse_pos = ui.io().mouse_pos;
+            let mouse_pos = &ui.io().mouse_pos;
             ui.text(format!(
                 "Mouse Position: ({:.1},{:.1})",
                 mouse_pos[0], mouse_pos[1]
@@ -223,10 +220,9 @@ impl OctreeGuiSystem {
     }
 
     fn display_camera_ui(&mut self, ui: &Ui, _camera: &Camera, camera_transform: &Transformation) {
-        if ui
-            .collapsing_header(im_str!("Camera"))
+        if CollapsingHeader::new(im_str!("Camera"))
             .default_open(true)
-            .build()
+            .build(&ui)
         {
             let view_dir = camera_transform.get_model_matrix() * (-Vector4::unit_z());
 
