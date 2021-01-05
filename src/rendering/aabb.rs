@@ -20,7 +20,6 @@ pub extern crate gfx_backend_vulkan as Backend;
 use std::fmt::{Debug, Error, Formatter};
 use std::sync::{Arc, Mutex};
 
-use cgmath::num_traits::Float;
 use cgmath::Vector3;
 
 use crate::core::Component;

@@ -54,8 +54,8 @@ fn main() {
         let e = Entity::new();
 
         {
-            let mut eRef = e.lock().unwrap();
-            eRef.name = String::from(format!("Entity {}", eRef.id));
+            let mut e_ref = e.lock().unwrap();
+            e_ref.name = String::from(format!("Entity {}", e_ref.id));
         }
 
         engine.add_entity(e);

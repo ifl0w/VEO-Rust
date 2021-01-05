@@ -120,7 +120,7 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
     }
 
     pub fn acquire_image(&self, frame_idx: usize) -> (SwapImageIndex, &B::Image) {
-        let mut image_index: SwapImageIndex = 0;
+        let image_index: SwapImageIndex;
 
         unsafe {
             let (idx, _) = self

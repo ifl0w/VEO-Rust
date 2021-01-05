@@ -4,16 +4,8 @@ use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex, Weak};
 
 use gfx_hal::{
-    buffer, command, format as f,
-    format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
-    image as i, IndexType, memory as m,
-    pass,
-    pass::Subpass,
-    pool,
+    IndexType,
     prelude::*,
-    pso,
-    pso::{PipelineStage, ShaderStageFlags, VertexInputRate},
-    queue::{QueueGroup, Submission}, window,
 };
 use gfx_hal::adapter::Adapter;
 use gfx_hal::adapter::PhysicalDevice;

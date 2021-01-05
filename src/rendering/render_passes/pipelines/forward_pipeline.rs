@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use gfx_hal::{
-    Backend, command, format, format::Format, image, IndexType, pass, pass::Attachment, pso,
+    Backend, format::Format, pso,
 };
 use gfx_hal::device::Device;
 use gfx_hal::pass::Subpass;
@@ -12,7 +12,6 @@ use gfx_hal::pso::{
     Comparison, DepthStencilDesc, DepthTest, FrontFace, PolygonMode,
     ShaderStageFlags, VertexInputRate,
 };
-use gfx_hal::queue::CommandQueue;
 
 use crate::rendering::{ENTRY_NAME, Pipeline, ShaderCode, Vertex};
 

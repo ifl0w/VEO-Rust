@@ -30,7 +30,6 @@ use std::time::Duration;
 use cgmath::{Matrix4, SquareMatrix};
 use gfx_hal::{Instance, pool, prelude::*, pso, queue::QueueGroup, window};
 use gfx_hal::adapter::Adapter;
-use gfx_hal::command::CommandBuffer;
 use gfx_hal::device::Device;
 use gfx_hal::window::{PresentationSurface, Surface};
 use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};

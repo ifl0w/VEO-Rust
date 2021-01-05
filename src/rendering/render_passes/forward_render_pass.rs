@@ -1,41 +1,37 @@
 use std::{iter, ptr};
 use std::collections::HashMap;
-use std::hash::Hasher;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, Range};
 use std::sync::{Arc, Mutex};
 
 use bytes::{Buf, Bytes};
-use cgmath::{Matrix, Matrix4, SquareMatrix};
+use cgmath::{Matrix4};
 use gfx_hal::{
-    Backend, command, format, format::Format, image, IndexType, memory, pass, pass::Attachment, pso,
+    Backend, command, format, format::Format, image, memory, pass, pso,
     query,
 };
 use gfx_hal::buffer::IndexBufferView;
-use gfx_hal::command::{
-    ClearColor, ClearDepthStencil, ClearValue, CommandBuffer, ImageBlit, ImageCopy, SubpassContents,
-};
+use gfx_hal::command::{ClearDepthStencil, CommandBuffer, ImageBlit};
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
-use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers, SubresourceRange};
+use gfx_hal::image::{Filter, Layout, Offset, SubresourceLayers, SubresourceRange};
 use gfx_hal::image::Usage;
 use gfx_hal::memory::Barrier;
 use gfx_hal::pass::{SubpassDependency, SubpassRef};
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{
-    Comparison, DepthTest, Descriptor, DescriptorPool, DescriptorPoolCreateFlags,
-    DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace,
-    ShaderStageFlags, VertexInputRate,
+    Descriptor, DescriptorPool, DescriptorPoolCreateFlags,
+    DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType,
+    ShaderStageFlags,
 };
 use gfx_hal::pso::State::Static;
 use gfx_hal::query::Query;
 use gfx_hal::queue::{CommandQueue, Submission};
-use gfx_hal::range::RangeArg;
 use gfx_hal::window::{Extent2D, Surface};
 
 use crate::rendering::{
-    CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass,
-    ResourceManager, ShaderCode, Uniform, Vertex,
+    CameraData, ForwardPipeline, GPUBuffer, InstanceData, MeshID, Pipeline, RenderPass,
+    ResourceManager, Uniform,
 };
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;

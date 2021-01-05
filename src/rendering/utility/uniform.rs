@@ -12,7 +12,7 @@ use crate::rendering::renderer::Renderer;
 
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,
-    adapter: Arc<Adapter<B>>,
+    // adapter: Arc<Adapter<B>>,
 
     buffer: ManuallyDrop<B::Buffer>,
     memory: ManuallyDrop<B::Memory>,
@@ -86,7 +86,7 @@ impl<B: Backend> GPUBuffer<B> {
 
         GPUBuffer {
             device: device.clone(),
-            adapter: adapter.clone(),
+            // adapter: adapter.clone(),
             buffer: ManuallyDrop::new(buffer),
             memory: ManuallyDrop::new(memory),
             element_count: 0,

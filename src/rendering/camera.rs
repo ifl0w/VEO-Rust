@@ -21,8 +21,6 @@ use cgmath::{
     Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, Vector2,
     Vector3, Vector4,
 };
-use cgmath::num_traits::Float;
-use cgmath::num_traits::real::Real;
 
 use crate::core::Component;
 use crate::rendering::{AABB, GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex};
