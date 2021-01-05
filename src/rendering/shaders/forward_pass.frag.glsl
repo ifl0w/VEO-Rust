@@ -152,9 +152,9 @@ vec3 sunDir)// sun light direction
 
     float sunAmount = max(dot(rayDir, sunDir)/2, 0.0);
     vec3  fogColor  = mix(
-        vec3(0.5, 0.6, 0.7), // bluish
-        vec3(1.0, 0.9, 0.7), // yellowish
-        sunAmount
+    vec3(0.5, 0.6, 0.7), // bluish
+    vec3(1.0, 0.9, 0.7), // yellowish
+    sunAmount
     );
 
     float fac = max(dot(rayDir, normalize(vec3(rayDir.x, 0, rayDir.z))) / 4, 0.0);

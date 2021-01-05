@@ -1,9 +1,9 @@
 #[cfg(not(any(
-    feature = "vulkan",
-    feature = "dx12",
-    feature = "metal",
-    feature = "gl",
-    feature = "wgl"
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
@@ -16,15 +16,15 @@ use std::f32::consts::PI;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cgmath::{vec3, Matrix4, Transform, Vector3};
+use cgmath::{Matrix4, Transform, vec3, Vector3};
 use gfx_hal::buffer;
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, Payload, System};
-use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use crate::rendering::{
-    Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation, AABB,
+    AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation,
 };
+use crate::rendering::nse_gui::octree_gui::ProfilingData;
 
 enum NodePosition {
     Flt = 0,

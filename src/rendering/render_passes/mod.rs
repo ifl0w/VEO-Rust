@@ -1,6 +1,6 @@
 use std::mem::ManuallyDrop;
 
-use gfx_hal::{Backend};
+use gfx_hal::Backend;
 
 pub use forward_render_pass::ForwardRenderPass;
 pub use forward_render_pass::PipelineOptions;

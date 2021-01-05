@@ -11,11 +11,11 @@ allow(dead_code, unused_extern_crates, unused_imports)
 )]
 
 #[cfg(not(any(
-    feature = "vulkan",
-    feature = "dx12",
-    feature = "metal",
-    feature = "gl",
-    feature = "wgl"
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
@@ -23,28 +23,28 @@ pub extern crate gfx_backend_gl as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
 
+use std::{mem::ManuallyDrop, ptr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{mem::ManuallyDrop, ptr};
 
 use cgmath::{Matrix4, SquareMatrix};
+use gfx_hal::{Instance, pool, prelude::*, pso, queue::QueueGroup, window};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::command::CommandBuffer;
 use gfx_hal::device::Device;
 use gfx_hal::window::{PresentationSurface, Surface};
-use gfx_hal::{pool, prelude::*, pso, queue::QueueGroup, window, Instance};
 use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
 use crate::core::{Exit, Filter, MainWindow, Message, System};
+use crate::NSE;
+use crate::rendering::{
+    AABB, Camera, CameraData, ForwardRenderPass, Frustum, Mesh, Octree, PipelineOptions,
+    RenderPass, SwapchainWrapper, Transformation,
+};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use crate::rendering::utility::ResourceManager;
-use crate::rendering::{
-    Camera, CameraData, ForwardRenderPass, Frustum, Mesh, Octree, PipelineOptions, RenderPass,
-    SwapchainWrapper, Transformation, AABB,
-};
-use crate::NSE;
 
 /* Constants */
 // Window
@@ -313,8 +313,8 @@ pub struct Renderer<B: gfx_hal::Backend> {
 }
 
 impl<B> Renderer<B>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     fn new(
         instance: Option<B::Instance>,
@@ -474,8 +474,8 @@ where
 }
 
 impl<B> Drop for Renderer<B>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     fn drop(&mut self) {
         self.device.wait_idle().unwrap();

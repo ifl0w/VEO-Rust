@@ -95,8 +95,8 @@ impl SystemManager {
     }
 
     pub fn add_system_with_name<T: 'static + System>(&mut self, name: String, sys: &Arc<Mutex<T>>)
-    where
-        T: 'static + System,
+        where
+            T: 'static + System,
     {
         self.filter.insert(
             TypeId::of::<T>(),

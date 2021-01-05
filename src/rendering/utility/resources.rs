@@ -1,33 +1,32 @@
+use std::{iter, mem, ptr};
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex, Weak};
-use std::{iter, mem, ptr};
 
-use gfx_hal::adapter::PhysicalDevice;
-use gfx_hal::adapter::{Adapter};
 use gfx_hal::{
     buffer, command, format as f,
     format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
-    image as i, memory as m, pass,
+    image as i, IndexType, memory as m,
+    pass,
     pass::Subpass,
     pool,
     prelude::*,
     pso,
     pso::{PipelineStage, ShaderStageFlags, VertexInputRate},
-    queue::{QueueGroup, Submission},
-    window, IndexType,
+    queue::{QueueGroup, Submission}, window,
 };
+use gfx_hal::adapter::Adapter;
+use gfx_hal::adapter::PhysicalDevice;
 
 use crate::rendering::renderer::Renderer;
 use crate::rendering::utility::{GPUBuffer, Index, Vertex};
-
 
 pub type MeshID = usize;
 pub type BufferID = usize;
 
 pub struct ResourceManager<B>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     pub(in crate::rendering) device: Arc<B::Device>,
     pub(in crate::rendering) adapter: Arc<Adapter<B>>,
@@ -41,8 +40,8 @@ where
 }
 
 impl<B> ResourceManager<B>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     pub fn new(renderer: &Renderer<B>) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(ResourceManager {
@@ -117,8 +116,8 @@ pub trait MeshGenerator {
 }
 
 pub struct GPUMesh<B>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     device: Arc<B::Device>,
 
@@ -133,8 +132,8 @@ where
 }
 
 impl<B> GPUMesh<B>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     pub fn new<T: MeshGenerator>(device: &Arc<B::Device>, adapter: &Arc<Adapter<B>>) -> Self {
         let vertices = T::get_vertices();
@@ -215,8 +214,8 @@ where
                 // memory type that has a `1` (or, is allowed), and is visible to the CPU.
                 buffer_req.type_mask & (1 << id as u64) != 0
                     && mem_type
-                        .properties
-                        .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
+                    .properties
+                    .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
             })
             .unwrap()
             .into();
@@ -275,8 +274,8 @@ where
                 // memory type that has a `1` (or, is allowed), and is visible to the CPU.
                 buffer_req.type_mask & (1 << id as u64) != 0
                     && mem_type
-                        .properties
-                        .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
+                    .properties
+                    .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
             })
             .unwrap()
             .into();
@@ -303,8 +302,8 @@ where
 }
 
 impl<B> Drop for GPUMesh<B>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     fn drop(&mut self) {
         unsafe {

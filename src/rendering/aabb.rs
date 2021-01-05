@@ -3,11 +3,11 @@ pub extern crate gfx_backend_dx11 as Backend;
 #[cfg(feature = "dx12")]
 pub extern crate gfx_backend_dx12 as Backend;
 #[cfg(not(any(
-    feature = "vulkan",
-    feature = "dx12",
-    feature = "metal",
-    feature = "gl",
-    feature = "wgl"
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
@@ -20,7 +20,7 @@ pub extern crate gfx_backend_vulkan as Backend;
 use std::fmt::{Debug, Error, Formatter};
 use std::sync::{Arc, Mutex};
 
-use cgmath::num_traits::{Float};
+use cgmath::num_traits::Float;
 use cgmath::Vector3;
 
 use crate::core::Component;

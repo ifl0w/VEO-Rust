@@ -1,10 +1,9 @@
-
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ptr;
-
 use std::sync::Arc;
 
+use gfx_hal::Backend;
 use gfx_hal::adapter::Adapter;
 use gfx_hal::device::Device;
 use gfx_hal::format::Format;
@@ -13,8 +12,7 @@ use gfx_hal::image::Usage;
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pool::CommandPoolCreateFlags;
 use gfx_hal::queue::QueueGroup;
-use gfx_hal::window::{Extent2D};
-use gfx_hal::{Backend};
+use gfx_hal::window::Extent2D;
 
 use crate::rendering::{DepthImage, Image};
 

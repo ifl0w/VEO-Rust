@@ -1,9 +1,8 @@
 extern crate cgmath;
 #[macro_use]
-extern crate mopa;
-#[macro_use]
 extern crate gfx_hal;
-
+#[macro_use]
+extern crate mopa;
 extern crate winit;
 
 use std::any::TypeId;
@@ -13,9 +12,9 @@ use std::time::{Duration, Instant};
 use winit::event::Event;
 use winit::event_loop::{ControlFlow, EventLoop};
 
+use crate::core::{EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
-use crate::core::{EntityManager, EntityRef, Exit, Message, System};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 
 //use winit::{Event, EventsLoop, WindowEvent};

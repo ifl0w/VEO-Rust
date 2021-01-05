@@ -1,10 +1,5 @@
-
-
-
 use std::fs::File;
 use std::io::{BufReader, Read};
-
-
 use std::string::String;
 
 pub struct ShaderCode {
@@ -24,7 +19,7 @@ impl ShaderCode {
             binary_code: Vec::new(),
             assembly_code: String::new(),
         })
-        .load_file(path)
+            .load_file(path)
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {

@@ -1,23 +1,24 @@
+use std::{iter, ptr};
 use std::collections::HashMap;
 use std::hash::Hasher;
-
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, Range};
-
 use std::sync::{Arc, Mutex};
-use std::{iter, ptr};
 
+use bytes::{Buf, Bytes};
 use cgmath::{Matrix, Matrix4, SquareMatrix};
+use gfx_hal::{
+    Backend, command, format, format::Format, image, IndexType, memory, pass, pass::Attachment, pso,
+    query,
+};
 use gfx_hal::buffer::IndexBufferView;
 use gfx_hal::command::{
     ClearColor, ClearDepthStencil, ClearValue, CommandBuffer, ImageBlit, ImageCopy, SubpassContents,
 };
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
-
-use gfx_hal::image::Usage;
-
 use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers, SubresourceRange};
+use gfx_hal::image::Usage;
 use gfx_hal::memory::Barrier;
 use gfx_hal::pass::{SubpassDependency, SubpassRef};
 use gfx_hal::pool::CommandPool;
@@ -26,26 +27,18 @@ use gfx_hal::pso::{
     DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace,
     ShaderStageFlags, VertexInputRate,
 };
+use gfx_hal::pso::State::Static;
 use gfx_hal::query::Query;
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::range::RangeArg;
 use gfx_hal::window::{Extent2D, Surface};
-use gfx_hal::{
-    command, format, format::Format, image, memory, pass, pass::Attachment, pso, query, Backend,
-    IndexType,
-};
-
-
-
-use crate::rendering::framebuffer::Framebuffer;
-use crate::rendering::renderer::Renderer;
 
 use crate::rendering::{
     CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass,
     ResourceManager, ShaderCode, Uniform, Vertex,
 };
-use bytes::{Buf, Bytes};
-use gfx_hal::pso::State::Static;
+use crate::rendering::framebuffer::Framebuffer;
+use crate::rendering::renderer::Renderer;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -129,7 +122,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                     &[],
                 )
             }
-            .expect("Can't create descriptor set layout"),
+                .expect("Can't create descriptor set layout"),
         );
 
         // Descriptors
@@ -150,7 +143,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                     DescriptorPoolCreateFlags::empty(),
                 )
             }
-            .expect("Can't create descriptor pool"),
+                .expect("Can't create descriptor pool"),
         );
 
         let mut desc_set: Vec<B::DescriptorSet> = Vec::new();
@@ -215,12 +208,12 @@ impl<B: Backend> ForwardRenderPass<B> {
                 passes: SubpassRef::External..SubpassRef::Pass(0),
                 stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
                     ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
-                        | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
+                    | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
                 accesses: image::Access::empty()
                     ..(image::Access::COLOR_ATTACHMENT_READ
-                        | image::Access::COLOR_ATTACHMENT_WRITE
-                        | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
-                        | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE),
+                    | image::Access::COLOR_ATTACHMENT_WRITE
+                    | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
+                    | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE),
                 flags: memory::Dependencies::empty(),
             };
             let out_dependency = SubpassDependency {
@@ -244,7 +237,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                         &[in_dependency, out_dependency],
                     )
                 }
-                .expect("Can't create render pass"),
+                    .expect("Can't create render pass"),
             )
         };
 
@@ -306,7 +299,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             Format::Rgba32Sfloat,
             renderer.frames_in_flight,
         )
-        .unwrap();
+            .unwrap();
 
         let viewport = pso::Viewport {
             rect: pso::Rect {
@@ -633,9 +626,9 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
             let image_barrier = Barrier::Image {
                 states: (image::Access::TRANSFER_READ, Layout::TransferSrcOptimal)
                     ..(
-                        image::Access::TRANSFER_WRITE,
-                        Layout::ColorAttachmentOptimal,
-                    ),
+                    image::Access::TRANSFER_WRITE,
+                    Layout::ColorAttachmentOptimal,
+                ),
                 target: &*fi.image,
                 families: None,
                 range: SubresourceRange {

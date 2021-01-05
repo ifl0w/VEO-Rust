@@ -1,6 +1,10 @@
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
+use gfx_hal::{
+    Backend,
+    format::{Aspects, Format}, MemoryTypeId,
+};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::adapter::PhysicalDevice;
 use gfx_hal::device::Device;
@@ -8,10 +12,6 @@ use gfx_hal::image::SubresourceRange;
 use gfx_hal::memory::Properties;
 use gfx_hal::memory::Requirements;
 use gfx_hal::window::Extent2D;
-use gfx_hal::{
-    format::{Aspects, Format},
-    Backend, MemoryTypeId,
-};
 
 /// Parts for a depth buffer image
 pub struct DepthImage<B: Backend, D: Device<B>> {

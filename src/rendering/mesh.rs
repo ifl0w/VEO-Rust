@@ -1,24 +1,25 @@
-use std::hash::{Hash, Hasher};
-use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
-
-use crate::core::Component;
-use crate::rendering::utility::resources::MeshID;
-use crate::rendering::utility::{MeshGenerator};
-use crate::rendering::{GPUMesh, RenderSystem};
-
 #[cfg(not(any(
-    feature = "vulkan",
-    feature = "dx12",
-    feature = "metal",
-    feature = "gl",
-    feature = "wgl"
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
 pub extern crate gfx_backend_gl as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
+
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicU64;
+
+use crate::core::Component;
+use crate::rendering::{GPUMesh, RenderSystem};
+use crate::rendering::utility::MeshGenerator;
+use crate::rendering::utility::resources::MeshID;
+
 
 static mut LAST_MESH_ID: AtomicU64 = AtomicU64::new(0);
 

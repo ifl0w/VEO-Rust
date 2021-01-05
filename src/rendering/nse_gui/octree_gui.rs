@@ -3,10 +3,11 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use cgmath::Vector4;
+use glium::{Display, Surface};
 use glium::glutin;
 use glium::glutin::event::WindowEvent;
 use glium::glutin::window::WindowBuilder;
-use glium::{Display, Surface};
 use imgui::*;
 use imgui::{Context, FontConfig, FontGlyphRanges, FontSource};
 //use imgui_gfx_renderer::Shaders;
@@ -17,12 +18,11 @@ use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use winit::event::{ElementState, Event, VirtualKeyCode};
 
 use crate::core::{Filter, Message, Payload, System};
+use crate::NSE;
 use crate::rendering::{
     Camera, Mesh, Octree, OctreeConfig, OctreeInfo, OctreeOptimizations, RenderSystem,
     Transformation,
 };
-use crate::NSE;
-use cgmath::{Vector4};
 
 pub struct OctreeGuiSystem {
     imgui: Arc<Mutex<Context>>,
@@ -149,7 +149,7 @@ impl OctreeGuiSystem {
                 im_str!("Depth Culling Threshold (px)"),
                 RangeInclusive::new(1.0, 100.0),
             )
-            .build(&ui, &mut self.octree_optimizations.depth_threshold)
+                .build(&ui, &mut self.octree_optimizations.depth_threshold)
             {
                 self.messages
                     .push(Message::new(self.octree_optimizations.clone()));
@@ -161,8 +161,8 @@ impl OctreeGuiSystem {
                 im_str!("Max. Rendered Nodes"),
                 RangeInclusive::new(1e3 as u64, 5e6 as u64),
             )
-            .power(100.0)
-            .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap());
+                .power(100.0)
+                .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap());
 
             Slider::new(im_str!("Octree Depth"), RangeInclusive::new(2, 11))
                 .build(&ui, self.octree_config.depth.as_mut().unwrap());
@@ -235,8 +235,8 @@ impl OctreeGuiSystem {
                 im_str!("View Direction"),
                 &mut [view_dir.x, view_dir.y, view_dir.z],
             )
-            .read_only(true)
-            .build();
+                .read_only(true)
+                .build();
 
             InputFloat3::new(
                 &ui,
@@ -247,8 +247,8 @@ impl OctreeGuiSystem {
                     camera_transform.position.z,
                 ],
             )
-            .read_only(true)
-            .build();
+                .read_only(true)
+                .build();
         }
     }
 }
@@ -376,7 +376,7 @@ impl System for OctreeGuiSystem {
 
         // construct the UI
         self.platform.prepare_render(&ui, &gl_window.window()); // step 5
-                                                                // render the UI with a renderer
+        // render the UI with a renderer
         let draw_data = ui.render();
         // application-specific rendering *over the UI*
 
@@ -403,7 +403,8 @@ impl System for OctreeGuiSystem {
 pub struct ProfilingData {
     pub rendered_nodes: Option<u32>,
     pub instance_data_generation: Option<u64>,
-    pub render_time: Option<u64>, // in nano seconds
+    pub render_time: Option<u64>,
+    // in nano seconds
     pub system_times: Option<Vec<(String, Duration)>>,
 }
 
@@ -419,8 +420,8 @@ impl ProfilingData {
     }
 
     fn replace_option<T>(target: &mut Option<T>, source: &Option<T>)
-    where
-        T: Clone,
+        where
+            T: Clone,
     {
         match source {
             Some(val) => target.replace(val.clone()),

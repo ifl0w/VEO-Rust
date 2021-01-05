@@ -1,28 +1,20 @@
-
+use std::{iter, mem, ptr};
 use std::io::Cursor;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
-use std::{iter, mem, ptr};
 
-
-
+use gfx_hal::{
+    Backend, command, format, format::Format, image, IndexType, pass, pass::Attachment, pso,
+};
 use gfx_hal::device::Device;
-
-
-
 use gfx_hal::pass::Subpass;
-
 use gfx_hal::pso::{
     Comparison, DepthStencilDesc, DepthTest, FrontFace, PolygonMode,
     ShaderStageFlags, VertexInputRate,
 };
-use gfx_hal::queue::{CommandQueue};
+use gfx_hal::queue::CommandQueue;
 
-use gfx_hal::{
-    command, format, format::Format, image, pass, pass::Attachment, pso, Backend, IndexType,
-};
-
-use crate::rendering::{Pipeline, ShaderCode, Vertex, ENTRY_NAME};
+use crate::rendering::{ENTRY_NAME, Pipeline, ShaderCode, Vertex};
 
 pub struct ForwardPipeline<B: Backend> {
     device: Arc<B::Device>,
@@ -56,13 +48,13 @@ impl<B: Backend> ForwardPipeline<B> {
                     ],
                 )
             }
-            .expect("Can't create pipelines layout"),
+                .expect("Can't create pipelines layout"),
         );
         let pipeline = {
             #[cfg(debug_assertions)]
-            let mut shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.vert.glsl");
+                let mut shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.vert.glsl");
             #[cfg(not(debug_assertions))]
-            let mut shader_code = ShaderCode::from_bytes(
+                let mut shader_code = ShaderCode::from_bytes(
                 include_bytes!("../../shaders/forward_pass.vert.glsl").to_vec(),
             );
 
@@ -78,9 +70,9 @@ impl<B: Backend> ForwardPipeline<B> {
             };
 
             #[cfg(debug_assertions)]
-            let mut shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.frag.glsl");
+                let mut shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.frag.glsl");
             #[cfg(not(debug_assertions))]
-            let mut shader_code = ShaderCode::from_bytes(
+                let mut shader_code = ShaderCode::from_bytes(
                 include_bytes!("../../shaders/forward_pass.frag.glsl").to_vec(),
             );
 
@@ -217,7 +209,7 @@ impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
                 true,
                 polygon_mode,
             )
-            .unwrap(),
+                .unwrap(),
         }
     }
 

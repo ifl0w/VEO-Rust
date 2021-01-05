@@ -1,11 +1,9 @@
-
-
 use std::sync::Arc;
 
 use gfx_hal::Backend;
+use gfx_hal::pso::PolygonMode;
 
 pub use forward_pipeline::ForwardPipeline;
-use gfx_hal::pso::PolygonMode;
 
 mod forward_pipeline;
 

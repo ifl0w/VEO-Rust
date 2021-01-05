@@ -3,11 +3,11 @@ pub extern crate gfx_backend_dx11 as Backend;
 #[cfg(feature = "dx12")]
 pub extern crate gfx_backend_dx12 as Backend;
 #[cfg(not(any(
-    feature = "vulkan",
-    feature = "dx12",
-    feature = "metal",
-    feature = "gl",
-    feature = "wgl"
+feature = "vulkan",
+feature = "dx12",
+feature = "metal",
+feature = "gl",
+feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
@@ -17,15 +17,15 @@ pub extern crate gfx_backend_vulkan as Backend;
 
 use std::sync::{Arc, Mutex};
 
-use cgmath::num_traits::real::Real;
-use cgmath::num_traits::{Float};
 use cgmath::{
-    vec3, Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector2,
+    Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, Vector2,
     Vector3, Vector4,
 };
+use cgmath::num_traits::Float;
+use cgmath::num_traits::real::Real;
 
 use crate::core::Component;
-use crate::rendering::{GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex, AABB};
+use crate::rendering::{AABB, GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex};
 
 #[derive(Clone)]
 pub struct Camera {

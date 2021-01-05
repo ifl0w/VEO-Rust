@@ -1,9 +1,9 @@
 use std::any::TypeId;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::{Arc, Mutex};
 
 use mopa::Any;
 
@@ -18,8 +18,8 @@ pub trait ComponentClone {
 }
 
 impl<T> ComponentClone for T
-where
-    T: 'static + Component + Clone,
+    where
+        T: 'static + Component + Clone,
 {
     fn clone_box(&self) -> Box<dyn Component> {
         Box::new(self.clone())
