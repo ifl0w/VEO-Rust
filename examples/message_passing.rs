@@ -1,5 +1,5 @@
 use nse;
-use nse::core::{Entity, Exit, Message, System, Text, Filter};
+use nse::core::{Exit, Message, System, Text, Filter};
 use nse::NSE;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};

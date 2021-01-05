@@ -228,7 +228,7 @@ impl Octree {
             .enumerate()
             .for_each(|(idx, child)| {
                 match child {
-                    Some(node) => {} // do not modify existing nodes
+                    Some(_node) => {} // do not modify existing nodes
                     None => {
                         let new_depth = current_depth + 1;
 
@@ -246,7 +246,7 @@ impl Octree {
                             Err(_) => panic!("Octree node has more than 8 children!"),
                         }
 
-                        let mut new_child = Node::new_inner(t, s);
+                        let new_child = Node::new_inner(t, s);
 
                         let node_origin = t;
 
@@ -448,7 +448,7 @@ impl OctreeSystem {
                 .iter_mut()
                 .enumerate()
                 .for_each(|(_i, child)| match child {
-                    Some(real_child) => {
+                    Some(_real_child) => {
                         &mut OctreeSystem::generate_instance_data(
                             optimization_data,
                             child,
@@ -509,13 +509,13 @@ impl System for OctreeSystem {
                 let mut root = octree.root.lock().unwrap();
 
                 // camera data
-                let mut camera_mutex = camera_entities[0].lock().unwrap();
-                let mut camera_transform = camera_mutex
+                let camera_mutex = camera_entities[0].lock().unwrap();
+                let camera_transform = camera_mutex
                     .get_component::<Transformation>()
                     .ok()
                     .unwrap()
                     .clone();
-                let mut camera = camera_mutex.get_component::<Camera>().ok().unwrap().clone();
+                let camera = camera_mutex.get_component::<Camera>().ok().unwrap().clone();
 
                 // filter config
                 let mut traversal_fnc: Vec<&TraversalFunction> = Vec::new();
@@ -561,7 +561,7 @@ impl System for OctreeSystem {
 
                 // store data
                 let rm = self.render_sys.lock().unwrap().resource_manager.clone();
-                let mut rm_lock = rm.lock().unwrap();
+                let _rm_lock = rm.lock().unwrap();
 
                 let buffer_idx = octree.active_instance_buffer_idx.unwrap_or(0);
                 let buffer = &octree.instance_data_buffer[buffer_idx];
@@ -653,7 +653,7 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Option<Nod
     false
 }
 
-fn generate_leaf_model_matrix(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+fn generate_leaf_model_matrix(_optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() && node.as_ref().unwrap().is_leaf() {
         true
     } else {

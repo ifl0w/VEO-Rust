@@ -45,14 +45,14 @@ fn main() {
     engine.add_system(&test_system);
 
     for _i in 1..10 {
-        let mut ent1 = Entity::new();
+        let ent1 = Entity::new();
         {
             let mut e = ent1.lock().unwrap();
             e.name = String::from(format!("Entity {}", e.id));
         }
         engine.add_entity(ent1);
 
-        let mut ent2 = Entity::new();
+        let ent2 = Entity::new();
         {
             let mut e = ent2.lock().unwrap();
             e.name = String::from(format!("Entity {}", e.id));

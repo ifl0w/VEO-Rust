@@ -222,7 +222,7 @@ impl OctreeGuiSystem {
         }
     }
 
-    fn display_camera_ui(&mut self, ui: &Ui, camera: &Camera, camera_transform: &Transformation) {
+    fn display_camera_ui(&mut self, ui: &Ui, _camera: &Camera, camera_transform: &Transformation) {
         if ui
             .collapsing_header(im_str!("Camera"))
             .default_open(true)
@@ -329,7 +329,7 @@ impl System for OctreeGuiSystem {
         let ctx = self.imgui.clone();
         let display = self.display.clone();
         let mut ctx_lock = ctx.lock().unwrap();
-        let mut display_lock = display.lock().unwrap();
+        let display_lock = display.lock().unwrap();
 
         let ui = ctx_lock.frame();
         let gl_window = display_lock.gl_window();
@@ -345,7 +345,7 @@ impl System for OctreeGuiSystem {
         let window_token = window.begin(&ui).unwrap();
 
         for entity in octree_entities {
-            let mut entitiy_mutex = entity.lock().unwrap();
+            let entitiy_mutex = entity.lock().unwrap();
             let _octree_transform = entitiy_mutex
                 .get_component::<Transformation>()
                 .ok()
@@ -362,7 +362,7 @@ impl System for OctreeGuiSystem {
         }
 
         for entity in camera_entities {
-            let mut entitiy_mutex = entity.lock().unwrap();
+            let entitiy_mutex = entity.lock().unwrap();
             let camera_transform = entitiy_mutex
                 .get_component::<Transformation>()
                 .ok()

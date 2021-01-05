@@ -66,7 +66,7 @@ impl AABB {
     }
 
     pub fn update_debug_mesh(&mut self, render_system: &Arc<Mutex<RenderSystem>>) -> MeshID {
-        let mut rend_lock = render_system.lock().unwrap();
+        let rend_lock = render_system.lock().unwrap();
         let mut rm_lock = rend_lock.resource_manager.lock().unwrap();
         let gpu_mesh = GPUMesh::new_dynamic(&rm_lock.device, &rm_lock.adapter, self);
         let (id, mesh) = rm_lock.add_mesh(gpu_mesh);

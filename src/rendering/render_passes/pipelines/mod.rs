@@ -1,5 +1,5 @@
-use std::mem::ManuallyDrop;
-use std::ptr;
+
+
 use std::sync::Arc;
 
 use gfx_hal::Backend;

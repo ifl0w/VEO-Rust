@@ -1,8 +1,8 @@
-use std::borrow::Borrow;
+
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ptr;
-use std::rc::Rc;
+
 use std::sync::Arc;
 
 use gfx_hal::adapter::Adapter;
@@ -13,8 +13,8 @@ use gfx_hal::image::Usage;
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pool::CommandPoolCreateFlags;
 use gfx_hal::queue::QueueGroup;
-use gfx_hal::window::{Extent2D, PresentationSurface};
-use gfx_hal::{image, Backend};
+use gfx_hal::window::{Extent2D};
+use gfx_hal::{Backend};
 
 use crate::rendering::{DepthImage, Image};
 

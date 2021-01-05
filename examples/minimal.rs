@@ -3,7 +3,7 @@ use nse::core::{Entity, Exit, Message, System, Filter};
 use nse::NSE;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
-use winit::event::VirtualKeyCode::Mute;
+
 
 #[derive(Debug)]
 struct NoopSystem {
@@ -46,12 +46,12 @@ fn main() {
 
     engine.add_system(&noop_system);
 
-    let mut e1 = Entity::new();
+    let e1 = Entity::new();
     e1.lock().unwrap().name = String::from("Entity 1");
     engine.remove_entity(e1);
 
     for _i in 1..10 {
-        let mut e = Entity::new();
+        let e = Entity::new();
 
         {
             let mut eRef = e.lock().unwrap();

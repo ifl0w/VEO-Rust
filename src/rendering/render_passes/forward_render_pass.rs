@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use std::hash::Hasher;
-use std::iter::once;
+
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, Range};
-use std::process::exit;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex, Weak};
-use std::{iter, mem, ptr};
+
+use std::sync::{Arc, Mutex};
+use std::{iter, ptr};
 
 use cgmath::{Matrix, Matrix4, SquareMatrix};
 use gfx_hal::buffer::IndexBufferView;
@@ -15,12 +14,12 @@ use gfx_hal::command::{
 };
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
-use gfx_hal::image::Layout::{TransferDstOptimal, TransferSrcOptimal};
+
 use gfx_hal::image::Usage;
-use gfx_hal::image::ViewError::Layer;
+
 use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers, SubresourceRange};
 use gfx_hal::memory::Barrier;
-use gfx_hal::pass::{Subpass, SubpassDependency, SubpassRef};
+use gfx_hal::pass::{SubpassDependency, SubpassRef};
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{
     Comparison, DepthTest, Descriptor, DescriptorPool, DescriptorPoolCreateFlags,
@@ -30,17 +29,17 @@ use gfx_hal::pso::{
 use gfx_hal::query::Query;
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::range::RangeArg;
-use gfx_hal::window::{Extent2D, Surface, SwapImageIndex};
+use gfx_hal::window::{Extent2D, Surface};
 use gfx_hal::{
     command, format, format::Format, image, memory, pass, pass::Attachment, pso, query, Backend,
     IndexType,
 };
-use glium::draw_parameters::sync;
-use winit::event::WindowEvent::CursorMoved;
+
+
 
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
-use crate::rendering::utility::resources::BufferID;
+
 use crate::rendering::{
     CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass,
     ResourceManager, ShaderCode, Uniform, Vertex,
@@ -161,17 +160,17 @@ impl<B: Backend> ForwardRenderPass<B> {
             }
         };
 
-        let caps = renderer.surface.capabilities(&adapter.physical_device);
+        let _caps = renderer.surface.capabilities(&adapter.physical_device);
         let formats = &renderer.surface.supported_formats(&adapter.physical_device);
         println!("formats: {:?}", formats);
-        let format = formats.clone().map_or(Format::Rgba8Srgb, |formats| {
+        let _format = formats.clone().map_or(Format::Rgba8Srgb, |formats| {
             formats
                 .iter()
                 .find(|format| format.base_format().1 == ChannelType::Srgb)
                 .map(|format| *format)
                 .unwrap_or(formats[0])
         });
-        let depth_stencil_format = formats.clone().map_or(Format::D24UnormS8Uint, |formats| {
+        let _depth_stencil_format = formats.clone().map_or(Format::D24UnormS8Uint, |formats| {
             formats
                 .iter()
                 .find(|format| format.base_format().1 == ChannelType::Sfloat)
@@ -297,7 +296,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             render_set_layout.deref(),
             pso::PolygonMode::Line(Static(1.0)),
         );
-        let mut framebuffer = Framebuffer::new(
+        let framebuffer = Framebuffer::new(
             device,
             adapter,
             &renderer.queue_group,
@@ -396,7 +395,7 @@ impl<B: Backend> ForwardRenderPass<B> {
         transform: Matrix4<f32>,
         pipeline: PipelineOptions,
     ) {
-        let mut mesh_collection = match pipeline {
+        let mesh_collection = match pipeline {
             PipelineOptions::Default => &mut self.meshes,
             PipelineOptions::Wireframe => &mut self.meshes_wireframe,
         };
@@ -434,7 +433,7 @@ impl<B: Backend> ForwardRenderPass<B> {
     }
 
     pub fn use_instance_buffer(&mut self, buffer: &Arc<Mutex<GPUBuffer<B>>>, frame_idx: usize) {
-        let rm_lock = self.resource_manager.lock().unwrap();
+        let _rm_lock = self.resource_manager.lock().unwrap();
         let buf_lock = buffer.lock().unwrap();
 
         unsafe {
@@ -474,7 +473,7 @@ impl<B: Backend> Drop for ForwardRenderPass<B> {
 
 impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     fn sync(&mut self, frame_idx: usize) {
-        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+        let (fe, _fi, _framebuffer, pool, _command_buffers, _semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -492,7 +491,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         queue: &mut B::CommandQueue,
         wait_semaphores: Vec<&B::Semaphore>,
     ) -> &B::Semaphore {
-        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+        let (fe, _fi, _framebuffer, _pool, command_buffers, semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -529,7 +528,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     ) -> &B::Semaphore {
         self.sync(frame_idx);
 
-        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+        let (fe, fi, _framebuffer, pool, command_buffers, semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -541,7 +540,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             cmd_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
 
-            let mut target_image_barrier = Barrier::Image {
+            let target_image_barrier = Barrier::Image {
                 states: (image::Access::TRANSFER_READ, Layout::Undefined)
                     ..(image::Access::TRANSFER_WRITE, Layout::TransferDstOptimal),
                 target: surface_image,
@@ -691,7 +690,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     }
 
     fn record(&mut self, frame_idx: usize) {
-        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+        let (_fe, _fi, framebuffer, pool, command_buffers, _semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {

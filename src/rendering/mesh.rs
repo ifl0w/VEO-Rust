@@ -56,7 +56,7 @@ impl Mesh {
     }
 
     pub fn new_dynamic<T: MeshGenerator>(
-        generator_instance: T,
+        _generator_instance: T,
         render_system: &Arc<Mutex<RenderSystem>>,
     ) -> Self {
         let render_system = render_system.lock().unwrap();

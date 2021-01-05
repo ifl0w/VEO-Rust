@@ -1,29 +1,28 @@
-use std::borrow::Borrow;
+
 use std::io::Cursor;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 use std::{iter, mem, ptr};
 
-use gfx_hal::buffer::IndexBufferView;
-use gfx_hal::command::{ClearDepthStencil, CommandBuffer, ImageBlit};
+
+
 use gfx_hal::device::Device;
-use gfx_hal::format::ChannelType;
-use gfx_hal::image::Layout::{TransferDstOptimal, TransferSrcOptimal};
-use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers};
+
+
+
 use gfx_hal::pass::Subpass;
-use gfx_hal::pool::CommandPool;
+
 use gfx_hal::pso::{
-    Comparison, DepthStencilDesc, DepthTest, DescriptorPool, DescriptorPoolCreateFlags,
-    DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, PolygonMode,
+    Comparison, DepthStencilDesc, DepthTest, FrontFace, PolygonMode,
     ShaderStageFlags, VertexInputRate,
 };
-use gfx_hal::queue::{CommandQueue, Submission};
-use gfx_hal::window::{Surface, SwapImageIndex};
+use gfx_hal::queue::{CommandQueue};
+
 use gfx_hal::{
     command, format, format::Format, image, pass, pass::Attachment, pso, Backend, IndexType,
 };
 
-use crate::rendering::{InstanceData, Pipeline, ShaderCode, Vertex, ENTRY_NAME};
+use crate::rendering::{Pipeline, ShaderCode, Vertex, ENTRY_NAME};
 
 pub struct ForwardPipeline<B: Backend> {
     device: Arc<B::Device>,

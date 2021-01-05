@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::{iter, mem, ptr};
 
 use gfx_hal::adapter::PhysicalDevice;
-use gfx_hal::adapter::{Adapter, MemoryType};
+use gfx_hal::adapter::{Adapter};
 use gfx_hal::{
     buffer, command, format as f,
     format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
@@ -20,7 +20,7 @@ use gfx_hal::{
 
 use crate::rendering::renderer::Renderer;
 use crate::rendering::utility::{GPUBuffer, Index, Vertex};
-use std::ops::Deref;
+
 
 pub type MeshID = usize;
 pub type BufferID = usize;

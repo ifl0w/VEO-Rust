@@ -196,7 +196,7 @@ impl Component for Frustum {}
 
 impl Frustum {
     pub fn new(fov_x: Rad<f32>, fov_y: Rad<f32>, near_distance: f32, far_distance: f32) -> Self {
-        let mut frustum = Frustum {
+        let frustum = Frustum {
             planes: [(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0)); 6],
 
             near_distance,
@@ -221,7 +221,7 @@ impl Frustum {
 
     pub fn intersect(&self, aabb: &AABB) -> bool {
         //for each plane do ...
-        self.planes.iter().enumerate().all(|(i, (normal, point))| {
+        self.planes.iter().enumerate().all(|(_i, (normal, point))| {
             let mut p = aabb.min.clone();
             p.x = if normal.x > 0.0 { aabb.max.x } else { p.x };
             p.y = if normal.y > 0.0 { aabb.max.y } else { p.y };
@@ -293,7 +293,7 @@ impl Frustum {
     }
 
     pub fn update_debug_mesh(&mut self, render_system: &Arc<Mutex<RenderSystem>>) -> MeshID {
-        let mut rend_lock = render_system.lock().unwrap();
+        let rend_lock = render_system.lock().unwrap();
         let mut rm_lock = rend_lock.resource_manager.lock().unwrap();
 
         let gpu_mesh = GPUMesh::new_dynamic(&rm_lock.device, &rm_lock.adapter, self);

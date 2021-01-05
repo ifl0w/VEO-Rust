@@ -82,8 +82,8 @@ impl RenderSystem {
         };
 
         let mut renderer = Renderer::new(Some(instance), surface, adapter.clone());
-        let mut resource_manager = ResourceManager::new(&renderer);
-        let mut forward_render_pass = Arc::new(Mutex::new(ForwardRenderPass::new(
+        let resource_manager = ResourceManager::new(&renderer);
+        let forward_render_pass = Arc::new(Mutex::new(ForwardRenderPass::new(
             &mut renderer,
             &resource_manager,
         )));
@@ -228,8 +228,8 @@ impl System for RenderSystem {
             }
 
             for aabb_entity in &filter[3].lock().unwrap().entities {
-                let mut mutex = aabb_entity.lock().unwrap();
-                let mut aabb = mutex.get_component::<AABB>().unwrap().clone();
+                let mutex = aabb_entity.lock().unwrap();
+                let aabb = mutex.get_component::<AABB>().unwrap().clone();
 
                 let debug_mesh = aabb.debug_mesh;
 
@@ -245,8 +245,8 @@ impl System for RenderSystem {
             }
 
             for frustum_entities in &filter[4].lock().unwrap().entities {
-                let mut mutex = frustum_entities.lock().unwrap();
-                let mut frustum = mutex.get_component::<Frustum>().unwrap().clone();
+                let mutex = frustum_entities.lock().unwrap();
+                let frustum = mutex.get_component::<Frustum>().unwrap().clone();
 
                 let debug_mesh = frustum.debug_mesh;
 
@@ -345,7 +345,7 @@ where
                 )
                 .unwrap()
         };
-        let mut queue_group = gpu.queue_groups.pop().unwrap();
+        let queue_group = gpu.queue_groups.pop().unwrap();
         let device = Arc::new(gpu.device);
 
         // Define maximum number of frames we want to be able to be "in flight" (being computed
@@ -402,7 +402,7 @@ where
             depth: 0.0..1.0,
         };
 
-        let mut frame_buffers = Vec::new();
+        let frame_buffers = Vec::new();
         //        frame_buffers.reserve(frames_in_flight);
 
         Renderer {
@@ -452,7 +452,7 @@ where
         let acquire_semaphore = self.swapchain.get_semaphore(frame_idx);
 
         // Rendering
-        let mut queue = &mut self.queue_group.queues[0];
+        let queue = &mut self.queue_group.queues[0];
 
         let mut render_pass_lock = render_pass.lock().unwrap();
 

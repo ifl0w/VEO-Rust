@@ -1,4 +1,4 @@
-use cgmath::{vec3, Deg, Euler, Matrix4, Quaternion, Rad, SquareMatrix, Vector3};
+use cgmath::{Vector3};
 
 use nse;
 use nse::core::Entity;
@@ -6,7 +6,7 @@ use nse::rendering::{utility::Cube, Camera, Frustum, Mesh, RenderSystem, Transfo
 use nse::NSE;
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
-use glium::RawUniformValue::Vec3;
+
 
 mod shared;
 
@@ -37,7 +37,7 @@ fn main() {
     engine.add_system(&render_system);
     engine.add_system(&fps_camera_system);
 
-    let mut entity = Entity::new();
+    let entity = Entity::new();
     entity
         .lock()
         .unwrap()

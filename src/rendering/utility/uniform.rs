@@ -1,13 +1,13 @@
-use std::borrow::{Borrow, BorrowMut};
+
 use std::mem::{size_of, ManuallyDrop};
 use std::sync::Arc;
 use std::{iter, ptr};
 
 use gfx_hal::adapter::PhysicalDevice;
-use gfx_hal::adapter::{Adapter, MemoryType};
+use gfx_hal::adapter::{Adapter};
 use gfx_hal::device::Device;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
-use gfx_hal::{buffer, memory, pso, Backend};
+use gfx_hal::{buffer, memory, Backend};
 
 use crate::rendering::renderer::Renderer;
 

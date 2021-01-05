@@ -1,10 +1,10 @@
-use std::borrow::BorrowMut;
-use std::cell::{Cell, RefCell};
+
+
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
-use std::sync::{Arc, Mutex, RwLock};
-use std::{iter, ptr};
+use std::sync::{Arc, RwLock};
+use std::{ptr};
 
 use gfx_hal::adapter::Adapter;
 use gfx_hal::device::Device;
@@ -154,7 +154,7 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
         swap_image_index: SwapImageIndex,
         present_semaphores: Option<Vec<&B::Semaphore>>,
     ) {
-        let result = unsafe {
+        let _result = unsafe {
             let wait_semaphores = match present_semaphores {
                 Some(sem) => sem,
                 None => vec![],
