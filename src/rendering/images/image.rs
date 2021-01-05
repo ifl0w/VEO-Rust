@@ -1,14 +1,6 @@
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
-use gfx_hal::{
-    Backend,
-    format::{
-        Aspects,
-        Format,
-    },
-    MemoryTypeId,
-};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::adapter::PhysicalDevice;
 use gfx_hal::device::Device;
@@ -17,6 +9,10 @@ use gfx_hal::image::Usage;
 use gfx_hal::memory::Properties;
 use gfx_hal::memory::Requirements;
 use gfx_hal::window::Extent2D;
+use gfx_hal::{
+    format::{Aspects, Format},
+    Backend, MemoryTypeId,
+};
 
 /// Parts for a depth buffer image
 pub struct Image<B: Backend, D: Device<B>> {
@@ -31,7 +27,13 @@ pub struct Image<B: Backend, D: Device<B>> {
 }
 
 impl<B: Backend, D: Device<B>> Image<B, D> {
-    pub fn new(adapter: &Adapter<B>, device: &Arc<D>, extent: Extent2D, usage: Usage, format: Format) -> Result<Self, &'static str> {
+    pub fn new(
+        adapter: &Adapter<B>,
+        device: &Arc<D>,
+        extent: Extent2D,
+        usage: Usage,
+        format: Format,
+    ) -> Result<Self, &'static str> {
         unsafe {
             let mut the_image = device
                 .create_image(
@@ -99,9 +101,12 @@ impl<B: Backend, D: Device<B>> Drop for Image<B, D> {
         use core::ptr::read;
 
         unsafe {
-            self.device.destroy_image_view(ManuallyDrop::into_inner(read(&self.image_view)));
-            self.device.destroy_image(ManuallyDrop::into_inner(read(&self.image)));
-            self.device.free_memory(ManuallyDrop::into_inner(read(&self.memory)));
+            self.device
+                .destroy_image_view(ManuallyDrop::into_inner(read(&self.image_view)));
+            self.device
+                .destroy_image(ManuallyDrop::into_inner(read(&self.image)));
+            self.device
+                .free_memory(ManuallyDrop::into_inner(read(&self.memory)));
         }
     }
 }

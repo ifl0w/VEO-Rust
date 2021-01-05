@@ -10,87 +10,49 @@ feature = "wgl"
 allow(dead_code, unused_extern_crates, unused_imports)
 )]
 
-#[cfg(feature = "dx11")]
-pub extern crate gfx_backend_dx11 as Backend;
-#[cfg(feature = "dx12")]
-pub extern crate gfx_backend_dx12 as Backend;
-#[cfg(
-not(any(
-feature = "vulkan",
-feature = "dx12",
-feature = "metal",
-feature = "gl",
-feature = "wgl"
+#[cfg(not(any(
+    feature = "vulkan",
+    feature = "dx12",
+    feature = "metal",
+    feature = "gl",
+    feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
 pub extern crate gfx_backend_gl as Backend;
-#[cfg(feature = "metal")]
-pub extern crate gfx_backend_metal as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
 
-use std::{
-    borrow::Borrow,
-    io::Cursor,
-    iter,
-    mem::{self, ManuallyDrop},
-    ptr,
-};
-use std::borrow::BorrowMut;
-use std::cell::Cell;
-use std::collections::{BTreeMap, HashMap};
-use std::hash::Hasher;
-use std::iter::{Map, once};
-use std::ops::{Deref, RangeInclusive};
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::thread::sleep;
 use std::time::Duration;
+use std::{mem::ManuallyDrop, ptr};
 
 use cgmath::{Matrix4, SquareMatrix};
-use gfx_hal::{buffer,
-              command,
-              format as f,
-              format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
-              image as i,
-              IndexType,
-              Instance,
-              memory as m,
-              pass,
-              pass::Subpass,
-              pool,
-              prelude::*,
-              pso,
-              pso::{
-                  PipelineStage,
-                  ShaderStageFlags,
-                  VertexInputRate,
-              },
-              queue::{QueueGroup, Submission},
-              window};
 use gfx_hal::adapter::Adapter;
-use gfx_hal::buffer::IndexBufferView;
-use gfx_hal::command::{CommandBuffer, CommandBufferInheritanceInfo, SubpassContents};
-use gfx_hal::pso::{Comparison, DepthTest, Descriptor, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace};
-use gfx_hal::pso::Comparison::LessEqual;
-use gfx_hal::window::Surface;
-use mopa::Any;
+use gfx_hal::command::CommandBuffer;
+use gfx_hal::device::Device;
+use gfx_hal::window::{PresentationSurface, Surface};
+use gfx_hal::{pool, prelude::*, pso, queue::QueueGroup, window, Instance};
 use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
-use winit::event::VirtualKeyCode::Mute;
 use winit::event_loop::EventLoop;
 use winit::window::Window;
 
 use crate::core::{Exit, Filter, MainWindow, Message, System};
-use crate::NSE;
-use crate::rendering::{AABB, Camera, CameraData, Cube, ForwardRenderPass, Frustum, Mesh, Octree, PipelineOptions, Plane, RenderPass, SwapchainWrapper, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
-use crate::rendering::utility::{GPUBuffer, GPUMesh, ResourceManager, Uniform, Vertex};
+use crate::rendering::utility::ResourceManager;
+use crate::rendering::{
+    Camera, CameraData, ForwardRenderPass, Frustum, Mesh, Octree, PipelineOptions, RenderPass,
+    SwapchainWrapper, Transformation, AABB,
+};
+use crate::NSE;
 
 /* Constants */
 // Window
 const WINDOW_TITLE: &'static str = "NSE";
-const WINDOW_DIMENSIONS: window::Extent2D = window::Extent2D { width: 1024, height: 768 };
+const WINDOW_DIMENSIONS: window::Extent2D = window::Extent2D {
+    width: 1024,
+    height: 768,
+};
 
 pub struct RenderSystem {
     window: Window,
@@ -105,24 +67,30 @@ pub struct RenderSystem {
 }
 
 impl RenderSystem {
-    #[cfg(any(
-    feature = "vulkan",
-    feature = "gl",
-    ))]
+    // #[cfg(any(feature = "vulkan", feature = "gl",))]
     pub fn new(nse: &NSE) -> Arc<Mutex<Self>> {
+        if cfg!(not(any(feature = "vulkan", feature = "gl",))) {
+            panic!("Compiled without platform support...")
+        }
+
         let (window, instance, adapter) = RenderSystem::init(nse);
 
         let surface = unsafe {
-            instance.create_surface(&window)
+            instance
+                .create_surface(&window)
                 .expect("Failed to create a surface!")
         };
 
         let mut renderer = Renderer::new(Some(instance), surface, adapter.clone());
         let mut resource_manager = ResourceManager::new(&renderer);
-        let mut forward_render_pass =
-            Arc::new(Mutex::new(ForwardRenderPass::new(&mut renderer, &resource_manager)));
+        let mut forward_render_pass = Arc::new(Mutex::new(ForwardRenderPass::new(
+            &mut renderer,
+            &resource_manager,
+        )));
 
-        let messages = vec![Message::new(MainWindow { window_id: window.id() })];
+        let messages = vec![Message::new(MainWindow {
+            window_id: window.id(),
+        })];
 
         let rs = RenderSystem {
             window,
@@ -138,15 +106,12 @@ impl RenderSystem {
         Arc::new(Mutex::new(rs))
     }
 
-    fn init(nse: &NSE) ->
-    (Window,
-     Backend::Instance,
-     Arc<Adapter<Backend::Backend>>) {
+    fn init(nse: &NSE) -> (Window, Backend::Instance, Arc<Adapter<Backend::Backend>>) {
         let window = RenderSystem::init_window(&nse.event_loop);
 
-        let instance: Backend::Instance = Instance::create("render-engine", ((1) << 22 | (1) << 12))
+        let instance: Backend::Instance = Instance::create("render-engine", (1) << 22 | (1) << 12)
             .expect("Failed to create an instance!");
-        println!("{:?}", instance.extensions);
+        // println!("{:?}", instance.extensions);
 
         let mut adapters = instance.enumerate_adapters();
 
@@ -159,16 +124,17 @@ impl RenderSystem {
         (window, instance, adapter)
     }
 
-
     fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
         winit::window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
-            .with_inner_size(winit::dpi::LogicalSize::new(WINDOW_DIMENSIONS.width, WINDOW_DIMENSIONS.height))
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                WINDOW_DIMENSIONS.width,
+                WINDOW_DIMENSIONS.height,
+            ))
             .build(event_loop)
             .expect("Failed to create window.")
     }
 }
-
 
 impl System for RenderSystem {
     fn get_filter(&mut self) -> Vec<Filter> {
@@ -186,27 +152,27 @@ impl System for RenderSystem {
             Event::WindowEvent { event, window_id } => {
                 if *window_id == self.window.id() {
                     match event {
-                        | WindowEvent::CloseRequested => {
+                        WindowEvent::CloseRequested => {
                             self.messages = vec![Message::new(Exit {})];
                         }
-                        WindowEvent::KeyboardInput { input, .. } => {
-                            match input {
-                                | winit::event::KeyboardInput { virtual_keycode, state, .. } => {
-                                    match (virtual_keycode, state) {
-                                        (Some(VirtualKeyCode::F5), ElementState::Pressed) => {
-                                            println!("Recreating pipelines...");
-                                            self.forward_render_pass.lock().unwrap().recreate_pipeline();
-                                        }
-                                        _ => ()
-                                    }
+                        WindowEvent::KeyboardInput { input, .. } => match input {
+                            winit::event::KeyboardInput {
+                                virtual_keycode,
+                                state,
+                                ..
+                            } => match (virtual_keycode, state) {
+                                (Some(VirtualKeyCode::F5), ElementState::Pressed) => {
+                                    println!("Recreating pipelines...");
+                                    self.forward_render_pass.lock().unwrap().recreate_pipeline();
                                 }
-                            }
-                        }
-                        | _ => {}
+                                _ => (),
+                            },
+                        },
+                        _ => {}
                     }
                 }
             }
-            _ => ()
+            _ => (),
         }
     }
 
@@ -219,7 +185,10 @@ impl System for RenderSystem {
         }
         let camera_entity = mutex.entities[0].lock().unwrap();
         let cam_cam_comp = camera_entity.get_component::<Camera>().ok().unwrap();
-        let cam_trans_comp = camera_entity.get_component::<Transformation>().ok().unwrap();
+        let cam_trans_comp = camera_entity
+            .get_component::<Transformation>()
+            .ok()
+            .unwrap();
         let camera_data = CameraData::new(cam_cam_comp, cam_trans_comp);
 
         let frame_idx = self.renderer.current_swap_chain_image;
@@ -248,26 +217,29 @@ impl System for RenderSystem {
                 match octree.get_instance_buffer() {
                     Some(ib) => {
                         // TODO somehow rework instancing. This is not a good solution.
-                        fwp_lock.add_instances(mesh.id, (0..octree.info.render_count, octree_trans.get_model_matrix()));
+                        fwp_lock.add_instances(
+                            mesh.id,
+                            (0..octree.info.render_count, octree_trans.get_model_matrix()),
+                        );
                         fwp_lock.use_instance_buffer(ib, frame_idx);
                     }
-                    None => ()
+                    None => (),
                 }
             }
 
-            for aabb_entitiy in &filter[3].lock().unwrap().entities {
-                let mut mutex = aabb_entitiy.lock().unwrap();
+            for aabb_entity in &filter[3].lock().unwrap().entities {
+                let mut mutex = aabb_entity.lock().unwrap();
                 let mut aabb = mutex.get_component::<AABB>().unwrap().clone();
 
                 let debug_mesh = aabb.debug_mesh;
 
-//                aabb.update_debug_mesh(&self.resource_manager);
-//                mutex.add_component(aabb);
+                //                aabb.update_debug_mesh(&self.resource_manager);
+                //                mutex.add_component(aabb);
 
                 match debug_mesh {
                     Some((id, _)) => {
                         fwp_lock.add_mesh(id, Matrix4::identity(), PipelineOptions::Wireframe);
-                    },
+                    }
                     None => {}
                 }
             }
@@ -278,13 +250,13 @@ impl System for RenderSystem {
 
                 let debug_mesh = frustum.debug_mesh;
 
-//                aabb.update_debug_mesh(&self.resource_manager);
-//                mutex.add_component(aabb);
+                //                aabb.update_debug_mesh(&self.resource_manager);
+                //                mutex.add_component(aabb);
 
                 match debug_mesh {
                     Some((id, _)) => {
                         fwp_lock.add_mesh(id, Matrix4::identity(), PipelineOptions::Wireframe);
-                    },
+                    }
                     None => {}
                 }
             }
@@ -297,8 +269,15 @@ impl System for RenderSystem {
         self.renderer.render(&self.forward_render_pass);
 
         // send execution time
-        let execution_time = self.forward_render_pass.lock().unwrap().execution_time(frame_idx);
-        self.messages.push(Message::new(ProfilingData { render_time: Some(execution_time), ..Default::default() }));
+        let execution_time = self
+            .forward_render_pass
+            .lock()
+            .unwrap()
+            .execution_time(frame_idx);
+        self.messages.push(Message::new(ProfilingData {
+            render_time: Some(execution_time),
+            ..Default::default()
+        }));
 
         self.window.request_redraw();
     }
@@ -334,8 +313,8 @@ pub struct Renderer<B: gfx_hal::Backend> {
 }
 
 impl<B> Renderer<B>
-    where
-        B: gfx_hal::Backend,
+where
+    B: gfx_hal::Backend,
 {
     fn new(
         instance: Option<B::Instance>,
@@ -356,12 +335,13 @@ impl<B> Renderer<B>
         let mut gpu = unsafe {
             adapter
                 .physical_device
-                .open(&[(family, &[1.0])],
-                      gfx_hal::Features::NON_FILL_POLYGON_MODE
-                          | gfx_hal::Features::VERTEX_STORES_AND_ATOMICS
-                          | gfx_hal::Features::FRAGMENT_STORES_AND_ATOMICS
-                          | gfx_hal::Features::SHADER_STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING
-                          | gfx_hal::Features::SHADER_UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING,
+                .open(
+                    &[(family, &[1.0])],
+                    gfx_hal::Features::NON_FILL_POLYGON_MODE
+                        | gfx_hal::Features::VERTEX_STORES_AND_ATOMICS
+                        | gfx_hal::Features::FRAGMENT_STORES_AND_ATOMICS
+                        | gfx_hal::Features::SHADER_STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING
+                        | gfx_hal::Features::SHADER_UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING,
                 )
                 .unwrap()
         };
@@ -372,9 +352,8 @@ impl<B> Renderer<B>
         // simultaneously) at once
         let frames_in_flight: usize = 3;
 
-        let swapchain = unsafe {
-            SwapchainWrapper::new(&device, &adapter, &mut surface, WINDOW_DIMENSIONS)
-        };
+        let swapchain =
+            unsafe { SwapchainWrapper::new(&device, &adapter, &mut surface, WINDOW_DIMENSIONS) };
 
         // The number of the rest of the resources is based on the frames in flight.
         let mut submission_complete_semaphores = Vec::with_capacity(frames_in_flight);
@@ -402,7 +381,7 @@ impl<B> Renderer<B>
             }
         }
 
-        for i in 0..frames_in_flight {
+        for _ in 0..frames_in_flight {
             submission_complete_semaphores.push(
                 device
                     .create_semaphore()
@@ -424,7 +403,7 @@ impl<B> Renderer<B>
         };
 
         let mut frame_buffers = Vec::new();
-//        frame_buffers.reserve(frames_in_flight);
+        //        frame_buffers.reserve(frames_in_flight);
 
         Renderer {
             instance,
@@ -464,14 +443,12 @@ impl<B> Renderer<B>
     }
 
     fn render(&mut self, render_pass: &Arc<Mutex<ForwardRenderPass<B>>>) {
-
         // Compute index into our resource ring buffers based on the frame number
         // and number of frames in flight. Pay close attention to where this index is needed
         // versus when the swapchain image index we got from acquire_image is needed.
         let frame_idx = self.current_swap_chain_image;
 
-        let (swap_idx,
-            image) = self.swapchain.acquire_image(frame_idx);
+        let (swap_idx, image) = self.swapchain.acquire_image(frame_idx);
         let acquire_semaphore = self.swapchain.get_semaphore(frame_idx);
 
         // Rendering
@@ -479,7 +456,7 @@ impl<B> Renderer<B>
 
         let mut render_pass_lock = render_pass.lock().unwrap();
 
-        let present_semaphore = unsafe {
+        let present_semaphore = {
             render_pass_lock.sync(frame_idx);
             render_pass_lock.record(frame_idx);
             render_pass_lock.submit(frame_idx, queue, vec![]);
@@ -488,9 +465,8 @@ impl<B> Renderer<B>
             render_pass_lock.blit_to_surface(queue, image, frame_idx, acquire_semaphore)
         };
 
-        unsafe {
-            self.swapchain.present(queue, swap_idx, Some(vec![&present_semaphore]));
-        }
+        self.swapchain
+            .present(queue, swap_idx, Some(vec![&present_semaphore]));
 
         // Increment our frame
         self.current_swap_chain_image = (self.current_swap_chain_image + 1) % self.frames_in_flight;
@@ -498,8 +474,8 @@ impl<B> Renderer<B>
 }
 
 impl<B> Drop for Renderer<B>
-    where
-        B: gfx_hal::Backend,
+where
+    B: gfx_hal::Backend,
 {
     fn drop(&mut self) {
         self.device.wait_idle().unwrap();
@@ -526,4 +502,3 @@ impl<B> Drop for Renderer<B>
         println!("DROPPED!");
     }
 }
-

@@ -1,31 +1,22 @@
-use std::{iter, mem, ptr};
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex, Weak};
+use std::{iter, mem, ptr};
 
+use gfx_hal::adapter::PhysicalDevice;
+use gfx_hal::adapter::{Adapter, MemoryType};
 use gfx_hal::{
-    buffer,
-    command,
-    format as f,
+    buffer, command, format as f,
     format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle},
-    image as i,
-    IndexType,
-    memory as m,
-    pass,
+    image as i, memory as m, pass,
     pass::Subpass,
     pool,
     prelude::*,
     pso,
-    pso::{
-        PipelineStage,
-        ShaderStageFlags,
-        VertexInputRate,
-    },
+    pso::{PipelineStage, ShaderStageFlags, VertexInputRate},
     queue::{QueueGroup, Submission},
-    window,
+    window, IndexType,
 };
-use gfx_hal::adapter::{Adapter, MemoryType};
-use gfx_hal::adapter::PhysicalDevice;
 
 use crate::rendering::renderer::Renderer;
 use crate::rendering::utility::{GPUBuffer, Index, Vertex};
@@ -35,7 +26,9 @@ pub type MeshID = usize;
 pub type BufferID = usize;
 
 pub struct ResourceManager<B>
-    where B: gfx_hal::Backend {
+where
+    B: gfx_hal::Backend,
+{
     pub(in crate::rendering) device: Arc<B::Device>,
     pub(in crate::rendering) adapter: Arc<Adapter<B>>,
 
@@ -44,11 +37,13 @@ pub struct ResourceManager<B>
 
     pub(in crate::rendering::utility) meshes: HashMap<MeshID, Weak<GPUMesh<B>>>,
     pub(in crate::rendering::utility) buffers: HashMap<BufferID, Weak<Mutex<GPUBuffer<B>>>>,
-//    pub(in crate::rendering) shaders: HashMap<ShaderID, Arc<Shader<B>>>,
+    //    pub(in crate::rendering) shaders: HashMap<ShaderID, Arc<Shader<B>>>,
 }
 
 impl<B> ResourceManager<B>
-    where B: gfx_hal::Backend {
+where
+    B: gfx_hal::Backend,
+{
     pub fn new(renderer: &Renderer<B>) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(ResourceManager {
             device: renderer.device.clone(),
@@ -64,13 +59,11 @@ impl<B> ResourceManager<B>
 
     pub fn get_mesh(&self, id: &MeshID) -> Arc<GPUMesh<B>> {
         match self.meshes.get(id) {
-            Some(weak_mesh) => {
-                match weak_mesh.upgrade() {
-                    Some(mesh) => mesh,
-                    None => panic!("Resource not valid.")
-                }
+            Some(weak_mesh) => match weak_mesh.upgrade() {
+                Some(mesh) => mesh,
+                None => panic!("Resource not valid."),
             },
-            None => panic!("Mesh not stored on GPU")
+            None => panic!("Mesh not stored on GPU"),
         }
     }
 
@@ -87,13 +80,11 @@ impl<B> ResourceManager<B>
 
     pub fn get_buffer(&self, id: BufferID) -> Arc<Mutex<GPUBuffer<B>>> {
         match self.buffers.get(&id) {
-            Some(weak_buffer) => {
-                match weak_buffer.upgrade() {
-                    Some(buffer) => buffer,
-                    None => panic!("Resource not valid.")
-                }
+            Some(weak_buffer) => match weak_buffer.upgrade() {
+                Some(buffer) => buffer,
+                None => panic!("Resource not valid."),
             },
-            None => panic!("Buffer not stored on GPU")
+            None => panic!("Buffer not stored on GPU"),
         }
     }
 
@@ -107,19 +98,28 @@ impl<B> ResourceManager<B>
 
         (id, arc)
     }
-
 }
 
 pub trait MeshGenerator {
-    fn get_vertices() -> Vec<Vertex> { vec![] }
-    fn get_indices() -> Vec<Index> { vec![] }
+    fn get_vertices() -> Vec<Vertex> {
+        vec![]
+    }
+    fn get_indices() -> Vec<Index> {
+        vec![]
+    }
 
-    fn get_vertices_dynamic(&self) -> Vec<Vertex> { vec![] }
-    fn get_indices_dynamic(&self) -> Vec<Index> { vec![] }
+    fn get_vertices_dynamic(&self) -> Vec<Vertex> {
+        vec![]
+    }
+    fn get_indices_dynamic(&self) -> Vec<Index> {
+        vec![]
+    }
 }
 
 pub struct GPUMesh<B>
-    where B: gfx_hal::Backend {
+where
+    B: gfx_hal::Backend,
+{
     device: Arc<B::Device>,
 
     pub(in crate::rendering) num_vertices: u32,
@@ -133,7 +133,9 @@ pub struct GPUMesh<B>
 }
 
 impl<B> GPUMesh<B>
-    where B: gfx_hal::Backend {
+where
+    B: gfx_hal::Backend,
+{
     pub fn new<T: MeshGenerator>(device: &Arc<B::Device>, adapter: &Arc<Adapter<B>>) -> Self {
         let vertices = T::get_vertices();
         let indices = T::get_indices();
@@ -155,7 +157,11 @@ impl<B> GPUMesh<B>
         }
     }
 
-    pub fn new_dynamic<T: MeshGenerator>(device: &Arc<B::Device>, adapter: &Arc<Adapter<B>>, generator_instance: &T) -> Self {
+    pub fn new_dynamic<T: MeshGenerator>(
+        device: &Arc<B::Device>,
+        adapter: &Arc<Adapter<B>>,
+        generator_instance: &T,
+    ) -> Self {
         let vertices = generator_instance.get_vertices_dynamic();
         let indices = generator_instance.get_indices_dynamic();
 
@@ -176,10 +182,11 @@ impl<B> GPUMesh<B>
         }
     }
 
-    fn create_vertex_buffer<T: MeshGenerator>(device: &B::Device, adapter: &Adapter<B>, vertices: &Vec<Vertex>)
-                                              -> (u32,
-                                                  ManuallyDrop<B::Buffer>,
-                                                  ManuallyDrop<B::Memory>) {
+    fn create_vertex_buffer<T: MeshGenerator>(
+        device: &B::Device,
+        adapter: &Adapter<B>,
+        vertices: &Vec<Vertex>,
+    ) -> (u32, ManuallyDrop<B::Buffer>, ManuallyDrop<B::Memory>) {
         let memory_types = adapter.physical_device.memory_properties().memory_types;
         let limits = adapter.physical_device.limits();
 
@@ -193,7 +200,8 @@ impl<B> GPUMesh<B>
             * non_coherent_alignment;
 
         let mut vertex_buffer = ManuallyDrop::new(
-            unsafe { device.create_buffer(padded_buffer_len, gfx_hal::buffer::Usage::VERTEX) }.unwrap(),
+            unsafe { device.create_buffer(padded_buffer_len, gfx_hal::buffer::Usage::VERTEX) }
+                .unwrap(),
         );
 
         let buffer_req = unsafe { device.get_buffer_requirements(&vertex_buffer) };
@@ -206,7 +214,9 @@ impl<B> GPUMesh<B>
                 // to 1 it means we can use that type for our buffer. So this code finds the first
                 // memory type that has a `1` (or, is allowed), and is visible to the CPU.
                 buffer_req.type_mask & (1 << id as u64) != 0
-                    && mem_type.properties.contains(gfx_hal::memory::Properties::CPU_VISIBLE)
+                    && mem_type
+                        .properties
+                        .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
             })
             .unwrap()
             .into();
@@ -231,10 +241,11 @@ impl<B> GPUMesh<B>
         (vertices.len() as u32, vertex_buffer, buffer_memory)
     }
 
-    fn create_index_buffer<T: MeshGenerator>(device: &B::Device, adapter: &Adapter<B>, indices: &Vec<Index>)
-                                             -> (u32,
-                                                 ManuallyDrop<B::Buffer>,
-                                                 ManuallyDrop<B::Memory>) {
+    fn create_index_buffer<T: MeshGenerator>(
+        device: &B::Device,
+        adapter: &Adapter<B>,
+        indices: &Vec<Index>,
+    ) -> (u32, ManuallyDrop<B::Buffer>, ManuallyDrop<B::Memory>) {
         let memory_types = adapter.physical_device.memory_properties().memory_types;
         let limits = adapter.physical_device.limits();
 
@@ -249,7 +260,8 @@ impl<B> GPUMesh<B>
             * non_coherent_alignment;
 
         let mut index_buffer = ManuallyDrop::new(
-            unsafe { device.create_buffer(padded_buffer_len, gfx_hal::buffer::Usage::INDEX) }.unwrap(),
+            unsafe { device.create_buffer(padded_buffer_len, gfx_hal::buffer::Usage::INDEX) }
+                .unwrap(),
         );
 
         let buffer_req = unsafe { device.get_buffer_requirements(&index_buffer) };
@@ -262,7 +274,9 @@ impl<B> GPUMesh<B>
                 // to 1 it means we can use that type for our buffer. So this code finds the first
                 // memory type that has a `1` (or, is allowed), and is visible to the CPU.
                 buffer_req.type_mask & (1 << id as u64) != 0
-                    && mem_type.properties.contains(gfx_hal::memory::Properties::CPU_VISIBLE)
+                    && mem_type
+                        .properties
+                        .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
             })
             .unwrap()
             .into();
@@ -289,14 +303,26 @@ impl<B> GPUMesh<B>
 }
 
 impl<B> Drop for GPUMesh<B>
-    where B: gfx_hal::Backend {
+where
+    B: gfx_hal::Backend,
+{
     fn drop(&mut self) {
         unsafe {
-            self.device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(self.vertex_buffer.as_ref())));
-            self.device.free_memory(ManuallyDrop::into_inner(ptr::read(self.vertex_memory.as_ref())));
+            self.device
+                .destroy_buffer(ManuallyDrop::into_inner(ptr::read(
+                    self.vertex_buffer.as_ref(),
+                )));
+            self.device.free_memory(ManuallyDrop::into_inner(ptr::read(
+                self.vertex_memory.as_ref(),
+            )));
 
-            self.device.destroy_buffer(ManuallyDrop::into_inner(ptr::read(self.index_buffer.as_ref())));
-            self.device.free_memory(ManuallyDrop::into_inner(ptr::read(self.index_memory.as_ref())));
+            self.device
+                .destroy_buffer(ManuallyDrop::into_inner(ptr::read(
+                    self.index_buffer.as_ref(),
+                )));
+            self.device.free_memory(ManuallyDrop::into_inner(ptr::read(
+                self.index_memory.as_ref(),
+            )));
         }
     }
 }
@@ -309,7 +335,7 @@ impl MeshGenerator for Plane {
             Vertex::new([-0.5, 0.0, -0.5], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
             Vertex::new([-0.5, 0.0, 0.5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
             Vertex::new([0.5, 0.0, 0.5], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0]),
-            Vertex::new([0.5, 0.0, -0.5], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0])
+            Vertex::new([0.5, 0.0, -0.5], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]),
         ]
     }
 
@@ -358,12 +384,8 @@ impl MeshGenerator for Cube {
 
     fn get_indices() -> Vec<Index> {
         vec![
-            0, 1, 2, 1, 3, 2,
-            4, 5, 6, 5, 7, 6,
-            8, 9, 10, 9, 11, 10,
-            12, 13, 14, 13, 15, 14,
-            16, 17, 18, 17, 19, 18,
-            20, 21, 22, 21, 23, 22,
+            0, 1, 2, 1, 3, 2, 4, 5, 6, 5, 7, 6, 8, 9, 10, 9, 11, 10, 12, 13, 14, 13, 15, 14, 16,
+            17, 18, 17, 19, 18, 20, 21, 22, 21, 23, 22,
         ]
     }
 }

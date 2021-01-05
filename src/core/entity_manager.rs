@@ -1,9 +1,9 @@
 use std::any::TypeId;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{Arc, Mutex};
 
 use mopa::Any;
 
@@ -17,7 +17,10 @@ pub trait ComponentClone {
     fn clone_box(&self) -> Box<dyn Component>;
 }
 
-impl<T> ComponentClone for T where T: 'static + Component + Clone {
+impl<T> ComponentClone for T
+where
+    T: 'static + Component + Clone,
+{
     fn clone_box(&self) -> Box<dyn Component> {
         Box::new(self.clone())
     }
@@ -73,14 +76,17 @@ impl Entity {
         let opt = self.components.get(&TypeId::of::<T>());
         match opt {
             Some(val) => Ok(val.downcast_ref::<T>().expect("Corrupt component")),
-            None => Err("Component not contained.")
+            None => Err("Component not contained."),
         }
     }
 
     pub fn add_component<T: Component>(&mut self, component: T) -> &mut Self {
-        match self.components.insert(TypeId::of::<T>(), Box::new(component)) {
+        match self
+            .components
+            .insert(TypeId::of::<T>(), Box::new(component))
+        {
             Some(_) => (),
-            None => ()
+            None => (),
         }
 
         self
@@ -92,12 +98,12 @@ impl Entity {
     }
 
     pub fn match_filter(&self, filter: &Filter) -> bool {
-        let is_subset_1 = self.components.keys().into_iter().all(|t| {
-            filter.types.contains(t)
-        });
-        let is_subset_2 = filter.types.iter().all(|t| {
-            self.components.contains_key(t)
-        });
+        let is_subset_1 = self
+            .components
+            .keys()
+            .into_iter()
+            .all(|t| filter.types.contains(t));
+        let is_subset_2 = filter.types.iter().all(|t| self.components.contains_key(t));
 
         is_subset_1 && is_subset_2
     }
@@ -110,7 +116,10 @@ pub struct EntityManager {
 
 impl EntityManager {
     pub fn new() -> EntityManager {
-        EntityManager { entities: std::collections::HashMap::new(), _last_id: 0 }
+        EntityManager {
+            entities: std::collections::HashMap::new(),
+            _last_id: 0,
+        }
     }
 
     pub fn add_entity(&mut self, e: EntityRef) {
@@ -121,4 +130,3 @@ impl EntityManager {
         self.entities.remove(&e.lock().unwrap().id);
     }
 }
-

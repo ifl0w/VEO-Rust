@@ -4,12 +4,6 @@ extern crate mopa;
 #[macro_use]
 extern crate gfx_hal;
 
-#[macro_use] extern crate glsl_to_spirv_macros;
-#[macro_use] extern crate glsl_to_spirv_macros_impl;
-
-#[macro_use] extern crate log;
-use log::Level;
-
 extern crate winit;
 
 use std::any::TypeId;
@@ -19,10 +13,10 @@ use std::time::{Duration, Instant};
 use winit::event::Event;
 use winit::event_loop::{ControlFlow, EventLoop};
 
-use crate::core::{EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
-use crate::rendering::nse_gui::octree_gui::{ProfilingData};
+use crate::core::{EntityManager, EntityRef, Exit, Message, System};
+use crate::rendering::nse_gui::octree_gui::ProfilingData;
 
 //use winit::{Event, EventsLoop, WindowEvent};
 
@@ -75,14 +69,23 @@ impl NSE {
 
             let frame_start = Instant::now();
             let mut exit = false;
-            let systems = system_manager_lock.systems.values().cloned().collect::<Vec<Arc<Mutex<dyn System>>>>();
+            let systems = system_manager_lock
+                .systems
+                .values()
+                .cloned()
+                .collect::<Vec<Arc<Mutex<dyn System>>>>();
 
             for sys in systems {
                 sys.lock().unwrap().handle_input(&event);
             }
             match event {
                 Event::RedrawRequested(_) => {
-                    let v: Vec<_> = message_manager.lock().unwrap().receiver.try_iter().collect();
+                    let v: Vec<_> = message_manager
+                        .lock()
+                        .unwrap()
+                        .receiver
+                        .try_iter()
+                        .collect();
 
                     for msg in v.iter() {
                         if msg.is_type::<Exit>() {
@@ -108,12 +111,17 @@ impl NSE {
                         let system_start = Instant::now();
 
                         sys.lock().unwrap().consume_messages(&v);
-                        sys.lock().unwrap().execute(filter, *delta_time.lock().unwrap());
+                        sys.lock()
+                            .unwrap()
+                            .execute(filter, *delta_time.lock().unwrap());
                         msgs.append(&mut sys.lock().unwrap().get_messages());
 
                         // system has completed execution
                         let system_end = Instant::now();
-                        sys_times.push((system_manager_lock.get_system_name(system_id).into(), system_end - system_start));
+                        sys_times.push((
+                            system_manager_lock.get_system_name(system_id).into(),
+                            system_end - system_start,
+                        ));
                     }
 
                     // store profiling data
@@ -144,29 +152,46 @@ impl NSE {
 
         system_manager_lock.add_system_with_name(name.into(), sys);
 
-        let entities = &self.entity_manager.lock().unwrap().entities.values().cloned().collect();
+        let entities = &self
+            .entity_manager
+            .lock()
+            .unwrap()
+            .entities
+            .values()
+            .cloned()
+            .collect();
         let filter = system_manager_lock.get_filter(&typeid).unwrap();
-        filter.iter().for_each(|f| {
-            f.lock().unwrap().update(entities)
-        });
+        filter
+            .iter()
+            .for_each(|f| f.lock().unwrap().update(entities));
     }
 
     pub fn add_entity(&mut self, e: EntityRef) {
         self.entity_manager.lock().unwrap().add_entity(e.clone());
-        self.system_manager.lock().unwrap().filter.iter().for_each(|(_, filters)| {
-            for filter in filters {
-                filter.lock().unwrap().add(e.clone());
-            }
-        })
+        self.system_manager
+            .lock()
+            .unwrap()
+            .filter
+            .iter()
+            .for_each(|(_, filters)| {
+                for filter in filters {
+                    filter.lock().unwrap().add(e.clone());
+                }
+            })
     }
 
     pub fn remove_entity(&mut self, e: EntityRef) {
         self.entity_manager.lock().unwrap().remove_entity(e.clone());
-        self.system_manager.lock().unwrap().filter.iter().for_each(|(_, filters)| {
-            for filter in filters {
-                filter.lock().unwrap().remove(e.clone());
-            }
-        })
+        self.system_manager
+            .lock()
+            .unwrap()
+            .filter
+            .iter()
+            .for_each(|(_, filters)| {
+                for filter in filters {
+                    filter.lock().unwrap().remove(e.clone());
+                }
+            })
     }
 }
 

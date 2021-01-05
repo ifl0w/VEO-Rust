@@ -5,7 +5,6 @@ use std::ptr;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gfx_hal::{Backend, image};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::device::Device;
 use gfx_hal::format::Format;
@@ -15,6 +14,7 @@ use gfx_hal::pool::CommandPool;
 use gfx_hal::pool::CommandPoolCreateFlags;
 use gfx_hal::queue::QueueGroup;
 use gfx_hal::window::{Extent2D, PresentationSurface};
+use gfx_hal::{image, Backend};
 
 use crate::rendering::{DepthImage, Image};
 
@@ -61,39 +61,36 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
 
         for _ in 0..frames {
             unsafe {
-                let fb_image = Image::new(
-                    adapter,
-                    device,
-                    extend_2d,
-                    usage,
-                    format)
+                let fb_image = Image::new(adapter, device, extend_2d, usage, format)
                     .expect("Image creation failed!");
 
-                let fb_depth_image = DepthImage::new(
-                    adapter,
-                    device,
-                    extend_2d)
-                    .expect("Image creation failed!");
+                let fb_depth_image =
+                    DepthImage::new(adapter, device, extend_2d).expect("Image creation failed!");
 
-                let fb = device.create_framebuffer(
-                    render_pass,
-                    vec![fb_image.image_view.deref(), fb_depth_image.image_view.deref()],
-                    extent)
+                let fb = device
+                    .create_framebuffer(
+                        render_pass,
+                        vec![
+                            fb_image.image_view.deref(),
+                            fb_depth_image.image_view.deref(),
+                        ],
+                        extent,
+                    )
                     .expect("Framebuffer creation failed!");
 
-                let fence = device.create_fence(true)
-                    .expect("Fence creation failed!");
+                let fence = device.create_fence(true).expect("Fence creation failed!");
 
-                let cmd_pool = device.create_command_pool(
-                    queue_group.family,
-                    CommandPoolCreateFlags::empty(),
-                ).expect("Command pool creation failed!");
+                let cmd_pool = device
+                    .create_command_pool(queue_group.family, CommandPoolCreateFlags::empty())
+                    .expect("Command pool creation failed!");
 
                 let cmd_buffers = Vec::with_capacity(frames);
 
-                let a_s = device.create_semaphore()
+                let a_s = device
+                    .create_semaphore()
                     .expect("Semaphore creation failed!");
-                let p_s = device.create_semaphore()
+                let p_s = device
+                    .create_semaphore()
                     .expect("Semaphore creation failed!");
 
                 frame_images.push(fb_image);
@@ -120,12 +117,17 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
         })
     }
 
-    pub fn get_frame_data(&mut self, frame_id: usize) -> (&mut B::Fence,
-                                                          &mut Image<B, D>,
-                                                          &mut B::Framebuffer,
-                                                          &mut B::CommandPool,
-                                                          &mut Vec<B::CommandBuffer>,
-                                                          &mut B::Semaphore) {
+    pub fn get_frame_data(
+        &mut self,
+        frame_id: usize,
+    ) -> (
+        &mut B::Fence,
+        &mut Image<B, D>,
+        &mut B::Framebuffer,
+        &mut B::CommandPool,
+        &mut Vec<B::CommandBuffer>,
+        &mut B::Semaphore,
+    ) {
         (
             &mut self.framebuffer_fences[frame_id],
             &mut self.frame_images[frame_id],
@@ -154,7 +156,9 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
             for idx in 0..self.command_pools.len() {
                 let cmds = self.command_buffer_lists[idx].drain(..);
                 self.command_pools[idx].free(cmds);
-                device.destroy_command_pool(ManuallyDrop::into_inner(ptr::read(&self.command_pools[idx])));
+                device.destroy_command_pool(ManuallyDrop::into_inner(ptr::read(
+                    &self.command_pools[idx],
+                )));
             }
 
             for acquire_semaphore in self.acquire_semaphores.iter() {

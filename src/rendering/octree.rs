@@ -1,39 +1,30 @@
-#[cfg(feature = "dx11")]
-pub extern crate gfx_backend_dx11 as Backend;
-#[cfg(feature = "dx12")]
-pub extern crate gfx_backend_dx12 as Backend;
-#[cfg(
-not(any(
-feature = "vulkan",
-feature = "dx12",
-feature = "metal",
-feature = "gl",
-feature = "wgl"
+#[cfg(not(any(
+    feature = "vulkan",
+    feature = "dx12",
+    feature = "metal",
+    feature = "gl",
+    feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
 pub extern crate gfx_backend_gl as Backend;
-#[cfg(feature = "metal")]
-pub extern crate gfx_backend_metal as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
 
-use std::borrow::Borrow;
 use std::convert::{TryFrom, TryInto};
 use std::f32::consts::PI;
-use std::iter;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cgmath::{Matrix4, Transform, vec3, Vector3, Vector4};
+use cgmath::{vec3, Matrix4, Transform, Vector3};
 use gfx_hal::buffer;
-use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, Payload, System};
-use crate::rendering::{AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
-use crate::rendering::utility::resources::BufferID;
+use crate::rendering::{
+    Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation, AABB,
+};
 
 enum NodePosition {
     Flt = 0,
@@ -139,14 +130,14 @@ impl Octree {
         let ring_buffer_length = 2;
         let mut instance_data_buffer = Vec::with_capacity(ring_buffer_length);
         for _ in 0..ring_buffer_length {
-            unsafe {
-                let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(&dev,
-                                                                              &adapter,
-                                                                              max_gpu_byte_size,
-                                                                              buffer::Usage::STORAGE | buffer::Usage::VERTEX));
+            let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(
+                &dev,
+                &adapter,
+                max_gpu_byte_size,
+                buffer::Usage::STORAGE | buffer::Usage::VERTEX,
+            ));
 
-                instance_data_buffer.push(buffer);
-            }
+            instance_data_buffer.push(buffer);
         }
 
         let octree_info = OctreeInfo {
@@ -170,7 +161,8 @@ impl Octree {
             &mut oct.root.lock().unwrap(),
             vec3(0.0, 0.0, 0.0),
             0,
-            depth)));
+            depth,
+        )));
 
         oct.info.byte_size = self::Octree::size_in_bytes(&oct);
 
@@ -179,7 +171,11 @@ impl Octree {
 
     pub fn get_instance_buffer(&self) -> Option<&Arc<Mutex<GPUBuffer<Backend::Backend>>>> {
         if self.active_instance_buffer_idx.is_some() {
-            Some(self.instance_data_buffer.get(self.active_instance_buffer_idx.unwrap()).unwrap())
+            Some(
+                self.instance_data_buffer
+                    .get(self.active_instance_buffer_idx.unwrap())
+                    .unwrap(),
+            )
         } else {
             None
         }
@@ -211,7 +207,12 @@ impl Octree {
         count
     }
 
-    fn traverse(node: &mut Option<Node>, translate: Vector3<f32>, current_depth: u64, target_depth: u64) {
+    fn traverse(
+        node: &mut Option<Node>,
+        translate: Vector3<f32>,
+        current_depth: u64,
+        target_depth: u64,
+    ) {
         if current_depth == target_depth {
             return;
         }
@@ -220,71 +221,85 @@ impl Octree {
             *node = Some(Node::new());
         }
 
-        node.as_mut().unwrap().children.iter_mut().enumerate().for_each(|(idx, child)| {
-            match child {
-                Some(node) => {} // do not modify existing nodes
-                None => {
-                    let new_depth = current_depth + 1;
+        node.as_mut()
+            .unwrap()
+            .children
+            .iter_mut()
+            .enumerate()
+            .for_each(|(idx, child)| {
+                match child {
+                    Some(node) => {} // do not modify existing nodes
+                    None => {
+                        let new_depth = current_depth + 1;
 
-                    let s = (0.5 as f32).powf(new_depth as f32);
-                    let mut t = translate;
-                    match (idx as i32).try_into() {
-                        Ok(NodePosition::Flt) => t += vec3(-0.5, -0.5, -0.5) * s,
-                        Ok(NodePosition::Frt) => t += vec3(0.5, -0.5, -0.5) * s,
-                        Ok(NodePosition::Flb) => t += vec3(-0.5, 0.5, -0.5) * s,
-                        Ok(NodePosition::Frb) => t += vec3(0.5, 0.5, -0.5) * s,
-                        Ok(NodePosition::Blt) => t += vec3(-0.5, -0.5, 0.5) * s,
-                        Ok(NodePosition::Brt) => t += vec3(0.5, -0.5, 0.5) * s,
-                        Ok(NodePosition::Blb) => t += vec3(-0.5, 0.5, 0.5) * s,
-                        Ok(NodePosition::Brb) => t += vec3(0.5, 0.5, 0.5) * s,
-                        Err(_) => panic!("Octree node has more than 8 children!")
-                    }
+                        let s = (0.5 as f32).powf(new_depth as f32);
+                        let mut t = translate;
+                        match (idx as i32).try_into() {
+                            Ok(NodePosition::Flt) => t += vec3(-0.5, -0.5, -0.5) * s,
+                            Ok(NodePosition::Frt) => t += vec3(0.5, -0.5, -0.5) * s,
+                            Ok(NodePosition::Flb) => t += vec3(-0.5, 0.5, -0.5) * s,
+                            Ok(NodePosition::Frb) => t += vec3(0.5, 0.5, -0.5) * s,
+                            Ok(NodePosition::Blt) => t += vec3(-0.5, -0.5, 0.5) * s,
+                            Ok(NodePosition::Brt) => t += vec3(0.5, -0.5, 0.5) * s,
+                            Ok(NodePosition::Blb) => t += vec3(-0.5, 0.5, 0.5) * s,
+                            Ok(NodePosition::Brb) => t += vec3(0.5, 0.5, 0.5) * s,
+                            Err(_) => panic!("Octree node has more than 8 children!"),
+                        }
 
-                    let mut new_child = Node::new_inner(t, s);
+                        let mut new_child = Node::new_inner(t, s);
 
-                    let node_origin = t;
+                        let node_origin = t;
 
-                    let sinc = |x: f32, y: f32| {
-                        let scale = 6.0 * PI;
-                        let scale_y = 0.25;
+                        let sinc = |x: f32, y: f32| {
+                            let scale = 6.0 * PI;
+                            let scale_y = 0.25;
 
-                        let r = f32::sqrt(x * x + y * y);
-                        let r_val = if r == 0.0 { 1.0 } else { (r * scale).sin() / (r * scale) };
-                        r_val * scale_y
-                    };
+                            let r = f32::sqrt(x * x + y * y);
+                            let r_val = if r == 0.0 {
+                                1.0
+                            } else {
+                                (r * scale).sin() / (r * scale)
+                            };
+                            r_val * scale_y
+                        };
 
-                    let intersect = |origin: Vector3<f32>, scale: f32, function: &dyn Fn(f32, f32) -> f32| {
-                        let box_points: Vec<Vector3<f32>> = vec![
-                            origin + vec3(-0.5, -0.5, -0.5) * scale,
-                            origin + vec3(0.5, -0.5, -0.5) * scale,
-                            origin + vec3(-0.5, 0.5, -0.5) * scale,
-                            origin + vec3(0.5, 0.5, -0.5) * scale,
-                            origin + vec3(-0.5, -0.5, 0.5) * scale,
-                            origin + vec3(0.5, -0.5, 0.5) * scale,
-                            origin + vec3(-0.5, 0.5, 0.5) * scale,
-                            origin + vec3(0.5, 0.5, 0.5) * scale
-                        ];
+                        let intersect =
+                            |origin: Vector3<f32>,
+                             scale: f32,
+                             function: &dyn Fn(f32, f32) -> f32| {
+                                let box_points: Vec<Vector3<f32>> = vec![
+                                    origin + vec3(-0.5, -0.5, -0.5) * scale,
+                                    origin + vec3(0.5, -0.5, -0.5) * scale,
+                                    origin + vec3(-0.5, 0.5, -0.5) * scale,
+                                    origin + vec3(0.5, 0.5, -0.5) * scale,
+                                    origin + vec3(-0.5, -0.5, 0.5) * scale,
+                                    origin + vec3(0.5, -0.5, 0.5) * scale,
+                                    origin + vec3(-0.5, 0.5, 0.5) * scale,
+                                    origin + vec3(0.5, 0.5, 0.5) * scale,
+                                ];
 
-                        let all_greater = box_points.iter()
-                            .all(|val| function(val.x, val.z) >= (val.y));
+                                let all_greater = box_points
+                                    .iter()
+                                    .all(|val| function(val.x, val.z) >= (val.y));
 
-                        let all_smaller = box_points.iter()
-                            .all(|val| function(val.x, val.z) <= (val.y));
+                                let all_smaller = box_points
+                                    .iter()
+                                    .all(|val| function(val.x, val.z) <= (val.y));
 
-                        !(all_greater || all_smaller)
-                    };
+                                !(all_greater || all_smaller)
+                            };
 
-                    // NOTE: intersect test does not work with every function correctly.
-                    // It is possible that all samples at the corner points of the octree node do
-                    // not indicate an intersection and thus leading to false negative intersection
-                    // tests!
-                    if intersect(node_origin, s, &sinc) {
-                        child.replace(new_child);
-                        Octree::traverse(child, t, new_depth, target_depth)
+                        // NOTE: intersect test does not work with every function correctly.
+                        // It is possible that all samples at the corner points of the octree node do
+                        // not indicate an intersection and thus leading to false negative intersection
+                        // tests!
+                        if intersect(node_origin, s, &sinc) {
+                            child.replace(new_child);
+                            Octree::traverse(child, t, new_depth, target_depth)
+                        }
                     }
                 }
-            }
-        });
+            });
     }
 }
 
@@ -313,8 +328,8 @@ impl Node {
 
     pub fn new_inner(position: Vector3<f32>, scale: f32) -> Self {
         let scale_vec = vec3(scale, scale, scale);
-        let min = (position - scale_vec / 2.0);
-        let max = (position + scale_vec / 2.0);
+        let min = position - scale_vec / 2.0;
+        let max = position + scale_vec / 2.0;
 
         let mut tmp = Node {
             children: vec![],
@@ -397,46 +412,53 @@ impl OctreeSystem {
         }))
     }
 
-    fn generate_instance_data(optimization_data: &OptimizationData,
-                              node: &mut Option<Node>,
-                              collected_data: &mut Vec<InstanceData>,
-                              traversal_criteria: &Vec<&TraversalFunction>,
-                              filter_functions: &Vec<&FilterFunction>) {
+    fn generate_instance_data(
+        optimization_data: &OptimizationData,
+        node: &mut Option<Node>,
+        collected_data: &mut Vec<InstanceData>,
+        traversal_criteria: &Vec<&TraversalFunction>,
+        filter_functions: &Vec<&FilterFunction>,
+    ) {
         if node.is_none() {
             return;
         }
 
         // add model matrices
-        let include = filter_functions.iter().any(|fnc| {
-            fnc(optimization_data, node)
-        });
+        let include = filter_functions
+            .iter()
+            .any(|fnc| fnc(optimization_data, node));
 
         if include {
             let mat = Matrix4::from_translation(node.as_mut().unwrap().position)
                 * Matrix4::from_scale(node.as_mut().unwrap().scale.x);
             collected_data.push(InstanceData {
-                model_matrix: mat.into()
+                model_matrix: mat.into(),
             });
         }
 
         // traverse
-        let continue_traversal = traversal_criteria.iter().all(|fnc| {
-            fnc(optimization_data, node)
-        });
+        let continue_traversal = traversal_criteria
+            .iter()
+            .all(|fnc| fnc(optimization_data, node));
 
         if continue_traversal {
-            node.as_mut().unwrap().children.iter_mut().enumerate().for_each(|(_i, child)| {
-                match child {
+            node.as_mut()
+                .unwrap()
+                .children
+                .iter_mut()
+                .enumerate()
+                .for_each(|(_i, child)| match child {
                     Some(real_child) => {
-                        &mut OctreeSystem::generate_instance_data(optimization_data,
-                                                                  child,
-                                                                  collected_data,
-                                                                  traversal_criteria,
-                                                                  filter_functions);
+                        &mut OctreeSystem::generate_instance_data(
+                            optimization_data,
+                            child,
+                            collected_data,
+                            traversal_criteria,
+                            filter_functions,
+                        );
                     }
                     None => {}
-                }
-            });
+                });
         }
     }
 }
@@ -445,7 +467,7 @@ impl System for OctreeSystem {
     fn get_filter(&mut self) -> Vec<Filter> {
         vec![
             crate::filter!(Octree, Mesh, Transformation),
-            crate::filter!(Camera, Transformation)
+            crate::filter!(Camera, Transformation),
         ]
     }
 
@@ -466,22 +488,33 @@ impl System for OctreeSystem {
         let octree_entities = &filter[0].lock().unwrap().entities;
         let camera_entities = &filter[1].lock().unwrap().entities;
 
-
         for entity in octree_entities {
             let mut entitiy_mutex = entity.lock().unwrap();
-            let octree_transform = entitiy_mutex.get_component::<Transformation>().ok().unwrap();
-            let mut octree = entitiy_mutex.get_component::<Octree>().ok().unwrap().clone();
+            let octree_transform = entitiy_mutex
+                .get_component::<Transformation>()
+                .ok()
+                .unwrap();
+            let mut octree = entitiy_mutex
+                .get_component::<Octree>()
+                .ok()
+                .unwrap()
+                .clone();
 
             if self.update_config.is_some() {
                 octree = Octree::new(&self.render_sys, self.update_config.take().unwrap());
             }
 
-            if !camera_entities.is_empty() { // scope to enclose mutex
+            if !camera_entities.is_empty() {
+                // scope to enclose mutex
                 let mut root = octree.root.lock().unwrap();
 
                 // camera data
                 let mut camera_mutex = camera_entities[0].lock().unwrap();
-                let mut camera_transform = camera_mutex.get_component::<Transformation>().ok().unwrap().clone();
+                let mut camera_transform = camera_mutex
+                    .get_component::<Transformation>()
+                    .ok()
+                    .unwrap()
+                    .clone();
                 let mut camera = camera_mutex.get_component::<Camera>().ok().unwrap().clone();
 
                 // filter config
@@ -501,16 +534,14 @@ impl System for OctreeSystem {
                 let optimization_data = OptimizationData {
                     camera: &camera,
                     camera_transform: &camera_transform,
-                    octree_mvp:
-                    camera.projection
+                    octree_mvp: camera.projection
                         * Matrix4::inverse_transform(&camera_transform.get_model_matrix()).unwrap()
                         * octree_transform.get_model_matrix(),
-                    frustum: camera.frustum
-                        .transformed(
-                            // TODO: investigate whether this space transformation is the a good approach for frustum culling
-                            Matrix4::inverse_transform(&octree_transform.get_model_matrix()).unwrap()
-                                * camera_transform.get_model_matrix()
-                        ),
+                    frustum: camera.frustum.transformed(
+                        // TODO: investigate whether this space transformation is the a good approach for frustum culling
+                        Matrix4::inverse_transform(&octree_transform.get_model_matrix()).unwrap()
+                            * camera_transform.get_model_matrix(),
+                    ),
                     depth_threshold: self.optimizations.depth_threshold,
                     octree_scale: octree_transform.scale.x,
                 };
@@ -537,25 +568,27 @@ impl System for OctreeSystem {
                 let mut gpu_buffer_lock = buffer.lock().unwrap();
 
                 gpu_buffer_lock.replace_data(
-                    &model_matrices[0..
-                        model_matrices.len().min(octree
-                            .config.max_rendered_nodes.unwrap_or(1e3 as u64) as usize)]);
-                octree.active_instance_buffer_idx = Some((buffer_idx + 1) % (octree.instance_data_buffer.len() - 1));
+                    &model_matrices[0..model_matrices
+                        .len()
+                        .min(octree.config.max_rendered_nodes.unwrap_or(1e3 as u64) as usize)],
+                );
+                octree.active_instance_buffer_idx =
+                    Some((buffer_idx + 1) % (octree.instance_data_buffer.len() - 1));
                 octree.info.render_count = model_matrices.len();
 
                 let instance_data_end = Instant::now();
                 let instance_data_duration = instance_data_end - instance_data_start;
                 self.messages.push(Message::new(ProfilingData {
                     instance_data_generation: Some(instance_data_duration.as_millis() as u64),
-                    .. Default::default()
+                    ..Default::default()
                 }));
 
-                self.messages.push(Message::new(
-                    ProfilingData {
-                        rendered_nodes: Some(octree.info.render_count as u32),
-                        ..Default::default()
-                    }));
-            } else { // drop locks
+                self.messages.push(Message::new(ProfilingData {
+                    rendered_nodes: Some(octree.info.render_count as u32),
+                    ..Default::default()
+                }));
+            } else {
+                // drop locks
                 println!("no camera provided");
             }
 
@@ -587,15 +620,6 @@ struct OptimizationData<'a> {
     depth_threshold: f64,
 }
 
-fn continue_to_leaf(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-//    if node.is_some() && node.as_ref().unwrap().is_leaf() {
-//        false
-//    } else {
-//        true
-//    }
-    true
-}
-
 fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() {
         let node = node.as_ref().unwrap();
@@ -609,14 +633,13 @@ fn limit_depth_filter(optimization_data: &OptimizationData, node: &Option<Node>)
     !limit_depth_traversal(optimization_data, node)
 }
 
-
 fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() {
         let node = node.as_ref().unwrap();
         let proj_matrix = optimization_data.octree_mvp;
 
         let projected_position = proj_matrix * node.position.extend(1.0);
-        let mut projected_scale = (node.scale.x / projected_position.w);
+        let mut projected_scale = node.scale.x / projected_position.w;
         projected_scale *= optimization_data.camera.resolution[0] / 2.0;
 
         let target_size = optimization_data.depth_threshold as f32 / optimization_data.octree_scale;

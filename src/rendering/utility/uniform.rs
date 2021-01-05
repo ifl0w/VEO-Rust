@@ -1,13 +1,13 @@
-use std::{iter, ptr};
 use std::borrow::{Borrow, BorrowMut};
-use std::mem::{ManuallyDrop, size_of};
+use std::mem::{size_of, ManuallyDrop};
 use std::sync::Arc;
+use std::{iter, ptr};
 
-use gfx_hal::{Backend, buffer, memory, pso};
-use gfx_hal::adapter::{Adapter, MemoryType};
 use gfx_hal::adapter::PhysicalDevice;
+use gfx_hal::adapter::{Adapter, MemoryType};
 use gfx_hal::device::Device;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
+use gfx_hal::{buffer, memory, pso, Backend};
 
 use crate::rendering::renderer::Renderer;
 
@@ -33,8 +33,8 @@ impl<B: Backend> GPUBuffer<B> {
         data_source: &[T],
         usage: buffer::Usage,
     ) -> Self
-        where
-            T: Copy,
+    where
+        T: Copy,
     {
         let stride = size_of::<T>();
         let upload_size = data_source.len() * stride;
@@ -46,11 +46,12 @@ impl<B: Backend> GPUBuffer<B> {
         buf
     }
 
-    pub fn new_with_size(device: &Arc<B::Device>,
-                                adapter: &Arc<Adapter<B>>,
-                                byte_size: usize,
-                                usage: buffer::Usage) -> Self {
-
+    pub fn new_with_size(
+        device: &Arc<B::Device>,
+        adapter: &Arc<Adapter<B>>,
+        byte_size: usize,
+        usage: buffer::Usage,
+    ) -> Self {
         let memory_types = adapter.physical_device.memory_properties().memory_types;
         let memory: B::Memory;
         let mut buffer: B::Buffer;
@@ -72,9 +73,9 @@ impl<B: Backend> GPUBuffer<B> {
                 .enumerate()
                 .position(|(id, mem_type)| {
                     mem_req.type_mask & (1 << id) != 0
-                        && mem_type
-                        .properties
-                        .contains(memory::Properties::CPU_VISIBLE | memory::Properties::COHERENT)
+                        && mem_type.properties.contains(
+                            memory::Properties::CPU_VISIBLE | memory::Properties::COHERENT,
+                        )
                 })
                 .unwrap()
                 .into();
@@ -98,8 +99,8 @@ impl<B: Backend> GPUBuffer<B> {
     /// does not change the stored length. The user has to ensure that elements in the buffer are
     /// updated correctly
     pub fn update_data<T>(&self, offset: usize, data_source: &[T])
-        where
-            T: Copy,
+    where
+        T: Copy,
     {
         let device = &self.device;
 
@@ -110,7 +111,9 @@ impl<B: Backend> GPUBuffer<B> {
         let memory = &self.memory;
 
         unsafe {
-            let mapping = device.map_memory(memory, offset as u64 .. self.size as u64).unwrap();
+            let mapping = device
+                .map_memory(memory, offset as u64..self.size as u64)
+                .unwrap();
             ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);
             device.unmap_memory(memory);
         }
@@ -119,8 +122,9 @@ impl<B: Backend> GPUBuffer<B> {
     /// invalidates the buffer content and replaces the data.
     /// Changes the number of elements tracked in the buffer.
     pub fn replace_data<T>(&mut self, data_source: &[T])
-        where
-            T: Copy {
+    where
+        T: Copy,
+    {
         self.update_data(0, data_source);
         self.element_count = data_source.len();
     }
@@ -156,27 +160,30 @@ impl<B: Backend> Uniform<B> {
         binding: u32,
         desc_sets: &Vec<B::DescriptorSet>,
     ) -> Self
-        where T: Copy {
+    where
+        T: Copy,
+    {
         let mut buffers: Vec<GPUBuffer<B>> = Vec::new();
         for idx in 0..renderer.frames_in_flight {
-            let buffer = unsafe {
-                GPUBuffer::new(
-                    &renderer.device,
-                    &renderer.adapter,
-                    &data,
-                    buffer::Usage::UNIFORM,
-                )
-            };
+            let buffer = GPUBuffer::new(
+                &renderer.device,
+                &renderer.adapter,
+                &data,
+                buffer::Usage::UNIFORM,
+            );
 
             unsafe {
-                renderer.device.write_descriptor_sets(iter::once(DescriptorSetWrite {
-                    set: &desc_sets[idx],
-                    binding,
-                    array_offset: 0,
-                    descriptors: iter::once(
-                        Descriptor::Buffer(buffer.get_buffer(), None..None)
-                    ),
-                }));
+                renderer
+                    .device
+                    .write_descriptor_sets(iter::once(DescriptorSetWrite {
+                        set: &desc_sets[idx],
+                        binding,
+                        array_offset: 0,
+                        descriptors: iter::once(Descriptor::Buffer(
+                            buffer.get_buffer(),
+                            None..None,
+                        )),
+                    }));
             }
 
             buffers.push(buffer);

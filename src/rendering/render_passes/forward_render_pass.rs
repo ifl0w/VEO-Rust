@@ -1,54 +1,61 @@
-use std::{iter, mem, ptr};
-use std::borrow::{Borrow, BorrowMut};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::convert::TryInto;
-use std::fmt::Debug;
 use std::hash::Hasher;
-use std::io::{Cursor, Error};
 use std::iter::once;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, Range};
 use std::process::exit;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, Weak};
+use std::{iter, mem, ptr};
 
 use cgmath::{Matrix, Matrix4, SquareMatrix};
-use gfx_hal::{Backend, command, format, format::Format, image, IndexType, memory, pass, pass::Attachment, pso, query};
 use gfx_hal::buffer::IndexBufferView;
-use gfx_hal::command::{ClearColor, ClearDepthStencil, ClearValue, CommandBuffer, ImageBlit, ImageCopy, SubpassContents};
+use gfx_hal::command::{
+    ClearColor, ClearDepthStencil, ClearValue, CommandBuffer, ImageBlit, ImageCopy, SubpassContents,
+};
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
-use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers, SubresourceRange};
 use gfx_hal::image::Layout::{TransferDstOptimal, TransferSrcOptimal};
 use gfx_hal::image::Usage;
 use gfx_hal::image::ViewError::Layer;
+use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers, SubresourceRange};
 use gfx_hal::memory::Barrier;
 use gfx_hal::pass::{Subpass, SubpassDependency, SubpassRef};
 use gfx_hal::pool::CommandPool;
-use gfx_hal::pso::{Comparison, DepthTest, Descriptor, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace, ShaderStageFlags, VertexInputRate};
+use gfx_hal::pso::{
+    Comparison, DepthTest, Descriptor, DescriptorPool, DescriptorPoolCreateFlags,
+    DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, FrontFace,
+    ShaderStageFlags, VertexInputRate,
+};
 use gfx_hal::query::Query;
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::range::RangeArg;
 use gfx_hal::window::{Extent2D, Surface, SwapImageIndex};
+use gfx_hal::{
+    command, format, format::Format, image, memory, pass, pass::Attachment, pso, query, Backend,
+    IndexType,
+};
 use glium::draw_parameters::sync;
 use winit::event::WindowEvent::CursorMoved;
 
-use crate::rendering::{CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass, ResourceManager, ShaderCode, Uniform, Vertex};
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
-use bytes::{Bytes, Buf};
 use crate::rendering::utility::resources::BufferID;
+use crate::rendering::{
+    CameraData, ForwardPipeline, GPUBuffer, GPUMesh, InstanceData, MeshID, Pipeline, RenderPass,
+    ResourceManager, ShaderCode, Uniform, Vertex,
+};
+use bytes::{Buf, Bytes};
 use gfx_hal::pso::State::Static;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
 /* Constants */
-const ENTRY_NAME: &str = "main";
+// const ENTRY_NAME: &str = "main";
 
 // Uniform
 const CAMERA_UNIFORM_BINDING: u32 = 0;
-const MODEL_MATRIX_UNIFORM_BINDING: u32 = 1;
+// const MODEL_MATRIX_UNIFORM_BINDING: u32 = 1;
 
 // Pipeline options
 pub enum PipelineOptions {
@@ -83,16 +90,18 @@ pub struct ForwardRenderPass<B: Backend> {
     // uniforms
     camera_uniform: Uniform<B>,
     //    instance_ssbo: Uniform<B>,
-    instance_buffer: GPUBuffer<B>,
-    instance_buffer_id: Option<BufferID>,
-
+    // instance_buffer: GPUBuffer<B>,
+    // instance_buffer_id: Option<BufferID>,
     meshes: HashMap<MeshID, Vec<Matrix4<f32>>>,
     meshes_wireframe: HashMap<MeshID, Vec<Matrix4<f32>>>,
     instanced_meshes: HashMap<MeshID, Vec<(Range<usize>, Matrix4<f32>)>>,
 }
 
 impl<B: Backend> ForwardRenderPass<B> {
-    pub fn new(renderer: &mut Renderer<B>, resource_manager: &Arc<Mutex<ResourceManager<B>>>) -> Self {
+    pub fn new(
+        renderer: &mut Renderer<B>,
+        resource_manager: &Arc<Mutex<ResourceManager<B>>>,
+    ) -> Self {
         let device = &renderer.device;
         let adapter = &renderer.adapter;
 
@@ -101,14 +110,16 @@ impl<B: Backend> ForwardRenderPass<B> {
             unsafe {
                 device.create_descriptor_set_layout(
                     &[
-                        DescriptorSetLayoutBinding { // Camera UBO
+                        DescriptorSetLayoutBinding {
+                            // Camera UBO
                             binding: 0,
                             ty: DescriptorType::UniformBuffer,
                             count: 1,
                             stage_flags: ShaderStageFlags::all(),
                             immutable_samplers: false,
                         },
-                        DescriptorSetLayoutBinding { // Instance Data SSBO
+                        DescriptorSetLayoutBinding {
+                            // Instance Data SSBO
                             binding: 1,
                             ty: DescriptorType::StorageBuffer,
                             count: 1,
@@ -118,7 +129,8 @@ impl<B: Backend> ForwardRenderPass<B> {
                     ],
                     &[],
                 )
-            }.expect("Can't create descriptor set layout"),
+            }
+            .expect("Can't create descriptor set layout"),
         );
 
         // Descriptors
@@ -134,12 +146,12 @@ impl<B: Backend> ForwardRenderPass<B> {
                         DescriptorRangeDesc {
                             ty: DescriptorType::StorageBuffer,
                             count: renderer.frames_in_flight,
-                        }
+                        },
                     ],
                     DescriptorPoolCreateFlags::empty(),
                 )
             }
-                .expect("Can't create descriptor pool"),
+            .expect("Can't create descriptor pool"),
         );
 
         let mut desc_set: Vec<B::DescriptorSet> = Vec::new();
@@ -203,50 +215,65 @@ impl<B: Backend> ForwardRenderPass<B> {
             let in_dependency = SubpassDependency {
                 passes: SubpassRef::External..SubpassRef::Pass(0),
                 stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
-                    ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
+                    ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
+                        | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
                 accesses: image::Access::empty()
                     ..(image::Access::COLOR_ATTACHMENT_READ
-                    | image::Access::COLOR_ATTACHMENT_WRITE
-                    | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
-                    | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE),
+                        | image::Access::COLOR_ATTACHMENT_WRITE
+                        | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
+                        | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE),
                 flags: memory::Dependencies::empty(),
             };
             let out_dependency = SubpassDependency {
                 passes: SubpassRef::Pass(0)..SubpassRef::External,
-                stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT | pso::PipelineStage::EARLY_FRAGMENT_TESTS
+                stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
+                    | pso::PipelineStage::EARLY_FRAGMENT_TESTS
                     ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
                 accesses: (image::Access::COLOR_ATTACHMENT_READ
                     | image::Access::COLOR_ATTACHMENT_WRITE
                     | image::Access::DEPTH_STENCIL_ATTACHMENT_READ
-                    | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE)..image::Access::empty(),
+                    | image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                    ..image::Access::empty(),
                 flags: memory::Dependencies::empty(),
             };
 
             ManuallyDrop::new(
-                unsafe { device.create_render_pass(&[attachment, depth_attachment], &[subpass], &[in_dependency, out_dependency]) }
-                    .expect("Can't create render pass"),
+                unsafe {
+                    device.create_render_pass(
+                        &[attachment, depth_attachment],
+                        &[subpass],
+                        &[in_dependency, out_dependency],
+                    )
+                }
+                .expect("Can't create render pass"),
             )
         };
 
         // uniforms
-        let camera_uniform = Uniform::new(&renderer,
-                                          &[CameraData::default()],
-                                          CAMERA_UNIFORM_BINDING,
-                                          &desc_set);
+        let camera_uniform = Uniform::new(
+            &renderer,
+            &[CameraData::default()],
+            CAMERA_UNIFORM_BINDING,
+            &desc_set,
+        );
 
         // instance/draw buffer
-        let instance_buffer = GPUBuffer::new_with_size(device, adapter,
-                                                       std::mem::size_of::<InstanceData>() * 1000,
-                                                       gfx_hal::buffer::Usage::STORAGE);
+        let instance_buffer = GPUBuffer::new_with_size(
+            device,
+            adapter,
+            std::mem::size_of::<InstanceData>() * 1000,
+            gfx_hal::buffer::Usage::STORAGE,
+        );
         for idx in 0..renderer.frames_in_flight {
             unsafe {
                 device.write_descriptor_sets(iter::once(DescriptorSetWrite {
                     set: &desc_set[idx],
                     binding: 1,
                     array_offset: 0,
-                    descriptors: iter::once(
-                        Descriptor::Buffer(instance_buffer.get_buffer(), None..None)
-                    ),
+                    descriptors: iter::once(Descriptor::Buffer(
+                        instance_buffer.get_buffer(),
+                        None..None,
+                    )),
                 }));
             }
         }
@@ -258,16 +285,29 @@ impl<B: Backend> ForwardRenderPass<B> {
             }
         }
 
-        let forward_pipeline = ForwardPipeline::new(device, render_pass.deref(), render_set_layout.deref(), pso::PolygonMode::Fill);
-        let forward_wireframe_pipeline = ForwardPipeline::new(device, render_pass.deref(), render_set_layout.deref(), pso::PolygonMode::Line(Static(1.0)));
-        let mut framebuffer = Framebuffer::new(device,
-                                               adapter,
-                                               &renderer.queue_group,
-                                               &render_pass,
-                                               renderer.dimensions,
-                                               Usage::COLOR_ATTACHMENT | Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
-                                               Format::Rgba32Sfloat,
-                                               renderer.frames_in_flight).unwrap();
+        let forward_pipeline = ForwardPipeline::new(
+            device,
+            render_pass.deref(),
+            render_set_layout.deref(),
+            pso::PolygonMode::Fill,
+        );
+        let forward_wireframe_pipeline = ForwardPipeline::new(
+            device,
+            render_pass.deref(),
+            render_set_layout.deref(),
+            pso::PolygonMode::Line(Static(1.0)),
+        );
+        let mut framebuffer = Framebuffer::new(
+            device,
+            adapter,
+            &renderer.queue_group,
+            &render_pass,
+            renderer.dimensions,
+            Usage::COLOR_ATTACHMENT | Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
+            Format::Rgba32Sfloat,
+            renderer.frames_in_flight,
+        )
+        .unwrap();
 
         let viewport = pso::Viewport {
             rect: pso::Rect {
@@ -280,10 +320,11 @@ impl<B: Backend> ForwardRenderPass<B> {
         };
 
         let timestamp_query_pool = unsafe {
-            ManuallyDrop::new(device.create_query_pool(
-                query::Type::Timestamp,
-                renderer.frames_in_flight as u32 * 2) // * 2 for start and end time stamp
-                .expect("Failed to create query pool"))
+            ManuallyDrop::new(
+                device
+                    .create_query_pool(query::Type::Timestamp, renderer.frames_in_flight as u32 * 2) // * 2 for start and end time stamp
+                    .expect("Failed to create query pool"),
+            )
         };
 
         ForwardRenderPass {
@@ -310,9 +351,8 @@ impl<B: Backend> ForwardRenderPass<B> {
             cmd_buffers,
 
             camera_uniform,
-            instance_buffer,
-            instance_buffer_id: None,
-
+            // instance_buffer,
+            // instance_buffer_id: None,
             meshes: HashMap::new(),
             meshes_wireframe: HashMap::new(),
             instanced_meshes: HashMap::new(),
@@ -320,8 +360,18 @@ impl<B: Backend> ForwardRenderPass<B> {
     }
 
     pub fn recreate_pipeline(&mut self) {
-        self.forward_pipeline = ForwardPipeline::new(&self.device, self.render_pass.deref(), self.render_set_layout.deref(), pso::PolygonMode::Fill);
-        self.forward_wireframe_pipeline = ForwardPipeline::new(&self.device, self.render_pass.deref(), self.render_set_layout.deref(), pso::PolygonMode::Line(Static(1.0)));
+        self.forward_pipeline = ForwardPipeline::new(
+            &self.device,
+            self.render_pass.deref(),
+            self.render_set_layout.deref(),
+            pso::PolygonMode::Fill,
+        );
+        self.forward_wireframe_pipeline = ForwardPipeline::new(
+            &self.device,
+            self.render_pass.deref(),
+            self.render_set_layout.deref(),
+            pso::PolygonMode::Line(Static(1.0)),
+        );
     }
 
     pub fn update_camera(&mut self, camera_data: CameraData, frame_idx: usize) {
@@ -340,10 +390,15 @@ impl<B: Backend> ForwardRenderPass<B> {
         }
     }
 
-    pub fn add_mesh(&mut self, mesh_id: MeshID, transform: Matrix4<f32>, pipeline: PipelineOptions) {
+    pub fn add_mesh(
+        &mut self,
+        mesh_id: MeshID,
+        transform: Matrix4<f32>,
+        pipeline: PipelineOptions,
+    ) {
         let mut mesh_collection = match pipeline {
             PipelineOptions::Default => &mut self.meshes,
-            PipelineOptions::Wireframe => &mut self.meshes_wireframe
+            PipelineOptions::Wireframe => &mut self.meshes_wireframe,
         };
 
         match mesh_collection.get_mut(&mesh_id) {
@@ -362,13 +417,18 @@ impl<B: Backend> ForwardRenderPass<B> {
     /// Replaces instance buffer if it was already added.
     ///
     /// TODO: type checking of buffer (probably requires refactoring of buffers)
-    pub fn add_instances(&mut self, mesh_id: MeshID, instance_data_range: (Range<usize>, Matrix4<f32>)) {
+    pub fn add_instances(
+        &mut self,
+        mesh_id: MeshID,
+        instance_data_range: (Range<usize>, Matrix4<f32>),
+    ) {
         match self.instanced_meshes.get_mut(&mesh_id) {
             Some(instances) => {
                 instances.push(instance_data_range);
             }
             None => {
-                self.instanced_meshes.insert(mesh_id, vec![instance_data_range]);
+                self.instanced_meshes
+                    .insert(mesh_id, vec![instance_data_range]);
             }
         };
     }
@@ -378,14 +438,13 @@ impl<B: Backend> ForwardRenderPass<B> {
         let buf_lock = buffer.lock().unwrap();
 
         unsafe {
-            self.device.write_descriptor_sets(iter::once(DescriptorSetWrite {
-                set: &self.desc_set[frame_idx],
-                binding: 1,
-                array_offset: 0,
-                descriptors: iter::once(
-                    Descriptor::Buffer(buf_lock.get_buffer(), None..None)
-                ),
-            }));
+            self.device
+                .write_descriptor_sets(iter::once(DescriptorSetWrite {
+                    set: &self.desc_set[frame_idx],
+                    binding: 1,
+                    array_offset: 0,
+                    descriptors: iter::once(Descriptor::Buffer(buf_lock.get_buffer(), None..None)),
+                }));
         }
     }
 }
@@ -406,54 +465,48 @@ impl<B: Backend> Drop for ForwardRenderPass<B> {
                 .destroy_render_pass(ManuallyDrop::into_inner(ptr::read(&self.render_pass)));
 
             self.device
-                .destroy_query_pool(ManuallyDrop::into_inner(ptr::read(&self.timestamp_query_pool)));
+                .destroy_query_pool(ManuallyDrop::into_inner(ptr::read(
+                    &self.timestamp_query_pool,
+                )));
         }
     }
 }
 
 impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     fn sync(&mut self, frame_idx: usize) {
-        let (fe,
-            fi,
-            framebuffer,
-            pool,
-            command_buffers,
-            semaphore) = self.framebuffer.get_frame_data(frame_idx);
+        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+            self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
             self.device
                 .wait_for_fence(fe, !0)
                 .expect("Failed to wait for fence");
-            self.device
-                .reset_fence(fe)
-                .expect("Failed to reset fence");
+            self.device.reset_fence(fe).expect("Failed to reset fence");
             pool.reset(false);
         }
     }
 
-    fn submit(&mut self, frame_idx: usize, queue: &mut B::CommandQueue, wait_semaphores: Vec<&B::Semaphore>)
-              -> &B::Semaphore {
-        let (fe,
-            fi,
-            framebuffer,
-            pool,
-            command_buffers,
-            semaphore) = self.framebuffer.get_frame_data(frame_idx);
+    fn submit(
+        &mut self,
+        frame_idx: usize,
+        queue: &mut B::CommandQueue,
+        wait_semaphores: Vec<&B::Semaphore>,
+    ) -> &B::Semaphore {
+        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+            self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
-            let wait_sem = wait_semaphores.iter().map(|sem| {
-                (*sem, pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT)
-            }).collect::<Vec<(&B::Semaphore, pso::PipelineStage)>>();
+            let wait_sem = wait_semaphores
+                .iter()
+                .map(|sem| (*sem, pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT))
+                .collect::<Vec<(&B::Semaphore, pso::PipelineStage)>>();
 
             let submission = Submission {
                 command_buffers: command_buffers.iter(),
                 wait_semaphores: wait_sem,
                 signal_semaphores: vec![&*semaphore],
             };
-            queue.submit(
-                submission,
-                Some(fe),
-            );
+            queue.submit(submission, Some(fe));
         }
 
         semaphore
@@ -467,15 +520,17 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         &self.desc_set[frame_index]
     }
 
-    fn blit_to_surface(&mut self, queue: &mut B::CommandQueue, surface_image: &B::Image, frame_idx: usize, acquire_semaphore: &B::Semaphore) -> &B::Semaphore {
+    fn blit_to_surface(
+        &mut self,
+        queue: &mut B::CommandQueue,
+        surface_image: &B::Image,
+        frame_idx: usize,
+        acquire_semaphore: &B::Semaphore,
+    ) -> &B::Semaphore {
         self.sync(frame_idx);
 
-        let (fe,
-            fi,
-            framebuffer,
-            pool,
-            command_buffers,
-            semaphore) = self.framebuffer.get_frame_data(frame_idx);
+        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+            self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
             // blitting
@@ -504,7 +559,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 &[target_image_barrier],
             );
 
-            let mut image_barrier = Barrier::Image {
+            let image_barrier = Barrier::Image {
                 states: (image::Access::MEMORY_WRITE, Layout::TransferSrcOptimal)
                     ..(image::Access::MEMORY_READ, Layout::TransferSrcOptimal),
                 target: &*fi.image,
@@ -522,55 +577,66 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 &[image_barrier],
             );
 
-//            cmd_buffer.copy_image(&fi.image,
-//                                  Layout::TransferSrcOptimal,
-//                                  surface_image,
-//                                  Layout::TransferDstOptimal,
-//                                  iter::once(ImageCopy {
-//                                      extent: Extent {
-//                                          width: self.extent.width,
-//                                          height: self.extent.height,
-//                                          depth: 1,
-//                                      },
-//                                      src_subresource: SubresourceLayers {
-//                                          aspects: format::Aspects::COLOR,
-//                                          level: 0,
-//                                          layers: 0..1,
-//                                      },
-//                                      src_offset: Offset { x: 0, y: 0, z: 0 },
-//                                      dst_subresource: SubresourceLayers {
-//                                          aspects: format::Aspects::COLOR,
-//                                          level: 0,
-//                                          layers: 0..1,
-//                                      },
-//                                      dst_offset: Offset { x: 0, y: 0, z: 0 },
-//                                  }));
+            //            cmd_buffer.copy_image(&fi.image,
+            //                                  Layout::TransferSrcOptimal,
+            //                                  surface_image,
+            //                                  Layout::TransferDstOptimal,
+            //                                  iter::once(ImageCopy {
+            //                                      extent: Extent {
+            //                                          width: self.extent.width,
+            //                                          height: self.extent.height,
+            //                                          depth: 1,
+            //                                      },
+            //                                      src_subresource: SubresourceLayers {
+            //                                          aspects: format::Aspects::COLOR,
+            //                                          level: 0,
+            //                                          layers: 0..1,
+            //                                      },
+            //                                      src_offset: Offset { x: 0, y: 0, z: 0 },
+            //                                      dst_subresource: SubresourceLayers {
+            //                                          aspects: format::Aspects::COLOR,
+            //                                          level: 0,
+            //                                          layers: 0..1,
+            //                                      },
+            //                                      dst_offset: Offset { x: 0, y: 0, z: 0 },
+            //                                  }));
 
-            cmd_buffer.blit_image(&fi.image,
-                                  Layout::TransferSrcOptimal,
-                                  surface_image,
-                                  Layout::TransferDstOptimal,
-                                  Filter::Linear,
-                                  iter::once(ImageBlit {
-                                      src_subresource: SubresourceLayers {
-                                          aspects: format::Aspects::COLOR,
-                                          level: 0,
-                                          layers: 0..1,
-                                      },
-                                      src_bounds: Offset { x: 0, y: 0, z: 0 }
-                                          ..Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
-                                      dst_subresource: SubresourceLayers {
-                                          aspects: format::Aspects::COLOR,
-                                          level: 0,
-                                          layers: 0..1,
-                                      },
-                                      dst_bounds: Offset { x: 0, y: 0, z: 0 }
-                                          ..Offset { x: self.extent.width as i32, y: self.extent.height as i32, z: 1 },
-                                  }));
+            cmd_buffer.blit_image(
+                &fi.image,
+                Layout::TransferSrcOptimal,
+                surface_image,
+                Layout::TransferDstOptimal,
+                Filter::Linear,
+                iter::once(ImageBlit {
+                    src_subresource: SubresourceLayers {
+                        aspects: format::Aspects::COLOR,
+                        level: 0,
+                        layers: 0..1,
+                    },
+                    src_bounds: Offset { x: 0, y: 0, z: 0 }..Offset {
+                        x: self.extent.width as i32,
+                        y: self.extent.height as i32,
+                        z: 1,
+                    },
+                    dst_subresource: SubresourceLayers {
+                        aspects: format::Aspects::COLOR,
+                        level: 0,
+                        layers: 0..1,
+                    },
+                    dst_bounds: Offset { x: 0, y: 0, z: 0 }..Offset {
+                        x: self.extent.width as i32,
+                        y: self.extent.height as i32,
+                        z: 1,
+                    },
+                }),
+            );
 
             let image_barrier = Barrier::Image {
                 states: (image::Access::TRANSFER_READ, Layout::TransferSrcOptimal)
-                    ..(image::Access::TRANSFER_WRITE, Layout::ColorAttachmentOptimal),
+                    ..(
+                        image::Access::TRANSFER_WRITE,
+                        Layout::ColorAttachmentOptimal,
+                    ),
                 target: &*fi.image,
                 families: None,
                 range: SubresourceRange {
@@ -612,26 +678,21 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         unsafe {
             let submission = Submission {
                 command_buffers: command_buffers.iter(),
-                wait_semaphores: vec![(&*semaphore, pso::PipelineStage::TRANSFER),
-                                      (acquire_semaphore, pso::PipelineStage::TRANSFER)],
+                wait_semaphores: vec![
+                    (&*semaphore, pso::PipelineStage::TRANSFER),
+                    (acquire_semaphore, pso::PipelineStage::TRANSFER),
+                ],
                 signal_semaphores: vec![&*semaphore],
             };
-            queue.submit(
-                submission,
-                Some(fe),
-            );
+            queue.submit(submission, Some(fe));
         }
 
         semaphore
     }
 
     fn record(&mut self, frame_idx: usize) {
-        let (fe,
-            fi,
-            framebuffer,
-            pool,
-            command_buffers,
-            semaphore) = self.framebuffer.get_frame_data(frame_idx);
+        let (fe, fi, framebuffer, pool, command_buffers, semaphore) =
+            self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
             let mut command_buffer = match command_buffers.pop() {
@@ -641,12 +702,16 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             command_buffer.begin_primary(command::CommandBufferFlags::ONE_TIME_SUBMIT);
 
-            command_buffer.reset_query_pool(&self.timestamp_query_pool, 0 .. self.frames_in_flight * 2);
+            command_buffer
+                .reset_query_pool(&self.timestamp_query_pool, 0..self.frames_in_flight * 2);
 
-            command_buffer.write_timestamp(pso::PipelineStage::TOP_OF_PIPE, Query {
-                pool: &*self.timestamp_query_pool,
-                id: (frame_idx * 2) as u32,
-            });
+            command_buffer.write_timestamp(
+                pso::PipelineStage::TOP_OF_PIPE,
+                Query {
+                    pool: &*self.timestamp_query_pool,
+                    id: (frame_idx * 2) as u32,
+                },
+            );
 
             command_buffer.set_viewports(0, &[self.viewport.clone()]);
             command_buffer.set_scissors(0, &[self.viewport.rect]);
@@ -666,17 +731,17 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                             depth: 1f32,
                             stencil: 0,
                         },
-                    }
+                    },
                 ],
                 command::SubpassContents::Inline,
             );
-
 
             {
                 let rm_lock = self.resource_manager.lock().unwrap();
 
                 if !self.meshes.is_empty() {
-                    command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline(false));
+                    command_buffer
+                        .bind_graphics_pipeline(&self.forward_pipeline.get_pipeline(false));
                     command_buffer.bind_graphics_descriptor_sets(
                         &self.forward_pipeline.get_layout(false),
                         0,
@@ -692,13 +757,15 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                     let ind_buf = &**mesh.index_buffer;
 
                     for transform in transforms {
-                        let mut data: &[f32; 16] = transform.as_ref();
+                        let data: &[f32; 16] = transform.as_ref();
                         let push_data: [u32; 16] = std::mem::transmute_copy(data);
 
-                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(false),
-                                                               ShaderStageFlags::VERTEX,
-                                                               0,
-                                                               &push_data);
+                        command_buffer.push_graphics_constants(
+                            &self.forward_pipeline.get_layout(false),
+                            ShaderStageFlags::VERTEX,
+                            0,
+                            &push_data,
+                        );
 
                         command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
 
@@ -713,7 +780,9 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 }
 
                 if !self.meshes_wireframe.is_empty() {
-                    command_buffer.bind_graphics_pipeline(&self.forward_wireframe_pipeline.get_pipeline(false));
+                    command_buffer.bind_graphics_pipeline(
+                        &self.forward_wireframe_pipeline.get_pipeline(false),
+                    );
                     command_buffer.bind_graphics_descriptor_sets(
                         &self.forward_wireframe_pipeline.get_layout(false),
                         0,
@@ -729,13 +798,15 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                     let ind_buf = &**mesh.index_buffer;
 
                     for transform in transforms {
-                        let mut data: &[f32; 16] = transform.as_ref();
+                        let data: &[f32; 16] = transform.as_ref();
                         let push_data: [u32; 16] = std::mem::transmute_copy(data);
 
-                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(false),
-                                                               ShaderStageFlags::VERTEX,
-                                                               0,
-                                                               &push_data);
+                        command_buffer.push_graphics_constants(
+                            &self.forward_pipeline.get_layout(false),
+                            ShaderStageFlags::VERTEX,
+                            0,
+                            &push_data,
+                        );
 
                         command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
 
@@ -754,7 +825,8 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 let rm_lock = self.resource_manager.lock().unwrap();
 
                 if !self.instanced_meshes.is_empty() {
-                    command_buffer.bind_graphics_pipeline(&self.forward_pipeline.get_pipeline(true));
+                    command_buffer
+                        .bind_graphics_pipeline(&self.forward_pipeline.get_pipeline(true));
                     command_buffer.bind_graphics_descriptor_sets(
                         &self.forward_pipeline.get_layout(true),
                         0,
@@ -772,17 +844,21 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                     for (range, transform) in instance_ranges {
                         command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
 
-                        let mut data: &[f32; 16] = transform.as_ref();
+                        let data: &[f32; 16] = transform.as_ref();
                         let push_data: [u32; 16] = std::mem::transmute_copy(data);
 
-                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(true),
-                                                               ShaderStageFlags::VERTEX,
-                                                               0,
-                                                               &push_data);
-                        command_buffer.push_graphics_constants(&self.forward_pipeline.get_layout(true),
-                                                               ShaderStageFlags::VERTEX,
-                                                               64,
-                                                               &[range.start as u32]);
+                        command_buffer.push_graphics_constants(
+                            &self.forward_pipeline.get_layout(true),
+                            ShaderStageFlags::VERTEX,
+                            0,
+                            &push_data,
+                        );
+                        command_buffer.push_graphics_constants(
+                            &self.forward_pipeline.get_layout(true),
+                            ShaderStageFlags::VERTEX,
+                            64,
+                            &[range.start as u32],
+                        );
 
                         let index_buffer_view = IndexBufferView {
                             buffer: ind_buf,
@@ -797,10 +873,13 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             command_buffer.end_render_pass();
 
-            command_buffer.write_timestamp(pso::PipelineStage::BOTTOM_OF_PIPE, Query {
-                pool: &*self.timestamp_query_pool,
-                id: (frame_idx * 2  + 1) as u32,
-            });
+            command_buffer.write_timestamp(
+                pso::PipelineStage::BOTTOM_OF_PIPE,
+                Query {
+                    pool: &*self.timestamp_query_pool,
+                    id: (frame_idx * 2 + 1) as u32,
+                },
+            );
 
             command_buffer.finish();
 
@@ -813,13 +892,15 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         let mut data: [u8; 16] = [0u8; 16];
 
         unsafe {
-            self.device.get_query_pool_results(
-                &self.timestamp_query_pool,
-                (frame_idx * 2) as u32 .. ((frame_idx * 2) + 2) as u32,
-                &mut data,
-                0,
-                gfx_hal::query::ResultFlags::WAIT | gfx_hal::query::ResultFlags::BITS_64).unwrap();
-
+            self.device
+                .get_query_pool_results(
+                    &self.timestamp_query_pool,
+                    (frame_idx * 2) as u32..((frame_idx * 2) + 2) as u32,
+                    &mut data,
+                    0,
+                    gfx_hal::query::ResultFlags::WAIT | gfx_hal::query::ResultFlags::BITS_64,
+                )
+                .unwrap();
         }
 
         // TODO: check if VkQueueFamilyProperties::timestampValidBits and timestampPeriod is already handled by gfx_hal

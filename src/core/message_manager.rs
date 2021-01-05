@@ -12,7 +12,10 @@ pub trait PayloadClone {
     fn clone_box(&self) -> Box<dyn Payload>;
 }
 
-impl<T> PayloadClone for T where T: 'static + Payload + Clone {
+impl<T> PayloadClone for T
+where
+    T: 'static + Payload + Clone,
+{
     fn clone_box(&self) -> Box<dyn Payload> {
         Box::new(self.clone())
     }
@@ -70,7 +73,6 @@ impl MessageManager {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct Empty {}
 
@@ -83,14 +85,14 @@ impl Payload for Exit {}
 
 #[derive(Debug, Clone)]
 pub struct MainWindow {
-    pub window_id: WindowId
+    pub window_id: WindowId,
 }
 
 impl Payload for MainWindow {}
 
 #[derive(Debug, Clone)]
 pub struct Text {
-    pub text: String
+    pub text: String,
 }
 
 impl Payload for Text {}

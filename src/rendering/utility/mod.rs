@@ -13,8 +13,8 @@ pub use uniform::UniformID;
 //pub use uniform::Uniform;
 pub mod uniform;
 
-pub mod resources;
 pub mod framebuffer;
+pub mod resources;
 pub mod swapchain;
 
 pub type Index = u32;
@@ -38,5 +38,5 @@ impl Vertex {
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct InstanceData {
-    pub model_matrix: [[f32; 4]; 4]
+    pub model_matrix: [[f32; 4]; 4],
 }

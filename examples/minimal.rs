@@ -1,6 +1,9 @@
 use nse;
-use nse::core::{Entity, Exit, Message, System};
+use nse::core::{Entity, Exit, Message, System, Filter};
 use nse::NSE;
+use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use winit::event::VirtualKeyCode::Mute;
 
 #[derive(Debug)]
 struct NoopSystem {
@@ -8,26 +11,28 @@ struct NoopSystem {
 }
 
 impl NoopSystem {
-    fn new(count: u64) -> Self {
-        NoopSystem {
-            counter: count
-        }
+    fn new(count: u64) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(NoopSystem{ counter: count }))
     }
 }
 
 impl System for NoopSystem {
-    fn execute(&mut self, entities: &Vec<&Box<Entity>>) {
+    fn execute(&mut self, entities: &Vec<Arc<Mutex<Filter>>>, _: Duration) {
         if self.counter == 0 {
             println!("Stop");
         } else {
-            println!("Noop - Entities: {} - Counter {}", entities.len(), self.counter);
+            println!(
+                "Noop - Entities: {} - Counter {}",
+                entities.len(),
+                self.counter
+            );
             self.counter -= 1;
         }
     }
 
     fn get_messages(&mut self) -> Vec<Message> {
         return if self.counter == 0 {
-            vec![Message::new(Box::new(Exit {}))]
+            vec![Message::new(Exit {})]
         } else {
             vec![]
         };
@@ -37,18 +42,23 @@ impl System for NoopSystem {
 fn main() {
     let mut engine: NSE = NSE::new();
 
-    let noop_system = Box::new(NoopSystem::new(100));
+    let noop_system = NoopSystem::new(100);
 
-    engine.system_manager.add_system(noop_system);
+    engine.add_system(&noop_system);
 
-    let mut e1 = Box::new(Entity::new());
-    e1.name = String::from("Entity 1");
-    engine.entity_manager.remove_entity(&e1);
+    let mut e1 = Entity::new();
+    e1.lock().unwrap().name = String::from("Entity 1");
+    engine.remove_entity(e1);
 
     for _i in 1..10 {
-        let mut e = Box::new(Entity::new());
-        e.name = String::from(format!("Entity {}", e.id));
-        engine.entity_manager.add_entity(&e);
+        let mut e = Entity::new();
+
+        {
+            let mut eRef = e.lock().unwrap();
+            eRef.name = String::from(format!("Entity {}", eRef.id));
+        }
+
+        engine.add_entity(e);
     }
 
     engine.run();

@@ -2,9 +2,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Deg, Matrix3, Quaternion, Vector3};
-use winit::event::{ElementState, Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
 use winit::event::DeviceEvent::MouseMotion;
 use winit::event::ElementState::Pressed;
+use winit::event::{Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
 use winit::window::WindowId;
 
 use nse::core::{Filter, MainWindow, Message, System};
@@ -57,7 +57,9 @@ impl FPSCameraSystem {
 }
 
 impl System for FPSCameraSystem {
-    fn get_filter(&mut self) -> Vec<Filter> { vec![nse::filter!(Camera, Transformation)] }
+    fn get_filter(&mut self) -> Vec<Filter> {
+        vec![nse::filter!(Camera, Transformation)]
+    }
 
     fn handle_input(&mut self, event: &Event<()>) {
         if self.main_window.is_none() {
@@ -65,70 +67,82 @@ impl System for FPSCameraSystem {
         }
 
         match event {
-            | Event::WindowEvent { event, window_id } => {
+            Event::WindowEvent { event, window_id } => {
                 if *window_id != self.main_window.expect("No main window exists.") {
                     return;
                 }
 
                 match event {
-                    | WindowEvent::KeyboardInput { input, .. } => {
-                        match input {
-                            | KeyboardInput { virtual_keycode, state, .. } => {
-                                match (virtual_keycode, state) {
-                                    | (Some(VirtualKeyCode::W), state) => {
-                                        self.move_forward = *state == Pressed;
-                                    }
-                                    | (Some(VirtualKeyCode::A), state) => {
-                                        self.move_left = *state == Pressed;
-                                    }
-                                    | (Some(VirtualKeyCode::S), state) => {
-                                        self.move_back = *state == Pressed;
-                                    }
-                                    | (Some(VirtualKeyCode::D), state) => {
-                                        self.move_right = *state == Pressed;
-                                    }
-                                    | (Some(VirtualKeyCode::LShift), state) => {
-                                        self.sprint = *state == Pressed;
-                                    }
-                                    | _ => {}
-                                }
+                    WindowEvent::KeyboardInput { input, .. } => match input {
+                        KeyboardInput {
+                            virtual_keycode,
+                            state,
+                            ..
+                        } => match (virtual_keycode, state) {
+                            (Some(VirtualKeyCode::W), state) => {
+                                self.move_forward = *state == Pressed;
                             }
-                        }
-                    }
-                    | WindowEvent::MouseInput { button, state, .. } => {
-                        match button {
-                            MouseButton::Left => {
-                                self.active = *state == Pressed;
-                                self.mouse_delta = (0.0, 0.0);
+                            (Some(VirtualKeyCode::A), state) => {
+                                self.move_left = *state == Pressed;
                             }
-                            _ => ()
+                            (Some(VirtualKeyCode::S), state) => {
+                                self.move_back = *state == Pressed;
+                            }
+                            (Some(VirtualKeyCode::D), state) => {
+                                self.move_right = *state == Pressed;
+                            }
+                            (Some(VirtualKeyCode::LShift), state) => {
+                                self.sprint = *state == Pressed;
+                            }
+                            _ => {}
+                        },
+                    },
+                    WindowEvent::MouseInput { button, state, .. } => match button {
+                        MouseButton::Left => {
+                            self.active = *state == Pressed;
+                            self.mouse_delta = (0.0, 0.0);
                         }
-                    }
-                    _ => ()
+                        _ => (),
+                    },
+                    _ => (),
                 }
             }
-            | Event::DeviceEvent { event, .. } => {
+            Event::DeviceEvent { event, .. } => {
                 match event {
-                    | MouseMotion { delta, .. } => {
+                    MouseMotion { delta, .. } => {
                         // sum up delta. Per frame there might be more than one MouseMotion event
-                        self.mouse_delta = (self.mouse_delta.0 + delta.0 as f32,
-                                            self.mouse_delta.1 + delta.1 as f32);
+                        self.mouse_delta = (
+                            self.mouse_delta.0 + delta.0 as f32,
+                            self.mouse_delta.1 + delta.1 as f32,
+                        );
                     }
-                    _ => ()
+                    _ => (),
                 }
             }
-            _ => ()
+            _ => (),
         }
     }
 
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, delta_time: Duration) {
         let filter = filter[0].lock().unwrap();
-        let mut camera = filter.entities.get(0)
-            .expect("No camera provided").lock().unwrap();
+        let mut camera = filter
+            .entities
+            .get(0)
+            .expect("No camera provided")
+            .lock()
+            .unwrap();
 
-        let mut transform = camera.get_component::<Transformation>().ok().unwrap().clone();
+        let mut transform = camera
+            .get_component::<Transformation>()
+            .ok()
+            .unwrap()
+            .clone();
 
-        let mut axis_aligned_translation = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
+        let mut axis_aligned_translation = Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
         if self.move_forward {
             axis_aligned_translation.z -= self.movement_speed * delta_time.as_secs_f32();
         }
@@ -149,8 +163,17 @@ impl System for FPSCameraSystem {
             let angle_x = Deg(-self.mouse_delta.1 / 10.0 * self.mouse_speed);
             let angle_y = Deg(-self.mouse_delta.0 / 10.0 * self.mouse_speed);
 
-            let camera_y = Vector3 { x: 0.0, y: 1.0, z: 0.0 };
-            let camera_x = transform.rotation * Vector3 { x: 1.0, y: 0.0, z: 0.0 };
+            let camera_y = Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            };
+            let camera_x = transform.rotation
+                * Vector3 {
+                    x: 1.0,
+                    y: 0.0,
+                    z: 0.0,
+                };
 
             let x = Quaternion::from(Matrix3::from_axis_angle(camera_x, angle_x));
             let y = Quaternion::from(Matrix3::from_axis_angle(camera_y, angle_y));
@@ -160,7 +183,8 @@ impl System for FPSCameraSystem {
             self.mouse_delta = (0.0, 0.0);
         }
 
-        transform = transform.position(transform.position + transform.rotation * axis_aligned_translation);
+        transform =
+            transform.position(transform.position + transform.rotation * axis_aligned_translation);
 
         camera.add_component(transform);
     }

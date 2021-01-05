@@ -1,41 +1,22 @@
-use std::{iter, mem, ptr};
-use std::any::Any;
-use std::borrow::{Borrow, BorrowMut};
 use std::hash::{Hash, Hasher};
-use std::mem::ManuallyDrop;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering::Relaxed;
-
-use gfx_hal::adapter::PhysicalDevice;
-use gfx_hal::Backend as m;
-use gfx_hal::buffer::IndexBufferView;
-use gfx_hal::device::Device;
+use std::sync::{Arc, Mutex};
 
 use crate::core::Component;
-use crate::rendering::renderer::Renderer;
-use crate::rendering::{RenderSystem, GPUMesh};
-use crate::rendering::utility::{MeshGenerator, ResourceManager};
 use crate::rendering::utility::resources::MeshID;
+use crate::rendering::utility::{MeshGenerator};
+use crate::rendering::{GPUMesh, RenderSystem};
 
-#[cfg(feature = "dx11")]
-pub extern crate gfx_backend_dx11 as Backend;
-#[cfg(feature = "dx12")]
-pub extern crate gfx_backend_dx12 as Backend;
-#[cfg(
-not(any(
-feature = "vulkan",
-feature = "dx12",
-feature = "metal",
-feature = "gl",
-feature = "wgl"
+#[cfg(not(any(
+    feature = "vulkan",
+    feature = "dx12",
+    feature = "metal",
+    feature = "gl",
+    feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
 pub extern crate gfx_backend_gl as Backend;
-#[cfg(feature = "metal")]
-pub extern crate gfx_backend_metal as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
 
@@ -44,7 +25,7 @@ static mut LAST_MESH_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone)]
 pub struct Mesh {
     pub id: MeshID,
-    pub mesh: Arc<GPUMesh<Backend::Backend>>
+    pub mesh: Arc<GPUMesh<Backend::Backend>>,
 }
 
 impl Component for Mesh {}
@@ -71,22 +52,19 @@ impl Mesh {
         let gpu_mesh = GPUMesh::new::<T>(&resource_manager.device, &resource_manager.adapter);
         let (id, mesh) = resource_manager.add_mesh(gpu_mesh);
 
-        Mesh {
-            id,
-            mesh,
-        }
+        Mesh { id, mesh }
     }
 
-    pub fn new_dynamic<T: MeshGenerator>(generator_instance: T, render_system: &Arc<Mutex<RenderSystem>>) -> Self {
+    pub fn new_dynamic<T: MeshGenerator>(
+        generator_instance: T,
+        render_system: &Arc<Mutex<RenderSystem>>,
+    ) -> Self {
         let render_system = render_system.lock().unwrap();
         let mut resource_manager = render_system.resource_manager.lock().unwrap();
 
         let gpu_mesh = GPUMesh::new::<T>(&resource_manager.device, &resource_manager.adapter);
         let (id, mesh) = resource_manager.add_mesh(gpu_mesh);
 
-        Mesh {
-            id,
-            mesh,
-        }
+        Mesh { id, mesh }
     }
 }

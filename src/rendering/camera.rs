@@ -2,34 +2,30 @@
 pub extern crate gfx_backend_dx11 as Backend;
 #[cfg(feature = "dx12")]
 pub extern crate gfx_backend_dx12 as Backend;
-#[cfg(
-not(any(
-feature = "vulkan",
-feature = "dx12",
-feature = "metal",
-feature = "gl",
-feature = "wgl"
+#[cfg(not(any(
+    feature = "vulkan",
+    feature = "dx12",
+    feature = "metal",
+    feature = "gl",
+    feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
 #[cfg(any(feature = "gl", feature = "wgl"))]
 pub extern crate gfx_backend_gl as Backend;
-#[cfg(feature = "metal")]
-pub extern crate gfx_backend_metal as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
 
-use std::collections::HashMap;
-use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
-use cgmath::{Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, Vector2, Vector3, Vector4};
-use cgmath::num_traits::{Float, FromPrimitive, ToPrimitive};
 use cgmath::num_traits::real::Real;
+use cgmath::num_traits::{Float};
+use cgmath::{
+    vec3, Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, Vector2,
+    Vector3, Vector4,
+};
 
 use crate::core::Component;
-use crate::rendering::{AABB, GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex};
-use crate::rendering::camera::FrustumPlanes::BottomPlane;
-use crate::rendering::utility::Uniform;
+use crate::rendering::{GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex, AABB};
 
 #[derive(Clone)]
 pub struct Camera {
@@ -51,12 +47,7 @@ impl Camera {
         let fov_y = Rad::from(Deg(fov / aspect));
         let fov_x = Rad::from(Deg(fov));
 
-        let proj = cgmath::perspective(
-            fov_y,
-            aspect,
-            near,
-            far,
-        );
+        let proj = cgmath::perspective(fov_y, aspect, near, far);
 
         Camera {
             near,
@@ -164,7 +155,12 @@ impl Default for CameraData {
         CameraData {
             view: Matrix4::identity(),
             proj: Matrix4::identity(),
-            position: Vector4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 },
+            position: Vector4 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 0.0,
+            },
         }
     }
 }
@@ -251,13 +247,24 @@ impl Frustum {
     }
 
     pub fn transformed(&self, camera_transform: Matrix4<f32>) -> Frustum {
-        let mut new = Frustum::new(self.fov_x, self.fov_y, self.near_distance, self.far_distance);
+        let mut new = Frustum::new(
+            self.fov_x,
+            self.fov_y,
+            self.near_distance,
+            self.far_distance,
+        );
         new.transform = camera_transform;
 
         // base axis of camera space
-        let x: Vector3<f32> = (camera_transform * cgmath::vec4(1.0, 0.0, 0.0, 0.0)).normalize().truncate();
-        let y: Vector3<f32> = (camera_transform * cgmath::vec4(0.0, 1.0, 0.0, 0.0)).normalize().truncate();
-        let z: Vector3<f32> = (camera_transform * cgmath::vec4(0.0, 0.0, 1.0, 0.0)).normalize().truncate();
+        let x: Vector3<f32> = (camera_transform * cgmath::vec4(1.0, 0.0, 0.0, 0.0))
+            .normalize()
+            .truncate();
+        let y: Vector3<f32> = (camera_transform * cgmath::vec4(0.0, 1.0, 0.0, 0.0))
+            .normalize()
+            .truncate();
+        let z: Vector3<f32> = (camera_transform * cgmath::vec4(0.0, 0.0, 1.0, 0.0))
+            .normalize()
+            .truncate();
 
         let cam_pos = (camera_transform * cgmath::vec4(0.0, 0.0, 0.0, 1.0)).truncate();
         let near_center = &cam_pos - &z * self.near_distance;
@@ -285,7 +292,7 @@ impl Frustum {
         new
     }
 
-    pub fn update_debug_mesh(&mut self, render_system: &Arc<Mutex<RenderSystem>>, ) -> MeshID {
+    pub fn update_debug_mesh(&mut self, render_system: &Arc<Mutex<RenderSystem>>) -> MeshID {
         let mut rend_lock = render_system.lock().unwrap();
         let mut rm_lock = rend_lock.resource_manager.lock().unwrap();
 
@@ -300,13 +307,13 @@ impl Frustum {
 
 impl MeshGenerator for Frustum {
     fn get_vertices_dynamic(&self) -> Vec<Vertex> {
-        let tanHalfHorizonalFOV = (self.fov_x.0 / 2.0).tan();
-        let tanHalfVerticalFOV = (self.fov_y.0 / 2.0).tan();
+        let tan_half_horizonal_fov = (self.fov_x.0 / 2.0).tan();
+        let tan_half_vertical_fov = (self.fov_y.0 / 2.0).tan();
 
-        let xn = self.near_distance * tanHalfHorizonalFOV;
-        let xf = self.far_distance * tanHalfHorizonalFOV;
-        let yn = self.near_distance * tanHalfVerticalFOV;
-        let yf = self.far_distance * tanHalfVerticalFOV;
+        let xn = self.near_distance * tan_half_horizonal_fov;
+        let xf = self.far_distance * tan_half_horizonal_fov;
+        let yn = self.near_distance * tan_half_vertical_fov;
+        let yf = self.far_distance * tan_half_vertical_fov;
 
         let v1 = self.transform * vec3(-xf, -yf, -self.far_distance).extend(1.0);
         let v2 = self.transform * vec3(-xn, -yn, -self.near_distance).extend(1.0);
@@ -332,28 +339,12 @@ impl MeshGenerator for Frustum {
     fn get_indices_dynamic(&self) -> Vec<u32> {
         vec![
             // left
-            0, 1, 2,
-            2, 1, 3,
-
-            // right
-            4, 5, 6,
-            5, 7, 6,
-
-            // front
-            1, 6, 7,
-            1, 7, 3,
-
-            // back
-            0, 2, 5,
-            4, 0, 5,
-
-            // top
-            3, 7, 2,
-            2, 7, 5,
-
-            // bottom
-            0, 6, 1,
-            0, 4, 6,
+            0, 1, 2, 2, 1, 3, // right
+            4, 5, 6, 5, 7, 6, // front
+            1, 6, 7, 1, 7, 3, // back
+            0, 2, 5, 4, 0, 5, // top
+            3, 7, 2, 2, 7, 5, // bottom
+            0, 6, 1, 0, 4, 6,
         ]
     }
 }

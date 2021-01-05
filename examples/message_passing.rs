@@ -1,6 +1,8 @@
 use nse;
-use nse::core::{Entity, Exit, Message, System, Text};
+use nse::core::{Entity, Exit, Message, System, Text, Filter};
 use nse::NSE;
+use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 struct Sys1 {
@@ -10,11 +12,11 @@ struct Sys1 {
 }
 
 impl Sys1 {
-    fn new() -> Self {
-        Sys1 {
+    fn new() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Sys1 {
             counter: 0,
             send: true,
-        }
+        }))
     }
 }
 
@@ -29,17 +31,16 @@ impl System for Sys1 {
         }
     }
 
-    fn execute(&mut self, _: &Vec<&Box<Entity>>) {}
+    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, _: Duration) {}
 
     fn get_messages(&mut self) -> Vec<Message> {
         let mut ret = vec![];
 
         if self.send {
             self.send = false;
-            let msg = Message::new(
-                Box::new(Text {
-                    text: format!("Sys1 {}", self.counter)
-                }));
+            let msg = Message::new(Text {
+                text: format!("Sys1 {}", self.counter),
+            });
 
             println!("Sys1 Send - {:?}", msg);
             ret.push(msg);
@@ -47,7 +48,7 @@ impl System for Sys1 {
         }
 
         if self.counter == 10 {
-            ret.push(Message::new(Box::new(Exit {})));
+            ret.push(Message::new(Exit {}));
         }
 
         ret
@@ -62,11 +63,11 @@ struct Sys2 {
 }
 
 impl Sys2 {
-    fn new() -> Self {
-        Sys2 {
+    fn new() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Sys2 {
             counter: 0,
             send: false,
-        }
+        }))
     }
 }
 
@@ -81,16 +82,16 @@ impl System for Sys2 {
         }
     }
 
-    fn execute(&mut self, _: &Vec<&Box<Entity>>) {}
+    fn execute(&mut self, _: &Vec<Arc<Mutex<Filter>>>, _: Duration) {}
 
     fn get_messages(&mut self) -> Vec<Message> {
         let mut ret = vec![];
 
         if self.send {
             self.send = false;
-            let msg = Message::new(Box::new(Text {
-                text: format!("Sys2 {}", self.counter)
-            }));
+            let msg = Message::new(Text {
+                text: format!("Sys2 {}", self.counter),
+            });
 
             println!("Sys2 Send - {:?}", msg);
             ret.push(msg);
@@ -98,7 +99,7 @@ impl System for Sys2 {
         }
 
         if self.counter == 10 {
-            ret.push(Message::new(Box::new(Exit {})));
+            ret.push(Message::new(Exit {}));
         }
 
         ret
@@ -108,11 +109,11 @@ impl System for Sys2 {
 fn main() {
     let mut engine: NSE = NSE::new();
 
-    let sys1 = Box::new(Sys1::new());
-    let sys2 = Box::new(Sys2::new());
+    let sys1 = Sys1::new();
+    let sys2 = Sys2::new();
 
-    engine.system_manager.add_system(sys1);
-    engine.system_manager.add_system(sys2);
+    engine.add_system(&sys1);
+    engine.add_system(&sys2);
 
     engine.run();
 }

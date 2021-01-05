@@ -5,19 +5,18 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{vec3, Vector3};
-use winit::event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 use nse::core::{Filter, Message, System};
-use nse::rendering::{Camera, OctreeConfig, OctreeOptimizations, Transformation};
 use nse::rendering::nse_gui::octree_gui::ProfilingData;
+use nse::rendering::{Camera, OctreeConfig, OctreeOptimizations, Transformation};
 
 use crate::shared::benchmark_system::Benchmark::CircularMotion;
 use winit::event::ElementState::Pressed;
 
 enum Benchmark {
-    CircularMotion
+    CircularMotion,
 }
-
 
 pub struct BenchmarkSystem {
     active: bool,
@@ -43,26 +42,38 @@ impl BenchmarkSystem {
         };
 
         let stages = vec![
-            (OctreeOptimizations {
-                depth_threshold: 10.0,
-                ..Default::default()
-            }, config.clone()),
-            (OctreeOptimizations {
-                frustum_culling: true,
-                depth_threshold: 10.0,
-                ..Default::default()
-            }, config.clone()),
-            (OctreeOptimizations {
-                depth_culling: true,
-                depth_threshold: 10.0,
-                ..Default::default()
-            }, config.clone()),
-            (OctreeOptimizations {
-                frustum_culling: true,
-                depth_culling: true,
-                depth_threshold: 10.0,
-                ..Default::default()
-            }, config.clone()),
+            (
+                OctreeOptimizations {
+                    depth_threshold: 10.0,
+                    ..Default::default()
+                },
+                config.clone(),
+            ),
+            (
+                OctreeOptimizations {
+                    frustum_culling: true,
+                    depth_threshold: 10.0,
+                    ..Default::default()
+                },
+                config.clone(),
+            ),
+            (
+                OctreeOptimizations {
+                    depth_culling: true,
+                    depth_threshold: 10.0,
+                    ..Default::default()
+                },
+                config.clone(),
+            ),
+            (
+                OctreeOptimizations {
+                    frustum_culling: true,
+                    depth_culling: true,
+                    depth_threshold: 10.0,
+                    ..Default::default()
+                },
+                config.clone(),
+            ),
         ];
 
         Arc::new(Mutex::new(BenchmarkSystem {
@@ -133,7 +144,9 @@ impl BenchmarkSystem {
         let file = File::create(filename)?;
         let mut buf_writer = BufWriter::new(file);
 
-        let mut header_string = String::from("benchmark_progress, rendered_nodes, instance_data_generation, render_time");
+        let mut header_string = String::from(
+            "benchmark_progress, rendered_nodes, instance_data_generation, render_time",
+        );
 
         self.store.iter().take(1).for_each(|(_, p)| {
             for system_time in p.system_times.as_ref().unwrap_or(&vec![]) {
@@ -144,11 +157,13 @@ impl BenchmarkSystem {
         writeln!(buf_writer, "{}", header_string)?;
 
         for (progress, p) in &self.store {
-            let mut frame_str = format!("{}, {}, {}, {}",
-                                        progress,
-                                        p.rendered_nodes.unwrap_or(0),
-                                        p.instance_data_generation.unwrap_or(0),
-                                        p.render_time.unwrap_or(0) / (1e6 as u64)); // conversion to ms
+            let mut frame_str = format!(
+                "{}, {}, {}, {}",
+                progress,
+                p.rendered_nodes.unwrap_or(0),
+                p.instance_data_generation.unwrap_or(0),
+                p.render_time.unwrap_or(0) / (1e6 as u64)
+            ); // conversion to ms
 
             for system_time in p.system_times.as_ref().unwrap_or(&vec![]) {
                 frame_str.push_str(format!(", {}", system_time.1.as_millis()).as_str());
@@ -165,35 +180,31 @@ impl BenchmarkSystem {
 
 impl System for BenchmarkSystem {
     fn get_filter(&mut self) -> Vec<Filter> {
-        vec![
-            nse::filter!(Camera, Transformation),
-        ]
+        vec![nse::filter!(Camera, Transformation)]
     }
 
     fn handle_input(&mut self, event: &Event<()>) {
         match event {
-            Event::WindowEvent { event, .. } => {
-                match event {
-                    WindowEvent::KeyboardInput { input, .. } => {
-                        match input {
-                            | KeyboardInput { virtual_keycode, state, .. } => {
-                                match (virtual_keycode, state) {
-                                    (Some(VirtualKeyCode::Numpad1), Pressed) => {
-                                        if !self.active {
-                                            self.initialize_stage(CircularMotion, 0);
-                                        } else {
-                                            self.end_benchmark();
-                                        }
-                                    }
-                                    _ => {}
-                                }
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::KeyboardInput { input, .. } => match input {
+                    KeyboardInput {
+                        virtual_keycode,
+                        state,
+                        ..
+                    } => match (virtual_keycode, state) {
+                        (Some(VirtualKeyCode::Numpad1), Pressed) => {
+                            if !self.active {
+                                self.initialize_stage(CircularMotion, 0);
+                            } else {
+                                self.end_benchmark();
                             }
                         }
-                    }
-                    _ => ()
-                }
-            }
-            _ => ()
+                        _ => {}
+                    },
+                },
+                _ => (),
+            },
+            _ => (),
         }
     }
 
@@ -202,7 +213,8 @@ impl System for BenchmarkSystem {
 
         for msg in messages {
             if msg.is_type::<ProfilingData>() {
-                self.frame_profile.replace(msg.get_payload::<ProfilingData>().unwrap());
+                self.frame_profile
+                    .replace(msg.get_payload::<ProfilingData>().unwrap());
             }
         }
 
@@ -223,7 +235,8 @@ impl System for BenchmarkSystem {
                     let camera_filter = filter[0].lock().unwrap();
                     let mut camera_entity = camera_filter.entities[0].lock().unwrap();
 
-                    let transform = BenchmarkSystem::circular_motion(vec3(0.0, 0.0, 0.0), 100.0, self.state);
+                    let transform =
+                        BenchmarkSystem::circular_motion(vec3(0.0, 0.0, 0.0), 100.0, self.state);
 
                     camera_entity.add_component(transform);
 
@@ -231,7 +244,8 @@ impl System for BenchmarkSystem {
 
                     if self.state >= 1.0 {
                         if self.stage_id < self.stages.len() {
-                            self.write_to_file(format!("stage_{}.csv", self.stage_id).as_str()).expect("Could not write to file.");
+                            self.write_to_file(format!("stage_{}.csv", self.stage_id).as_str())
+                                .expect("Could not write to file.");
                             self.next_stage();
                         } else {
                             self.end_benchmark();

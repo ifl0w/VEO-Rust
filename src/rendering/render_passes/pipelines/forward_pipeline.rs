@@ -1,37 +1,53 @@
-use std::{iter, mem, ptr};
 use std::borrow::Borrow;
 use std::io::Cursor;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
+use std::{iter, mem, ptr};
 
-use gfx_hal::{Backend, command, format, format::Format, image, IndexType, pass, pass::Attachment, pso};
 use gfx_hal::buffer::IndexBufferView;
 use gfx_hal::command::{ClearDepthStencil, CommandBuffer, ImageBlit};
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
-use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers};
 use gfx_hal::image::Layout::{TransferDstOptimal, TransferSrcOptimal};
+use gfx_hal::image::{Extent, Filter, Layout, Level, Offset, SubresourceLayers};
 use gfx_hal::pass::Subpass;
 use gfx_hal::pool::CommandPool;
-use gfx_hal::pso::{Comparison, DepthStencilDesc, DepthTest, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, PolygonMode, ShaderStageFlags, VertexInputRate};
+use gfx_hal::pso::{
+    Comparison, DepthStencilDesc, DepthTest, DescriptorPool, DescriptorPoolCreateFlags,
+    DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType, FrontFace, PolygonMode,
+    ShaderStageFlags, VertexInputRate,
+};
 use gfx_hal::queue::{CommandQueue, Submission};
 use gfx_hal::window::{Surface, SwapImageIndex};
+use gfx_hal::{
+    command, format, format::Format, image, pass, pass::Attachment, pso, Backend, IndexType,
+};
 
-use crate::rendering::{ENTRY_NAME, InstanceData, Pipeline, ShaderCode, Vertex};
+use crate::rendering::{InstanceData, Pipeline, ShaderCode, Vertex, ENTRY_NAME};
 
 pub struct ForwardPipeline<B: Backend> {
     device: Arc<B::Device>,
-    info: (ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>),
-    info_instanced: (ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>),
+    info: (
+        ManuallyDrop<B::GraphicsPipeline>,
+        ManuallyDrop<B::PipelineLayout>,
+    ),
+    info_instanced: (
+        ManuallyDrop<B::GraphicsPipeline>,
+        ManuallyDrop<B::PipelineLayout>,
+    ),
 }
 
 impl<B: Backend> ForwardPipeline<B> {
-    fn create_pipeline(device: &Arc<B::Device>,
-                       render_pass: &B::RenderPass,
-                       set_layout: &B::DescriptorSetLayout,
-                       enable_instancing: bool,
-                       polygon_mode: PolygonMode)
-                       -> Option<(ManuallyDrop<B::GraphicsPipeline>, ManuallyDrop<B::PipelineLayout>)> {
+    fn create_pipeline(
+        device: &Arc<B::Device>,
+        render_pass: &B::RenderPass,
+        set_layout: &B::DescriptorSetLayout,
+        enable_instancing: bool,
+        polygon_mode: PolygonMode,
+    ) -> Option<(
+        ManuallyDrop<B::GraphicsPipeline>,
+        ManuallyDrop<B::PipelineLayout>,
+    )> {
         let pipeline_layout = ManuallyDrop::new(
             unsafe {
                 device.create_pipeline_layout(
@@ -41,38 +57,42 @@ impl<B: Backend> ForwardPipeline<B> {
                     ],
                 )
             }
-                .expect("Can't create pipelines layout"),
+            .expect("Can't create pipelines layout"),
         );
         let pipeline = {
             #[cfg(debug_assertions)]
             let mut shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.vert.glsl");
             #[cfg(not(debug_assertions))]
-            let mut shader_code = ShaderCode::from_bytes(include_bytes!("../../shaders/forward_pass.vert.glsl").to_vec());
+            let mut shader_code = ShaderCode::from_bytes(
+                include_bytes!("../../shaders/forward_pass.vert.glsl").to_vec(),
+            );
 
-            let mut compile_result = shader_code.compile(shaderc::ShaderKind::Vertex, ENTRY_NAME.parse().unwrap());
+            let mut compile_result =
+                shader_code.compile(shaderc::ShaderKind::Vertex, ENTRY_NAME.parse().unwrap());
             if compile_result.is_none() {
                 println!("Shader could not be compiled.");
                 return None;
             }
             let vs_module = {
-                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0))
-                    .unwrap();
+                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0)).unwrap();
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
 
             #[cfg(debug_assertions)]
             let mut shader_code = ShaderCode::new("src/rendering/shaders/forward_pass.frag.glsl");
             #[cfg(not(debug_assertions))]
-            let mut shader_code = ShaderCode::from_bytes(include_bytes!("../../shaders/forward_pass.frag.glsl").to_vec());
+            let mut shader_code = ShaderCode::from_bytes(
+                include_bytes!("../../shaders/forward_pass.frag.glsl").to_vec(),
+            );
 
-            compile_result = shader_code.compile(shaderc::ShaderKind::Fragment, ENTRY_NAME.parse().unwrap());
+            compile_result =
+                shader_code.compile(shaderc::ShaderKind::Fragment, ENTRY_NAME.parse().unwrap());
             if compile_result.is_none() {
                 println!("Shader could not be compiled.");
                 return None;
             }
             let fs_module = {
-                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0))
-                    .unwrap();
+                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0)).unwrap();
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
 
@@ -181,14 +201,24 @@ impl<B: Backend> ForwardPipeline<B> {
 }
 
 impl<B: Backend> Pipeline<B> for ForwardPipeline<B> {
-    fn new(device: &Arc<B::Device>,
-           render_pass: &B::RenderPass,
-           set_layout: &B::DescriptorSetLayout,
-           polygon_mode: PolygonMode) -> Self {
+    fn new(
+        device: &Arc<B::Device>,
+        render_pass: &B::RenderPass,
+        set_layout: &B::DescriptorSetLayout,
+        polygon_mode: PolygonMode,
+    ) -> Self {
         ForwardPipeline {
             device: device.clone(),
-            info: Self::create_pipeline(device, render_pass, set_layout, false, polygon_mode).unwrap(),
-            info_instanced: Self::create_pipeline(device, render_pass, set_layout, true, polygon_mode).unwrap(),
+            info: Self::create_pipeline(device, render_pass, set_layout, false, polygon_mode)
+                .unwrap(),
+            info_instanced: Self::create_pipeline(
+                device,
+                render_pass,
+                set_layout,
+                true,
+                polygon_mode,
+            )
+            .unwrap(),
         }
     }
 
@@ -218,9 +248,7 @@ impl<B: Backend> Drop for ForwardPipeline<B> {
             self.device
                 .destroy_graphics_pipeline(ManuallyDrop::into_inner(ptr::read(&self.info.0)));
             self.device
-                .destroy_pipeline_layout(ManuallyDrop::into_inner(ptr::read(
-                    &self.info.1,
-                )));
+                .destroy_pipeline_layout(ManuallyDrop::into_inner(ptr::read(&self.info.1)));
         }
     }
 }
