@@ -11,6 +11,8 @@ pub extern crate gfx_backend_gl as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
 
+extern crate rand;
+
 use std::convert::{TryFrom, TryInto};
 use std::f32::consts::PI;
 use std::sync::{Arc, Mutex};
@@ -25,6 +27,9 @@ use crate::rendering::{
     AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation,
 };
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
+use self::rand::Rng;
+use std::f32::INFINITY;
+// use self::rand::Rng;
 
 enum NodePosition {
     Flt = 0,
@@ -246,7 +251,7 @@ impl Octree {
                             Err(_) => panic!("Octree node has more than 8 children!"),
                         }
 
-                        let new_child = Node::new_inner(t, s);
+                        let mut new_child = Node::new_inner(t, s);
 
                         let node_origin = t;
 
@@ -289,11 +294,120 @@ impl Octree {
                                 !(all_greater || all_smaller)
                             };
 
+                        let julia = | origin: &Vector3<f32>, size: f32, zoom: f32 | {
+                            // only a single slice
+                            if origin.y + size < 0.0 || origin.y - size > 0.0 { return INFINITY as f64 };
+
+                            let position = origin * zoom;
+
+                            let escape_radius = 4.0 * 10000.0 as f64;
+                            let mut iter = 1000;
+
+                            let c_re = position.x as f64;
+                            let c_im = position.z as f64;
+
+                            // z_0 = 0 + i0
+                            let mut z_re = 0.0;
+                            let mut z_im = 0.0;
+                            let mut z_re2 = z_re * z_re;
+                            let mut z_im2 = z_im * z_im;
+
+                            // z_0' = 1 + 0i
+                            let mut zp_re = 1.0;
+                            let mut zp_im = 0.0;
+
+                            while iter > 0 {
+                                zp_re = 2.0 * (z_re * zp_re - z_im * zp_im) + 1.0;
+                                zp_im = 2.0 * (z_re * zp_im + z_im * zp_re);
+
+                                let z_re_new = z_re2 - z_im2 + c_re;
+                                let z_im_new = 2.0 * z_re * z_im + c_im;
+                                z_re = z_re_new;
+                                z_im = z_im_new;
+                                z_re2 = z_re * z_re;
+                                z_im2 = z_im * z_im;
+
+                                let val2: f64 = z_re2 + z_im2;
+
+                                if val2 > (escape_radius * escape_radius) {
+                                    break;
+                                }
+
+                                iter -= 1;
+                            }
+
+                            if iter == 0 {
+                                return 0.0f64;
+                            }
+
+                            // values
+                            let z_val = (z_re2 + z_im2).sqrt();
+                            let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
+
+                            let dist = 2.0 * z_val * z_val.ln() / zp_val;
+                            // let dist = z_val * z_val.ln() / zp_val;
+                            // let dist = 0.5 * z_val * z_val.ln() / zp_val;
+
+                            return dist;
+                        };
+
                         // NOTE: intersect test does not work with every function correctly.
                         // It is possible that all samples at the corner points of the octree node do
                         // not indicate an intersection and thus leading to false negative intersection
                         // tests!
-                        if intersect(node_origin, s, &sinc) {
+                        // if intersect(node_origin, s, &sinc) {
+                        //     child.replace(new_child);
+                        //     Octree::traverse(child, t, new_depth, target_depth)
+                        // }
+
+                        // const SAMPLE_NUMBER: usize = 8;
+                        //
+                        // let mut votes = 0;
+                        // let mut subdiv = 0;
+                        //
+                        // for _ in 0..SAMPLE_NUMBER {
+                        //     let mut samples= [0f32; 3];
+                        //     rand::thread_rng().fill(&mut samples[..]);
+                        //
+                        //     let rand_offset = vec3(samples[0], samples[1], samples[2]) * 2.0 - Vector3::new(1.0, 1.0, 1.0);
+                        //     let origin = node_origin + rand_offset * s * 0.5;
+                        //
+                        //     // println!("{:?} {:?} {:?}", s, node_origin, origin);
+                        //
+                        //     let zoom = 4.0;
+                        //     let size: f64 = (s * 0.5 * zoom) as f64;
+                        //     let radius = (size * size + size * size).sqrt() as f64;
+                        //
+                        //     let dem: f64 = julia(&origin, s, zoom);
+                        //
+                        //     if dem == 0.0 {
+                        //         votes += 1;
+                        //         subdiv += 1;
+                        //     } else if dem < radius * 4.0 as f64 {
+                        //         subdiv += 1;
+                        //     }
+                        // }
+                        //
+                        // if votes > 4 {
+                        //     new_child.solid = true;
+                        // }
+                        //
+                        // if subdiv > 2 {
+                        //     child.replace(new_child);
+                        //     Octree::traverse(child, t, new_depth, target_depth)
+                        // }
+
+                        let zoom = 4.0;
+                        let size: f64 = (s * 0.5 * zoom) as f64;
+                        let radius = (size * size + size * size).sqrt() as f64;
+
+                        let dem: f64 = julia(&node_origin, s, zoom);
+
+                        if dem == 0.0 {
+                            new_child.solid = true;
+                            child.replace(new_child);
+                            Octree::traverse(child, t, new_depth, target_depth)
+                        } else if dem < radius as f64 {
                             child.replace(new_child);
                             Octree::traverse(child, t, new_depth, target_depth)
                         }
@@ -309,6 +423,7 @@ pub struct Node {
     position: Vector3<f32>,
     scale: Vector3<f32>,
     aabb: AABB,
+    solid: bool,
 }
 
 impl Node {
@@ -319,6 +434,7 @@ impl Node {
             position: vec3(0.0, 0.0, 0.0),
             scale,
             aabb: AABB::new(-scale / 2.0, scale / 2.0),
+            solid: false,
         };
 
         tmp.children.resize(8, None);
@@ -336,6 +452,7 @@ impl Node {
             position,
             scale: scale_vec,
             aabb: AABB::new(min, max),
+            solid: false,
         };
 
         tmp.children.resize(8, None);
@@ -524,7 +641,8 @@ impl System for OctreeSystem {
                 }
 
                 let mut filter_fnc: Vec<&FilterFunction> = Vec::new();
-                filter_fnc.push(&generate_leaf_model_matrix);
+                // filter_fnc.push(&generate_leaf_model_matrix);
+                filter_fnc.push(&filter_is_solid);
 
                 if self.optimizations.depth_culling {
                     traversal_fnc.push(&limit_depth_traversal);
@@ -630,7 +748,7 @@ fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bo
 }
 
 fn limit_depth_filter(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    !limit_depth_traversal(optimization_data, node)
+    !limit_depth_traversal(optimization_data, node) && node.as_ref().unwrap().solid
 }
 
 fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
@@ -653,10 +771,22 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Option<Nod
     false
 }
 
+fn limit_solid_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+    if node.is_some() {
+        return !node.as_ref().unwrap().solid;
+    }
+
+    false
+}
+
 fn generate_leaf_model_matrix(_optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
     if node.is_some() && node.as_ref().unwrap().is_leaf() {
         true
     } else {
         false
     }
+}
+
+fn filter_is_solid(_optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
+    return node.is_some() && node.as_ref().unwrap().solid && node.as_ref().unwrap().is_leaf();
 }
