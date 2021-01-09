@@ -27,7 +27,6 @@ use crate::rendering::{
     AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation,
 };
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
-use glium::RawUniformValue::Vec2;
 
 enum NodePosition {
     Flt = 0,
@@ -226,7 +225,7 @@ impl Octree {
                         // only a single slice
                         if origin.y + size < 0.0 || origin.y - size > 0.0 { return INFINITY as f64; };
 
-                        let position = origin * zoom;
+                        let position = origin * zoom - vec3(0.5, 0.0, 0.0);
 
                         let escape_radius = 4.0 * 10000.0 as f64;
                         let mut iter = 1000;
@@ -279,7 +278,7 @@ impl Octree {
                         return dist;
                     };
 
-                    let zoom = 4.0;
+                    let zoom = 2.5;
                     let size: f64 = (child.scale * 0.5 * zoom) as f64;
                     let radius = (size * size + size * size).sqrt() as f64;
 
@@ -289,9 +288,12 @@ impl Octree {
                     if dem == 0.0 {
                         child.solid = true;
                         traverse = true;
-
                     } else if dem < radius as f64 {
                         traverse = true;
+
+                        if dem < zoom as f64 / 10e12 {
+                            child.solid = true;
+                        }
                     }
 
                     if current_depth < target_depth && traverse {
