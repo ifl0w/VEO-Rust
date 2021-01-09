@@ -17,10 +17,7 @@ pub extern crate gfx_backend_vulkan as Backend;
 
 use std::sync::{Arc, Mutex};
 
-use cgmath::{
-    Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, Vector2,
-    Vector3, Vector4,
-};
+use cgmath::{Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, Vector2, Vector3, Vector4, vec4};
 
 use crate::core::Component;
 use crate::rendering::{AABB, GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex};
@@ -177,6 +174,7 @@ pub enum FrustumPlanes {
 pub struct Frustum {
     /// (plane normalvector, point on plane)
     planes: [(Vector3<f32>, Vector3<f32>); 6],
+    planes_hessian: [Vector4<f32>; 6],
 
     fov_x: Rad<f32>,
     fov_y: Rad<f32>,
@@ -196,6 +194,7 @@ impl Frustum {
     pub fn new(fov_x: Rad<f32>, fov_y: Rad<f32>, near_distance: f32, far_distance: f32) -> Self {
         let frustum = Frustum {
             planes: [(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0)); 6],
+            planes_hessian: [vec4(0.0, 0.0, 0.0, 0.0); 6],
 
             near_distance,
             far_distance,
@@ -244,6 +243,13 @@ impl Frustum {
         })
     }
 
+    pub fn intersect_sphere(&self, center: Vector3<f32>, radius: f32) -> bool{
+        self.planes_hessian.iter().all(|plane| {
+            let distance = plane.dot(center.extend(1.0));
+            return distance + radius >= 0.0;
+        })
+    }
+
     pub fn transformed(&self, camera_transform: Matrix4<f32>) -> Frustum {
         let mut new = Frustum::new(
             self.fov_x,
@@ -269,23 +275,35 @@ impl Frustum {
         let far_center = &cam_pos - &z * self.far_distance;
 
         new.planes[0] = (-z.clone(), near_center.clone());
+        let mut d = -new.planes[0].0.dot(new.planes[0].1);
+        new.planes_hessian[0] = new.planes[0].0.extend(d);
         new.planes[1] = (z.clone(), far_center.clone());
+        d = -new.planes[1].0.dot(new.planes[1].1);
+        new.planes_hessian[1] = new.planes[1].0.extend(d);
 
         let point_on_plane = near_center + &y * self.near_dimensions.y;
         let normal = (point_on_plane - cam_pos).normalize().cross(x).normalize();
         new.planes[2] = (normal, point_on_plane);
+        d = -new.planes[2].0.dot(new.planes[2].1);
+        new.planes_hessian[2] = new.planes[2].0.extend(d);
 
         let point_on_plane = near_center - &y * self.near_dimensions.y;
         let normal = (point_on_plane - cam_pos).normalize().cross(x).normalize();
         new.planes[3] = (-normal, point_on_plane);
+        d = -new.planes[3].0.dot(new.planes[3].1);
+        new.planes_hessian[3] = new.planes[3].0.extend(d);
 
         let point_on_plane = near_center - &x * self.near_dimensions.x;
         let normal = (point_on_plane - cam_pos).normalize().cross(y).normalize();
         new.planes[4] = (normal, point_on_plane);
+        d = -new.planes[4].0.dot(new.planes[4].1);
+        new.planes_hessian[4] = new.planes[4].0.extend(d);
 
         let point_on_plane = near_center + &x * self.near_dimensions.x;
         let normal = (point_on_plane - cam_pos).normalize().cross(y).normalize();
         new.planes[5] = (-normal, point_on_plane);
+        d = -new.planes[5].0.dot(new.planes[5].1);
+        new.planes_hessian[5] = new.planes[5].0.extend(d);
 
         new
     }

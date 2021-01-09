@@ -13,13 +13,12 @@ pub extern crate gfx_backend_vulkan as Backend;
 extern crate rand;
 
 use std::convert::{TryFrom, TryInto};
-use std::f32::consts::PI;
 use std::f32::INFINITY;
 use std::result::Result;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cgmath::{Matrix4, Transform, vec3, Vector3, Array};
+use cgmath::{Matrix4, Transform, vec3, Vector3};
 use gfx_hal::buffer;
 use winit::event::Event;
 
@@ -647,12 +646,17 @@ struct OptimizationData<'a> {
 }
 
 fn cull_frustum(optimization_data: &OptimizationData, node: &Node) -> bool {
+    // aabb test
     // generate aabb on demand to save memory
-    let min = node.position - Vector3::from_value(node.scale) / 2.0;
-    let max = node.position + Vector3::from_value(node.scale) / 2.0;
-    let aabb = AABB::new(min, max);
+    // let min = node.position - Vector3::from_value(node.scale) / 2.0;
+    // let max = node.position + Vector3::from_value(node.scale) / 2.0;
+    // let aabb = AABB::new(min, max);
+    //
+    // optimization_data.frustum.intersect(&aabb)
 
-    optimization_data.frustum.intersect(&aabb)
+    // sphere test
+    let radius = (node.scale * 0.5 * node.scale * 0.5 * 3.0).sqrt();
+    optimization_data.frustum.intersect_sphere(node.position, radius)
 }
 
 fn limit_depth_filter(optimization_data: &OptimizationData, node: &Node) -> bool {
