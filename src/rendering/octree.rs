@@ -10,15 +10,16 @@ pub extern crate gfx_backend_empty as Backend;
 pub extern crate gfx_backend_gl as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
-
 extern crate rand;
 
 use std::convert::{TryFrom, TryInto};
 use std::f32::consts::PI;
+use std::f32::INFINITY;
+use std::result::Result;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cgmath::{Matrix4, Transform, vec3, Vector3};
+use cgmath::{Matrix4, Transform, vec3, Vector3, Array};
 use gfx_hal::buffer;
 use winit::event::Event;
 
@@ -27,9 +28,7 @@ use crate::rendering::{
     AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation,
 };
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
-use self::rand::Rng;
-use std::f32::INFINITY;
-// use self::rand::Rng;
+use glium::RawUniformValue::Vec2;
 
 enum NodePosition {
     Flt = 0,
@@ -62,7 +61,7 @@ impl TryFrom<i32> for NodePosition {
 
 #[derive(Clone)]
 pub struct Octree {
-    pub root: Arc<Mutex<Option<Node>>>,
+    pub root: Arc<Mutex<Node>>,
 
     pub instance_data_buffer: Vec<Arc<Mutex<GPUBuffer<Backend::Backend>>>>,
     /// points into the instance_data_buffer vec
@@ -154,7 +153,9 @@ impl Octree {
         };
 
         let mut oct = Octree {
-            root: Arc::new(Mutex::new(None)),
+            root: Arc::new(Mutex::new(
+                Node::new_inner(vec3(0.0, 0.0, 0.0), 1.0)
+            )),
             instance_data_buffer,
             active_instance_buffer_idx: None,
 
@@ -162,9 +163,10 @@ impl Octree {
             info: octree_info,
         };
 
+        oct.root.lock().unwrap().populate();
+
         Arc::new(Mutex::new(Octree::traverse(
             &mut oct.root.lock().unwrap(),
-            vec3(0.0, 0.0, 0.0),
             0,
             depth,
         )));
@@ -188,297 +190,210 @@ impl Octree {
 
     pub fn count_leaves(&self) -> i64 {
         let root = self.root.lock().unwrap();
-        (*root).as_ref().unwrap().count_leaves()
+        root.count_leaves()
     }
 
     pub fn size_in_bytes(&self) -> usize {
-        std::mem::size_of::<Octree>() * self.count_nodes(&self.root.lock().unwrap()) as usize
+        std::mem::size_of::<Node>() * self.count_nodes(&self.root.lock().unwrap()) as usize
     }
 
-    fn count_nodes(&self, node: &Option<Node>) -> i64 {
+    fn count_nodes(&self, node: &Node) -> i64 {
         let mut count = 0;
 
-        if !node.is_none() {
-            let n = node.as_ref().unwrap();
-            if !n.is_leaf() {
-                let children = &n.children;
-                children.iter().enumerate().for_each(|(_i, child)| {
+        if node.children.is_some() {
+            node.children.as_ref().unwrap()
+                .iter()
+                .for_each(|child| {
                     count += self.count_nodes(child);
                 });
-            } else {
-                count += 1;
-            }
         }
-        count
+
+        count + 1
     }
 
     fn traverse(
-        node: &mut Option<Node>,
-        translate: Vector3<f32>,
+        node: &mut Node,
         current_depth: u64,
         target_depth: u64,
     ) {
-        if current_depth == target_depth {
-            return;
-        }
+        if node.children.is_some() {
+            node.children.as_mut().unwrap()
+                .iter_mut()
+                .enumerate()
+                .for_each(|(idx, child)| {
+                    let new_depth = current_depth + 1;
 
-        if node.is_none() {
-            *node = Some(Node::new());
-        }
+                    let mandelbrot = |origin: &Vector3<f32>, size: f32, zoom: f32| {
+                        // only a single slice
+                        if origin.y + size < 0.0 || origin.y - size > 0.0 { return INFINITY as f64; };
 
-        node.as_mut()
-            .unwrap()
-            .children
-            .iter_mut()
-            .enumerate()
-            .for_each(|(idx, child)| {
-                match child {
-                    Some(_node) => {} // do not modify existing nodes
-                    None => {
-                        let new_depth = current_depth + 1;
+                        let position = origin * zoom;
 
-                        let s = (0.5 as f32).powf(new_depth as f32);
-                        let mut t = translate;
-                        match (idx as i32).try_into() {
-                            Ok(NodePosition::Flt) => t += vec3(-0.5, -0.5, -0.5) * s,
-                            Ok(NodePosition::Frt) => t += vec3(0.5, -0.5, -0.5) * s,
-                            Ok(NodePosition::Flb) => t += vec3(-0.5, 0.5, -0.5) * s,
-                            Ok(NodePosition::Frb) => t += vec3(0.5, 0.5, -0.5) * s,
-                            Ok(NodePosition::Blt) => t += vec3(-0.5, -0.5, 0.5) * s,
-                            Ok(NodePosition::Brt) => t += vec3(0.5, -0.5, 0.5) * s,
-                            Ok(NodePosition::Blb) => t += vec3(-0.5, 0.5, 0.5) * s,
-                            Ok(NodePosition::Brb) => t += vec3(0.5, 0.5, 0.5) * s,
-                            Err(_) => panic!("Octree node has more than 8 children!"),
-                        }
+                        let escape_radius = 4.0 * 10000.0 as f64;
+                        let mut iter = 1000;
 
-                        let mut new_child = Node::new_inner(t, s);
+                        let c_re = position.x as f64;
+                        let c_im = position.z as f64;
 
-                        let node_origin = t;
+                        // z_0 = 0 + i0
+                        let mut z_re = 0.0;
+                        let mut z_im = 0.0;
+                        let mut z_re2 = z_re * z_re;
+                        let mut z_im2 = z_im * z_im;
 
-                        let sinc = |x: f32, y: f32| {
-                            let scale = 6.0 * PI;
-                            let scale_y = 0.25;
+                        // z_0' = 1 + 0i
+                        let mut zp_re = 1.0;
+                        let mut zp_im = 0.0;
 
-                            let r = f32::sqrt(x * x + y * y);
-                            let r_val = if r == 0.0 {
-                                1.0
-                            } else {
-                                (r * scale).sin() / (r * scale)
-                            };
-                            r_val * scale_y
-                        };
+                        while iter > 0 {
+                            zp_re = 2.0 * (z_re * zp_re - z_im * zp_im) + 1.0;
+                            zp_im = 2.0 * (z_re * zp_im + z_im * zp_re);
 
-                        let intersect =
-                            |origin: Vector3<f32>,
-                             scale: f32,
-                             function: &dyn Fn(f32, f32) -> f32| {
-                                let box_points: Vec<Vector3<f32>> = vec![
-                                    origin + vec3(-0.5, -0.5, -0.5) * scale,
-                                    origin + vec3(0.5, -0.5, -0.5) * scale,
-                                    origin + vec3(-0.5, 0.5, -0.5) * scale,
-                                    origin + vec3(0.5, 0.5, -0.5) * scale,
-                                    origin + vec3(-0.5, -0.5, 0.5) * scale,
-                                    origin + vec3(0.5, -0.5, 0.5) * scale,
-                                    origin + vec3(-0.5, 0.5, 0.5) * scale,
-                                    origin + vec3(0.5, 0.5, 0.5) * scale,
-                                ];
+                            let z_re_new = z_re2 - z_im2 + c_re;
+                            let z_im_new = 2.0 * z_re * z_im + c_im;
+                            z_re = z_re_new;
+                            z_im = z_im_new;
+                            z_re2 = z_re * z_re;
+                            z_im2 = z_im * z_im;
 
-                                let all_greater = box_points
-                                    .iter()
-                                    .all(|val| function(val.x, val.z) >= (val.y));
+                            let val2: f64 = z_re2 + z_im2;
 
-                                let all_smaller = box_points
-                                    .iter()
-                                    .all(|val| function(val.x, val.z) <= (val.y));
-
-                                !(all_greater || all_smaller)
-                            };
-
-                        let julia = | origin: &Vector3<f32>, size: f32, zoom: f32 | {
-                            // only a single slice
-                            if origin.y + size < 0.0 || origin.y - size > 0.0 { return INFINITY as f64 };
-
-                            let position = origin * zoom;
-
-                            let escape_radius = 4.0 * 10000.0 as f64;
-                            let mut iter = 1000;
-
-                            let c_re = position.x as f64;
-                            let c_im = position.z as f64;
-
-                            // z_0 = 0 + i0
-                            let mut z_re = 0.0;
-                            let mut z_im = 0.0;
-                            let mut z_re2 = z_re * z_re;
-                            let mut z_im2 = z_im * z_im;
-
-                            // z_0' = 1 + 0i
-                            let mut zp_re = 1.0;
-                            let mut zp_im = 0.0;
-
-                            while iter > 0 {
-                                zp_re = 2.0 * (z_re * zp_re - z_im * zp_im) + 1.0;
-                                zp_im = 2.0 * (z_re * zp_im + z_im * zp_re);
-
-                                let z_re_new = z_re2 - z_im2 + c_re;
-                                let z_im_new = 2.0 * z_re * z_im + c_im;
-                                z_re = z_re_new;
-                                z_im = z_im_new;
-                                z_re2 = z_re * z_re;
-                                z_im2 = z_im * z_im;
-
-                                let val2: f64 = z_re2 + z_im2;
-
-                                if val2 > (escape_radius * escape_radius) {
-                                    break;
-                                }
-
-                                iter -= 1;
+                            if val2 > (escape_radius * escape_radius) {
+                                break;
                             }
 
-                            if iter == 0 {
-                                return 0.0f64;
-                            }
-
-                            // values
-                            let z_val = (z_re2 + z_im2).sqrt();
-                            let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
-
-                            let dist = 2.0 * z_val * z_val.ln() / zp_val;
-                            // let dist = z_val * z_val.ln() / zp_val;
-                            // let dist = 0.5 * z_val * z_val.ln() / zp_val;
-
-                            return dist;
-                        };
-
-                        // NOTE: intersect test does not work with every function correctly.
-                        // It is possible that all samples at the corner points of the octree node do
-                        // not indicate an intersection and thus leading to false negative intersection
-                        // tests!
-                        // if intersect(node_origin, s, &sinc) {
-                        //     child.replace(new_child);
-                        //     Octree::traverse(child, t, new_depth, target_depth)
-                        // }
-
-                        // const SAMPLE_NUMBER: usize = 8;
-                        //
-                        // let mut votes = 0;
-                        // let mut subdiv = 0;
-                        //
-                        // for _ in 0..SAMPLE_NUMBER {
-                        //     let mut samples= [0f32; 3];
-                        //     rand::thread_rng().fill(&mut samples[..]);
-                        //
-                        //     let rand_offset = vec3(samples[0], samples[1], samples[2]) * 2.0 - Vector3::new(1.0, 1.0, 1.0);
-                        //     let origin = node_origin + rand_offset * s * 0.5;
-                        //
-                        //     // println!("{:?} {:?} {:?}", s, node_origin, origin);
-                        //
-                        //     let zoom = 4.0;
-                        //     let size: f64 = (s * 0.5 * zoom) as f64;
-                        //     let radius = (size * size + size * size).sqrt() as f64;
-                        //
-                        //     let dem: f64 = julia(&origin, s, zoom);
-                        //
-                        //     if dem == 0.0 {
-                        //         votes += 1;
-                        //         subdiv += 1;
-                        //     } else if dem < radius * 4.0 as f64 {
-                        //         subdiv += 1;
-                        //     }
-                        // }
-                        //
-                        // if votes > 4 {
-                        //     new_child.solid = true;
-                        // }
-                        //
-                        // if subdiv > 2 {
-                        //     child.replace(new_child);
-                        //     Octree::traverse(child, t, new_depth, target_depth)
-                        // }
-
-                        let zoom = 4.0;
-                        let size: f64 = (s * 0.5 * zoom) as f64;
-                        let radius = (size * size + size * size).sqrt() as f64;
-
-                        let dem: f64 = julia(&node_origin, s, zoom);
-
-                        if dem == 0.0 {
-                            new_child.solid = true;
-                            child.replace(new_child);
-                            Octree::traverse(child, t, new_depth, target_depth)
-                        } else if dem < radius as f64 {
-                            child.replace(new_child);
-                            Octree::traverse(child, t, new_depth, target_depth)
+                            iter -= 1;
                         }
+
+                        if iter == 0 {
+                            return 0.0f64;
+                        }
+
+                        // values
+                        let z_val = (z_re2 + z_im2).sqrt();
+                        let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
+
+                        // let dist = 2.0 * z_val * z_val.ln() / zp_val;
+                        // let dist = z_val * z_val.ln() / zp_val;
+                        let dist = 0.5 * z_val * z_val.ln() / zp_val;
+
+                        return dist;
+                    };
+
+                    let zoom = 4.0;
+                    let size: f64 = (child.scale * 0.5 * zoom) as f64;
+                    let radius = (size * size + size * size).sqrt() as f64;
+
+                    let dem: f64 = mandelbrot(&child.position, child.scale, zoom);
+                    let mut traverse = false;
+
+                    if dem == 0.0 {
+                        child.solid = true;
+                        traverse = true;
+
+                    } else if dem < radius as f64 {
+                        traverse = true;
                     }
-                }
-            });
+
+                    if current_depth < target_depth && traverse {
+                        child.populate();
+                        Octree::traverse(child, new_depth, target_depth)
+                    }
+                });
+        }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct Node {
-    children: Vec<Option<Node>>,
+    children: Option<Vec<Node>>,
     position: Vector3<f32>,
-    scale: Vector3<f32>,
-    aabb: AABB,
+    scale: f32,
     solid: bool,
 }
 
 impl Node {
     pub fn new() -> Self {
-        let scale = vec3(1.0, 1.0, 1.0);
         let mut tmp = Node {
-            children: vec![],
+            children: None,
             position: vec3(0.0, 0.0, 0.0),
-            scale,
-            aabb: AABB::new(-scale / 2.0, scale / 2.0),
+            scale: 1.0,
             solid: false,
         };
 
-        tmp.children.resize(8, None);
 
         tmp
     }
 
     pub fn new_inner(position: Vector3<f32>, scale: f32) -> Self {
-        let scale_vec = vec3(scale, scale, scale);
-        let min = position - scale_vec / 2.0;
-        let max = position + scale_vec / 2.0;
-
         let mut tmp = Node {
-            children: vec![],
+            children: None,
             position,
-            scale: scale_vec,
-            aabb: AABB::new(min, max),
+            scale,
             solid: false,
         };
 
-        tmp.children.resize(8, None);
-
         tmp
+    }
+
+    pub fn populate(&mut self) {
+        if self.children.is_some() {
+            panic!("Repopulating a octree cell is currently not supported");
+        }
+
+        self.children = Some(Vec::with_capacity(8));
+
+        for child_idx in 0..8 {
+            let s = self.scale * (0.5);
+            let mut t = self.position;
+
+            // calculate correct translation
+            match (child_idx as i32).try_into() {
+                Ok(NodePosition::Flt) => t += vec3(-0.5, -0.5, -0.5) * s,
+                Ok(NodePosition::Frt) => t += vec3(0.5, -0.5, -0.5) * s,
+                Ok(NodePosition::Flb) => t += vec3(-0.5, 0.5, -0.5) * s,
+                Ok(NodePosition::Frb) => t += vec3(0.5, 0.5, -0.5) * s,
+                Ok(NodePosition::Blt) => t += vec3(-0.5, -0.5, 0.5) * s,
+                Ok(NodePosition::Brt) => t += vec3(0.5, -0.5, 0.5) * s,
+                Ok(NodePosition::Blb) => t += vec3(-0.5, 0.5, 0.5) * s,
+                Ok(NodePosition::Brb) => t += vec3(0.5, 0.5, 0.5) * s,
+                Err(_) => panic!("Octree node has more than 8 children!"),
+            }
+
+            self.children.as_mut().unwrap().push(Node::new_inner(t, s));
+        }
     }
 
     pub fn count_leaves(&self) -> i64 {
         let mut count = 0i64;
 
-        for child in &self.children {
-            match child {
-                Some(n) => {
-                    count += n.count_leaves();
-                }
-                None => {
-                    count += 1;
-                }
-            }
+        if self.children.is_some() {
+            self.children.as_ref().unwrap()
+                .iter()
+                .for_each(|child| {
+                    count += child.count_leaves();
+                });
+        } else {
+            count += 1
         }
 
         count
     }
 
     pub fn is_leaf(&self) -> bool {
-        self.children.iter().all(|n| n.is_none())
+        self.children.is_none()
+    }
+}
+
+impl Default for Node {
+    fn default() -> Self {
+        Node {
+            children: None,
+            position: vec3(0.0, 0.0, 0.0),
+            scale: 1.0,
+            // aabb: None,
+            solid: false,
+        }
     }
 }
 
@@ -531,23 +446,19 @@ impl OctreeSystem {
 
     fn generate_instance_data(
         optimization_data: &OptimizationData,
-        node: &mut Option<Node>,
+        node: &mut Node,
         collected_data: &mut Vec<InstanceData>,
         traversal_criteria: &Vec<&TraversalFunction>,
         filter_functions: &Vec<&FilterFunction>,
     ) {
-        if node.is_none() {
-            return;
-        }
-
         // add model matrices
         let include = filter_functions
             .iter()
             .any(|fnc| fnc(optimization_data, node));
 
         if include {
-            let mat = Matrix4::from_translation(node.as_mut().unwrap().position)
-                * Matrix4::from_scale(node.as_mut().unwrap().scale.x);
+            let mat = Matrix4::from_translation(node.position)
+                * Matrix4::from_scale(node.scale);
             collected_data.push(InstanceData {
                 model_matrix: mat.into(),
             });
@@ -558,14 +469,13 @@ impl OctreeSystem {
             .iter()
             .all(|fnc| fnc(optimization_data, node));
 
-        if continue_traversal {
-            node.as_mut()
+        if continue_traversal && node.children.is_some() {
+            node.children
+                .as_mut()
                 .unwrap()
-                .children
                 .iter_mut()
                 .enumerate()
-                .for_each(|(_i, child)| match child {
-                    Some(_real_child) => {
+                .for_each(|(_i, child)| {
                         &mut OctreeSystem::generate_instance_data(
                             optimization_data,
                             child,
@@ -573,9 +483,7 @@ impl OctreeSystem {
                             traversal_criteria,
                             filter_functions,
                         );
-                    }
-                    None => {}
-                });
+                    });
         }
     }
 }
@@ -726,8 +634,8 @@ impl System for OctreeSystem {
     }
 }
 
-type FilterFunction = dyn Fn(&OptimizationData, &Option<Node>) -> bool;
-type TraversalFunction = dyn Fn(&OptimizationData, &Option<Node>) -> bool;
+type FilterFunction = dyn Fn(&OptimizationData, &Node) -> bool;
+type TraversalFunction = dyn Fn(&OptimizationData, &Node) -> bool;
 
 struct OptimizationData<'a> {
     camera: &'a Camera,
@@ -738,55 +646,42 @@ struct OptimizationData<'a> {
     depth_threshold: f64,
 }
 
-fn cull_frustum(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    if node.is_some() {
-        let node = node.as_ref().unwrap();
-        optimization_data.frustum.intersect(&node.aabb)
-    } else {
+fn cull_frustum(optimization_data: &OptimizationData, node: &Node) -> bool {
+    // generate aabb on demand to save memory
+    let min = node.position - Vector3::from_value(node.scale) / 2.0;
+    let max = node.position + Vector3::from_value(node.scale) / 2.0;
+    let aabb = AABB::new(min, max);
+
+    optimization_data.frustum.intersect(&aabb)
+}
+
+fn limit_depth_filter(optimization_data: &OptimizationData, node: &Node) -> bool {
+    !limit_depth_traversal(optimization_data, node) && node.solid
+}
+
+fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Node) -> bool {
+    let proj_matrix = optimization_data.octree_mvp;
+
+    let projected_position = proj_matrix * node.position.extend(1.0);
+    let mut projected_scale = node.scale / projected_position.w;
+    projected_scale *= optimization_data.camera.resolution[0] / 2.0;
+
+    let target_size = optimization_data.depth_threshold as f32 / optimization_data.octree_scale;
+    return if projected_scale.abs() < target_size as f32 {
         false
-    }
-}
-
-fn limit_depth_filter(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    !limit_depth_traversal(optimization_data, node) && node.as_ref().unwrap().solid
-}
-
-fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    if node.is_some() {
-        let node = node.as_ref().unwrap();
-        let proj_matrix = optimization_data.octree_mvp;
-
-        let projected_position = proj_matrix * node.position.extend(1.0);
-        let mut projected_scale = node.scale.x / projected_position.w;
-        projected_scale *= optimization_data.camera.resolution[0] / 2.0;
-
-        let target_size = optimization_data.depth_threshold as f32 / optimization_data.octree_scale;
-        if projected_scale.abs() < target_size as f32 {
-            return false;
-        } else {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn limit_solid_traversal(optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    if node.is_some() {
-        return !node.as_ref().unwrap().solid;
-    }
-
-    false
-}
-
-fn generate_leaf_model_matrix(_optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    if node.is_some() && node.as_ref().unwrap().is_leaf() {
+    } else {
         true
-    } else {
-        false
-    }
+    };
 }
 
-fn filter_is_solid(_optimization_data: &OptimizationData, node: &Option<Node>) -> bool {
-    return node.is_some() && node.as_ref().unwrap().solid && node.as_ref().unwrap().is_leaf();
+fn limit_solid_traversal(_: &OptimizationData, node: &Node) -> bool {
+    return !node.solid;
+}
+
+fn generate_leaf_model_matrix(_: &OptimizationData, node: &Node) -> bool {
+     node.is_leaf()
+}
+
+fn filter_is_solid(_: &OptimizationData, node: &Node) -> bool {
+    return node.solid && node.is_leaf();
 }
