@@ -18,7 +18,8 @@ use std::result::Result;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cgmath::{Matrix4, Transform, vec3, Vector3};
+use cgmath::{Array, ElementWise, Matrix3, Matrix4, Transform, vec3, Vector3};
+use cgmath::num_traits::Pow;
 use gfx_hal::buffer;
 use winit::event::Event;
 
@@ -163,7 +164,7 @@ impl Octree {
 
         oct.root.lock().unwrap().populate();
 
-        Arc::new(Mutex::new(Octree::traverse(
+        Arc::new(Mutex::new(Octree::traverse_menger_sponge(
             &mut oct.root.lock().unwrap(),
             0,
             depth,
@@ -209,11 +210,7 @@ impl Octree {
         count + 1
     }
 
-    fn traverse(
-        node: &mut Node,
-        current_depth: u64,
-        target_depth: u64,
-    ) {
+    fn traverse_mandelbrot(node: &mut Node, current_depth: u64, target_depth: u64) {
         if node.children.is_some() {
             node.children.as_mut().unwrap()
                 .iter_mut()
@@ -221,9 +218,12 @@ impl Octree {
                 .for_each(|(idx, child)| {
                     let new_depth = current_depth + 1;
 
-                    let mandelbrot = |origin: &Vector3<f32>, size: f32, zoom: f32| {
+                    let mandelbrot = |child: &mut Node, zoom: f32| {
+                        let origin = &child.position;
+                        let scale = child.scale;
+
                         // only a single slice
-                        if origin.y + size < 0.0 || origin.y - size > 0.0 { return INFINITY as f64; };
+                        if origin.y + scale < 0.0 || origin.y - scale > 0.0 { return false; };
 
                         let position = origin * zoom - vec3(0.5, 0.0, 0.0);
 
@@ -263,42 +263,112 @@ impl Octree {
                             iter -= 1;
                         }
 
-                        if iter == 0 {
-                            return 0.0f64;
-                        }
-
                         // values
                         let z_val = (z_re2 + z_im2).sqrt();
                         let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
 
                         // let dist = 2.0 * z_val * z_val.ln() / zp_val;
                         // let dist = z_val * z_val.ln() / zp_val;
-                        let dist = 0.5 * z_val * z_val.ln() / zp_val;
+                        let distance = 0.5 * z_val * z_val.ln() / zp_val;
 
-                        return dist;
+                        let half_length: f64 = (scale * 0.5 * zoom) as f64;
+                        let radius = (half_length * half_length * 2.0).sqrt() as f64;
+
+                        let mut traverse = false;
+
+                        if distance == 0.0 {
+                            child.solid = true;
+                            traverse = true;
+                        } else if distance < radius as f64 {
+                            traverse = true;
+
+                            if distance < zoom as f64 / 10e12 {
+                                child.solid = true;
+                            }
+                        }
+
+                        return traverse;
                     };
 
                     let zoom = 2.5;
-                    let size: f64 = (child.scale * 0.5 * zoom) as f64;
-                    let radius = (size * size + size * size).sqrt() as f64;
-
-                    let dem: f64 = mandelbrot(&child.position, child.scale, zoom);
-                    let mut traverse = false;
-
-                    if dem == 0.0 {
-                        child.solid = true;
-                        traverse = true;
-                    } else if dem < radius as f64 {
-                        traverse = true;
-
-                        if dem < zoom as f64 / 10e12 {
-                            child.solid = true;
-                        }
-                    }
+                    let traverse = mandelbrot(child, zoom);
 
                     if current_depth < target_depth && traverse {
                         child.populate();
-                        Octree::traverse(child, new_depth, target_depth)
+                        Octree::traverse_mandelbrot(child, new_depth, target_depth)
+                    }
+                });
+        }
+    }
+
+    fn traverse_menger_sponge(node: &mut Node, current_depth: u64, target_depth: u64) {
+        if node.children.is_some() {
+            node.children.as_mut().unwrap()
+                .iter_mut()
+                .enumerate()
+                .for_each(|(idx, child)| {
+                    let t: Vector3<f64> = vec3(
+                        child.position.x as f64,
+                        child.position.y as f64,
+                        child.position.z as f64,
+                    );
+                    let s: f64 = child.scale as f64;
+
+                    let mut box_points: Vec<Vector3<f64>> = vec![
+                        t + vec3(-0.5, -0.5, -0.5) * s,
+                        t + vec3(0.5, -0.5, -0.5) * s,
+                        t + vec3(-0.5, 0.5, -0.5) * s,
+                        t + vec3(0.5, 0.5, -0.5) * s,
+                        t + vec3(-0.5, -0.5, 0.5) * s,
+                        t + vec3(0.5, -0.5, 0.5) * s,
+                        t + vec3(-0.5, 0.5, 0.5) * s,
+                        t + vec3(0.5, 0.5, 0.5) * s,
+                    ];
+                    // transform box points into 0 - 1 range
+                    box_points = box_points.iter()
+                        .map(|p| { p + vec3(0.50, 0.50, 0.50) }).collect();
+
+                    // reduces the effective depth but prevents errors
+                    // good values are 2 - 4
+                    let oversampling = 3;
+                    let e_min = (1.0 / 3.0);
+                    // let e_min = 0.25;
+                    let e_max = (2.0 / 3.0);
+                    // let e_max = 0.75;
+                    let scale_base = 1.0 / 3.0;
+                    // let scale_base = 0.25; // 0.5
+
+                    let mut in_empty = false;
+
+                    let sample_range = (
+                        (current_depth as i32 - oversampling * 4).max(0),
+                        (current_depth as i32 - oversampling).max(0)
+                    );
+                    for i in sample_range.0..sample_range.1 {
+                        let scale = (scale_base).pow(i as f64);
+
+                        in_empty = box_points.iter()
+                            .all(|p| {
+                                // get remainder of linear transform
+                                let mut v = (p / scale) - (p / scale).map(|w| { w.floor() });
+
+                                let x = v.x >= e_min && v.x <= e_max;
+                                let y = v.y >= e_min && v.y <= e_max;
+                                let z = v.z >= e_min && v.z <= e_max;
+
+                                x && y || y && z || x && z
+                            });
+
+                        if in_empty { break; }
+                    }
+
+                    if !in_empty {
+                        child.solid = true;
+
+                        if current_depth < target_depth {
+                            child.populate();
+                            Octree::traverse_menger_sponge(child, current_depth + 1, target_depth)
+                        }
                     }
                 });
         }
@@ -477,14 +547,14 @@ impl OctreeSystem {
                 .iter_mut()
                 .enumerate()
                 .for_each(|(_i, child)| {
-                        &mut OctreeSystem::generate_instance_data(
-                            optimization_data,
-                            child,
-                            collected_data,
-                            traversal_criteria,
-                            filter_functions,
-                        );
-                    });
+                    &mut OctreeSystem::generate_instance_data(
+                        optimization_data,
+                        child,
+                        collected_data,
+                        traversal_criteria,
+                        filter_functions,
+                    );
+                });
         }
     }
 }
@@ -685,7 +755,7 @@ fn limit_solid_traversal(_: &OptimizationData, node: &Node) -> bool {
 }
 
 fn generate_leaf_model_matrix(_: &OptimizationData, node: &Node) -> bool {
-     node.is_leaf()
+    node.is_leaf()
 }
 
 fn filter_is_solid(_: &OptimizationData, node: &Node) -> bool {
