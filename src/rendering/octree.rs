@@ -528,10 +528,8 @@ impl OctreeSystem {
             .any(|fnc| fnc(optimization_data, node));
 
         if include {
-            let mat = Matrix4::from_translation(node.position)
-                * Matrix4::from_scale(node.scale);
             collected_data.push(InstanceData {
-                model_matrix: mat.into(),
+                transformation: node.position.extend(node.scale).into(),
             });
         }
 

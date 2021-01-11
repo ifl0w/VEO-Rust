@@ -38,5 +38,5 @@ impl Vertex {
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct InstanceData {
-    pub model_matrix: [[f32; 4]; 4],
+    pub transformation: [f32; 4], // x,y,z: position, w: scale
 }

@@ -12,7 +12,7 @@ layout(binding = 0) uniform UniformBufferObject {
 } camera_ubo;
 
 layout(binding = 1) buffer InstanceDataBuffer {
-    mat4 model_matrix[];
+    vec4 transformation[]; // w = uniform scale value
 } instance_ssbo;
 
 layout(push_constant) uniform PushConsts {
@@ -32,7 +32,11 @@ layout(location = 2) out vec3 fragPosition;
 void main() {
     mat4 model_matrix;
     if (use_instancing) {
-        model_matrix = pushConsts.model_matrix * instance_ssbo.model_matrix[pushConsts.instance_data_offset + gl_InstanceIndex];
+        vec4 trans = instance_ssbo.transformation[pushConsts.instance_data_offset + gl_InstanceIndex];
+        model_matrix = mat4(trans.w);
+        model_matrix[3] = vec4(trans.xyz, 1.0);
+
+        model_matrix = pushConsts.model_matrix * model_matrix;
     } else {
         model_matrix = pushConsts.model_matrix;
     }
