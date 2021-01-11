@@ -164,7 +164,7 @@ impl Octree {
 
         oct.root.lock().unwrap().populate();
 
-        Arc::new(Mutex::new(Octree::traverse_menger_sponge(
+        Arc::new(Mutex::new(Octree::traverse_mandelbrot(
             &mut oct.root.lock().unwrap(),
             0,
             depth,
@@ -222,13 +222,17 @@ impl Octree {
                         let origin = &child.position;
                         let scale = child.scale;
 
-                        // only a single slice
-                        if origin.y + scale < 0.0 || origin.y - scale > 0.0 { return false; };
+                        // only a slice
+                        let thickness = 0.01;
+                        if origin.y + child.scale * 0.5 < -thickness
+                            || origin.y - child.scale * 0.5 > thickness {
+                            return false;
+                        };
 
                         let position = origin * zoom - vec3(0.5, 0.0, 0.0);
 
                         let escape_radius = 4.0 * 10000.0 as f64;
-                        let mut iter = 1000;
+                        let mut iter = 100;
 
                         let c_re = position.x as f64;
                         let c_im = position.z as f64;
