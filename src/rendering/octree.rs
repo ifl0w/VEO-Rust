@@ -529,7 +529,9 @@ impl OctreeSystem {
         let limit_depth_reached = limit_depth_traversal(optimization_data, node);
 
         // add transformation data
-        let include = !limit_depth_reached && node.solid;
+        let mut include = !limit_depth_reached && node.solid;
+        include = include || (node.is_leaf() && node.solid);
+
         if include {
             collected_data.push(InstanceData {
                 transformation: node.position.extend(node.scale).into(),
