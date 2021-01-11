@@ -522,21 +522,19 @@ impl OctreeSystem {
         traversal_criteria: &Vec<&TraversalFunction>,
         filter_functions: &Vec<&FilterFunction>,
     ) {
-        // add model matrices
-        let include = filter_functions
-            .iter()
-            .any(|fnc| fnc(optimization_data, node));
+        let limit_depth_reached = limit_depth_traversal(optimization_data, node);
 
+        // add transformation data
+        let include = !limit_depth_reached && node.solid;
         if include {
             collected_data.push(InstanceData {
                 transformation: node.position.extend(node.scale).into(),
             });
         }
 
-        // traverse
-        let continue_traversal = traversal_criteria
-            .iter()
-            .all(|fnc| fnc(optimization_data, node));
+        // check weather to traverse further
+        let mut continue_traversal = cull_frustum(optimization_data, node);
+        continue_traversal = continue_traversal && limit_depth_reached;
 
         if continue_traversal && node.children.is_some() {
             node.children
