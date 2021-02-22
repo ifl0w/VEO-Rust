@@ -49,8 +49,8 @@ use crate::rendering::utility::ResourceManager;
 // Window
 const WINDOW_TITLE: &'static str = "NSE";
 const WINDOW_DIMENSIONS: window::Extent2D = window::Extent2D {
-    width: 1024,
-    height: 768,
+    width: 1600,
+    height: 900,
 };
 
 pub struct RenderSystem {

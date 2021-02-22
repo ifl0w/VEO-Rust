@@ -143,23 +143,20 @@ float distance, // camera to point distance
 vec3 rayDir, // camera to point vector
 vec3 sunDir)// sun light direction
 {
-    float falloff = 0.1;
-    float globalDensity = 1;
+    float globalDensity = 0.001;
+    float elevationFalloff = 0.1;
     float cameraElevation = camera_ubo.position.y;
 
-    float c = globalDensity/falloff;
-    float fogAmount = exp(-cameraElevation * falloff) * (1.0-exp(-distance * rayDir.y * falloff)) / rayDir.y;
+    float fogAmount = clamp(distance * globalDensity, 0, 1);
 
     float sunAmount = max(dot(rayDir, sunDir)/2, 0.0);
     vec3  fogColor  = mix(
-    vec3(0.5, 0.6, 0.7), // bluish
-    vec3(1.0, 0.9, 0.7), // yellowish
-    sunAmount
+        vec3(0.5, 0.6, 0.7), // bluish
+        vec3(1.0, 0.9, 0.7), // yellowish
+        sunAmount
     );
 
-    float fac = max(dot(rayDir, normalize(vec3(rayDir.x, 0, rayDir.z))) / 4, 0.0);
-    fac = pow(fac, 2.0);
-    return mix(rgb, fogColor, clamp(fogAmount * fac, 0, 0.5));
+    return mix(rgb, fogColor, fogAmount);
 }
 
 void main() {

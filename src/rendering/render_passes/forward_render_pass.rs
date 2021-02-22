@@ -711,7 +711,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 &[
                     command::ClearValue {
                         color: command::ClearColor {
-                            float32: [0.3, 0.3, 0.3, 1.0],
+                            float32: [0.025, 0.025, 0.025, 1.0],
                         },
                     },
                     command::ClearValue {

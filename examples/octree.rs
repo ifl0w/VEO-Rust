@@ -37,7 +37,7 @@ fn main() {
     camera
         .lock()
         .unwrap()
-        .add_component(Camera::new(0.01, 420.0, 90.0, [1024.0, 768.0]))
+        .add_component(Camera::new(0.01, 1024.0, 90.0, [1600.0, 900.0]))
         .add_component(
             Transformation::new()
                 .position(vec3(0.0, 30.0, 50.0))
