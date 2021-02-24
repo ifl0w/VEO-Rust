@@ -18,7 +18,7 @@ use std::result::Result;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cgmath::{Array, ElementWise, Matrix3, Matrix4, Transform, vec3, Vector3};
+use cgmath::{Array, ElementWise, Matrix3, Matrix4, Transform, vec3, Vector3, Rotation, InnerSpace};
 use cgmath::num_traits::Pow;
 use gfx_hal::buffer;
 use winit::event::Event;
@@ -540,6 +540,19 @@ impl OctreeSystem {
         continue_traversal = continue_traversal && limit_depth_reached;
 
         if continue_traversal && node.children.is_some() {
+            let camera_pos = optimization_data.camera_transform.position;
+            let camera_mag = camera_pos.magnitude();
+            let camera_dir = optimization_data.camera_transform.rotation.rotate_vector(-Vector3::unit_z());
+
+            node.children.as_mut().unwrap().sort_unstable_by(|a,b| {
+                let dist_a = camera_dir.extend(camera_mag)
+                    .dot((a.position).extend(1.0));
+                let dist_b = camera_dir.extend(camera_mag)
+                    .dot((b.position).extend(1.0));
+
+                dist_a.partial_cmp(&dist_b).unwrap()
+            });
+
             node.children
                 .as_mut()
                 .unwrap()
