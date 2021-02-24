@@ -280,13 +280,10 @@ impl Octree {
 
                         let mut traverse = false;
 
-                        if distance == 0.0 {
-                            child.solid = true;
-                            traverse = true;
-                        } else if distance < radius as f64 {
+                        if distance < radius as f64 {
                             traverse = true;
 
-                            if distance < zoom as f64 / 10e12 {
+                            if distance <= 0.0 {
                                 child.solid = true;
                             }
                         }
