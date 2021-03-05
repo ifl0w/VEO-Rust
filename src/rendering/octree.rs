@@ -130,7 +130,7 @@ impl Octree {
         let max_byte_size = std::mem::size_of::<Octree>() * max_num_nodes;
         let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
 
-        let ring_buffer_length = 2;
+        let ring_buffer_length = 3;
         let mut instance_data_buffer = Vec::with_capacity(ring_buffer_length);
         for _ in 0..ring_buffer_length {
             let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(
@@ -156,7 +156,7 @@ impl Octree {
                 Node::new_inner(vec3(0.0, 0.0, 0.0), 1.0)
             )),
             instance_data_buffer,
-            active_instance_buffer_idx: None,
+            active_instance_buffer_idx: Some(0),
 
             config,
             info: octree_info,
@@ -755,7 +755,9 @@ impl System for OctreeSystem {
                 let rm = self.render_sys.lock().unwrap().resource_manager.clone();
                 let _rm_lock = rm.lock().unwrap();
 
-                let buffer_idx = octree.active_instance_buffer_idx.unwrap_or(0);
+                let buffer_idx = (octree.active_instance_buffer_idx.unwrap_or(0) + 1)
+                    % octree.instance_data_buffer.len();
+                octree.active_instance_buffer_idx = Some(buffer_idx);
                 let buffer = &octree.instance_data_buffer[buffer_idx];
                 let mut gpu_buffer_lock = buffer.lock().unwrap();
 
@@ -764,8 +766,6 @@ impl System for OctreeSystem {
                         .len()
                         .min(octree.config.max_rendered_nodes.unwrap_or(1e3 as u64) as usize)],
                 );
-                octree.active_instance_buffer_idx =
-                    Some((buffer_idx + 1) % (octree.instance_data_buffer.len() - 1));
                 octree.info.render_count = model_matrices.len();
 
                 let instance_data_end = Instant::now();
