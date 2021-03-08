@@ -13,7 +13,6 @@ pub extern crate gfx_backend_vulkan as Backend;
 extern crate rand;
 
 use std::convert::{TryFrom, TryInto};
-use std::f32::INFINITY;
 use std::result::Result;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -23,9 +22,7 @@ use gfx_hal::buffer;
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, Payload, System};
-use crate::rendering::{
-    AABB, Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation,
-};
+use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use cgmath::num_traits::Pow;
 

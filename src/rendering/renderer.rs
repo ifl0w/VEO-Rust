@@ -18,10 +18,12 @@ feature = "gl",
 feature = "wgl"
 )))]
 pub extern crate gfx_backend_empty as Backend;
-#[cfg(any(feature = "gl", feature = "wgl"))]
-pub extern crate gfx_backend_gl as Backend;
+// #[cfg(any(feature = "gl", feature = "wgl"))]
+// pub extern crate gfx_backend_gl as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
+
+use std::borrow::Borrow;
 
 use std::{mem::ManuallyDrop, ptr};
 use std::sync::{Arc, Mutex};
@@ -430,7 +432,7 @@ impl<B> Renderer<B>
         // updated with a CPU->GPU data copy are not in use by the GPU, so we can perform those updates.
         // In this case there are none to be done, however.
         unsafe {
-            let fence = &self.submission_complete_fences[frame_idx];
+            let fence = &mut self.submission_complete_fences[frame_idx];
             self.device
                 .wait_for_fence(fence, !0)
                 .expect("Failed to wait for fence");
@@ -447,25 +449,39 @@ impl<B> Renderer<B>
         // versus when the swapchain image index we got from acquire_image is needed.
         let frame_idx = self.current_swap_chain_image;
 
-        let (swap_idx, image) = self.swapchain.acquire_image(frame_idx);
-        let acquire_semaphore = self.swapchain.get_semaphore(frame_idx);
+        // let (swap_idx, image) = self.swapchain.acquire_image(frame_idx);
+        // let acquire_semaphore = self.swapchain.get_semaphore(frame_idx);
+
+        let mut image = unsafe {
+            let ret = self.surface.acquire_image(!0).unwrap();
+
+            if ret.1.is_some() {
+                println!("Not optimal surface: {:?}", ret.1)
+            }
+
+            ret.0
+        };
 
         // Rendering
         let queue = &mut self.queue_group.queues[0];
 
         let mut render_pass_lock = render_pass.lock().unwrap();
 
-        let present_semaphore = {
+        let mut present_semaphore = {
             render_pass_lock.sync(frame_idx);
             render_pass_lock.record(frame_idx);
             render_pass_lock.submit(frame_idx, queue, vec![]);
 
             // blitting
-            render_pass_lock.blit_to_surface(queue, image, frame_idx, acquire_semaphore)
+            // render_pass_lock.blit_to_surface(queue, &image, frame_idx, acquire_semaphore)
+            render_pass_lock.blit_to_surface(queue, image.borrow(), frame_idx)
         };
 
-        self.swapchain
-            .present(queue, swap_idx, Some(vec![&present_semaphore]));
+        unsafe {
+            // TODO: IMPORTANT: check if wait on present semaphore is required
+            // queue.present(&mut self.surface, image, Some(&mut present_semaphore));
+            queue.present(&mut self.surface, image, None);
+        }
 
         // Increment our frame
         self.current_swap_chain_image = (self.current_swap_chain_image + 1) % self.frames_in_flight;
@@ -490,8 +506,6 @@ impl<B> Drop for Renderer<B>
             for f in self.submission_complete_fences.drain(..) {
                 self.device.destroy_fence(f);
             }
-
-            self.surface.unconfigure_swapchain(&self.device);
 
             if let Some(instance) = &self.instance {
                 let surface = ManuallyDrop::into_inner(ptr::read(&self.surface));

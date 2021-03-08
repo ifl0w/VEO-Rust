@@ -26,7 +26,7 @@ pub trait RenderPass<B: Backend> {
         queue: &mut B::CommandQueue,
         surface_image: &B::Image,
         frame_idx: usize,
-        acquire_semaphore: &B::Semaphore,
+        // acquire_semaphore: &B::Semaphore,
     ) -> &B::Semaphore;
     fn record(&mut self, frame_idx: usize);
 

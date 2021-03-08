@@ -9,6 +9,10 @@ use gfx_hal::device::Device;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 
 use crate::rendering::renderer::Renderer;
+use gfx_hal::memory::Segment;
+use gfx_hal::buffer::SubRange;
+use std::ops::DerefMut;
+use std::borrow::BorrowMut;
 
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,
@@ -97,7 +101,7 @@ impl<B: Backend> GPUBuffer<B> {
     /// updates a section of the buffer.
     /// does not change the stored length. The user has to ensure that elements in the buffer are
     /// updated correctly
-    pub fn update_data<T>(&self, offset: usize, data_source: &[T])
+    pub fn update_data<T>(&mut self, offset: usize, data_source: &[T])
         where
             T: Copy,
     {
@@ -107,11 +111,14 @@ impl<B: Backend> GPUBuffer<B> {
         let upload_size = data_source.len() * stride;
 
         assert!(offset + upload_size <= self.size);
-        let memory = &self.memory;
+        let mut memory = self.memory.deref_mut();
 
         unsafe {
             let mapping = device
-                .map_memory(memory, offset as u64..self.size as u64)
+                .map_memory(memory, Segment {
+                    offset: offset as u64,
+                    size: Some(self.size as u64)
+                })
                 .unwrap();
             ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);
             device.unmap_memory(memory);
@@ -157,7 +164,7 @@ impl<B: Backend> Uniform<B> {
         renderer: &Renderer<B>,
         data: &[T],
         binding: u32,
-        desc_sets: &Vec<B::DescriptorSet>,
+        desc_sets: &mut Vec<B::DescriptorSet>,
     ) -> Self
         where
             T: Copy,
@@ -174,15 +181,15 @@ impl<B: Backend> Uniform<B> {
             unsafe {
                 renderer
                     .device
-                    .write_descriptor_sets(iter::once(DescriptorSetWrite {
-                        set: &desc_sets[idx],
+                    .write_descriptor_set(DescriptorSetWrite {
+                        set: &mut desc_sets[idx],
                         binding,
                         array_offset: 0,
                         descriptors: iter::once(Descriptor::Buffer(
                             buffer.get_buffer(),
-                            None..None,
+                            SubRange::WHOLE,
                         )),
-                    }));
+                    });
             }
 
             buffers.push(buffer);

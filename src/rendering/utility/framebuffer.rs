@@ -1,13 +1,12 @@
 use std::mem::ManuallyDrop;
-use std::ops::Deref;
 use std::ptr;
 use std::sync::Arc;
 
-use gfx_hal::Backend;
+use gfx_hal::{Backend, image};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::device::Device;
 use gfx_hal::format::Format;
-use gfx_hal::image::Extent;
+use gfx_hal::image::{Extent, ViewCapabilities};
 use gfx_hal::image::Usage;
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pool::CommandPoolCreateFlags;
@@ -67,11 +66,19 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
 
                 let fb = device
                     .create_framebuffer(
-                        render_pass,
+                        &render_pass,
                         vec![
-                            fb_image.image_view.deref(),
-                            fb_depth_image.image_view.deref(),
-                        ],
+                            image::FramebufferAttachment {
+                                usage: usage,
+                                view_caps: ViewCapabilities::MUTABLE_FORMAT,
+                                format: format
+                            },
+                            image::FramebufferAttachment {
+                                usage: Usage::DEPTH_STENCIL_ATTACHMENT,
+                                view_caps: ViewCapabilities::MUTABLE_FORMAT,
+                                format: Format::D24UnormS8Uint
+                            }
+                        ].into_iter(),
                         extent,
                     )
                     .expect("Framebuffer creation failed!");
@@ -121,6 +128,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
     ) -> (
         &mut B::Fence,
         &mut Image<B, D>,
+        &mut DepthImage<B, D>,
         &mut B::Framebuffer,
         &mut B::CommandPool,
         &mut Vec<B::CommandBuffer>,
@@ -129,6 +137,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
         (
             &mut self.framebuffer_fences[frame_id],
             &mut self.frame_images[frame_id],
+            &mut self.depth_images[frame_id],
             &mut self.framebuffers[frame_id],
             &mut self.command_pools[frame_id],
             &mut self.command_buffer_lists[frame_id],

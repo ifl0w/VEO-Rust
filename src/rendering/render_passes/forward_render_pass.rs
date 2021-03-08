@@ -5,28 +5,23 @@ use std::ops::{Deref, Range};
 use std::sync::{Arc, Mutex};
 
 use bytes::{Buf, Bytes};
-use cgmath::{Matrix4};
+use cgmath::Matrix4;
 use gfx_hal::{
     Backend, command, format, format::Format, image, memory, pass, pso,
     query,
 };
-use gfx_hal::buffer::IndexBufferView;
+use gfx_hal::buffer::SubRange;
 use gfx_hal::command::{ClearDepthStencil, CommandBuffer, ImageBlit};
 use gfx_hal::device::Device;
 use gfx_hal::format::ChannelType;
 use gfx_hal::image::{Filter, Layout, Offset, SubresourceLayers, SubresourceRange};
 use gfx_hal::image::Usage;
 use gfx_hal::memory::Barrier;
-use gfx_hal::pass::{SubpassDependency, SubpassRef};
+use gfx_hal::pass::SubpassDependency;
 use gfx_hal::pool::CommandPool;
-use gfx_hal::pso::{
-    Descriptor, DescriptorPool, DescriptorPoolCreateFlags,
-    DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType,
-    ShaderStageFlags,
-};
-use gfx_hal::pso::State::Static;
+use gfx_hal::pso::{BufferDescriptorFormat, BufferDescriptorType, Descriptor, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, ShaderStageFlags};
 use gfx_hal::query::Query;
-use gfx_hal::queue::{CommandQueue, Submission};
+use gfx_hal::queue::CommandQueue;
 use gfx_hal::window::{Extent2D, Surface};
 
 use crate::rendering::{
@@ -97,11 +92,14 @@ impl<B: Backend> ForwardRenderPass<B> {
         let render_set_layout = ManuallyDrop::new(
             unsafe {
                 device.create_descriptor_set_layout(
-                    &[
+                    vec![
                         DescriptorSetLayoutBinding {
                             // Camera UBO
                             binding: 0,
-                            ty: DescriptorType::UniformBuffer,
+                            ty: DescriptorType::Buffer {
+                                ty: BufferDescriptorType::Uniform,
+                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
+                            },
                             count: 1,
                             stage_flags: ShaderStageFlags::all(),
                             immutable_samplers: false,
@@ -109,13 +107,16 @@ impl<B: Backend> ForwardRenderPass<B> {
                         DescriptorSetLayoutBinding {
                             // Instance Data SSBO
                             binding: 1,
-                            ty: DescriptorType::StorageBuffer,
+                            ty: DescriptorType::Buffer {
+                                ty: BufferDescriptorType::Storage { read_only: false },
+                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
+                            },
                             count: 1,
                             stage_flags: ShaderStageFlags::all(),
                             immutable_samplers: false,
                         },
-                    ],
-                    &[],
+                    ].into_iter(),
+                    vec![].into_iter(),
                 )
             }
                 .expect("Can't create descriptor set layout"),
@@ -126,26 +127,32 @@ impl<B: Backend> ForwardRenderPass<B> {
             unsafe {
                 device.create_descriptor_pool(
                     renderer.frames_in_flight, // sets
-                    &[
+                    vec![
                         DescriptorRangeDesc {
-                            ty: DescriptorType::UniformBuffer,
+                            ty: DescriptorType::Buffer {
+                                ty: BufferDescriptorType::Uniform,
+                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
+                            },
                             count: renderer.frames_in_flight,
                         },
                         DescriptorRangeDesc {
-                            ty: DescriptorType::StorageBuffer,
+                            ty: DescriptorType::Buffer {
+                                ty: BufferDescriptorType::Storage { read_only: false },
+                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
+                            },
                             count: renderer.frames_in_flight,
                         },
-                    ],
+                    ].into_iter(),
                     DescriptorPoolCreateFlags::empty(),
                 )
             }
                 .expect("Can't create descriptor pool"),
         );
 
-        let mut desc_set: Vec<B::DescriptorSet> = Vec::new();
+        let mut desc_set = Vec::new();
         unsafe {
             for _ in 0..renderer.frames_in_flight {
-                desc_set.push(desc_pool.allocate_set(&render_set_layout).unwrap());
+                desc_set.push(desc_pool.allocate_one(&render_set_layout).unwrap());
             }
         };
 
@@ -201,7 +208,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             // Subpass dependencies enable early fragment test mode
             // source: https://rust-tutorials.github.io/learn-gfx-hal/09_depth_buffer.html
             let in_dependency = SubpassDependency {
-                passes: SubpassRef::External..SubpassRef::Pass(0),
+                passes: None..Option::from(0),
                 stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
                     ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
                     | pso::PipelineStage::EARLY_FRAGMENT_TESTS,
@@ -213,7 +220,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                 flags: memory::Dependencies::empty(),
             };
             let out_dependency = SubpassDependency {
-                passes: SubpassRef::Pass(0)..SubpassRef::External,
+                passes: Option::from(0)..None,
                 stages: pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
                     | pso::PipelineStage::EARLY_FRAGMENT_TESTS
                     ..pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
@@ -228,9 +235,9 @@ impl<B: Backend> ForwardRenderPass<B> {
             ManuallyDrop::new(
                 unsafe {
                     device.create_render_pass(
-                        &[attachment, depth_attachment],
-                        &[subpass],
-                        &[in_dependency, out_dependency],
+                        vec![attachment, depth_attachment].into_iter(),
+                        iter::once(subpass),
+                        vec![in_dependency, out_dependency].into_iter(),
                     )
                 }
                     .expect("Can't create render pass"),
@@ -242,7 +249,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             &renderer,
             &[CameraData::default()],
             CAMERA_UNIFORM_BINDING,
-            &desc_set,
+            &mut desc_set,
         );
 
         // instance/draw buffer
@@ -254,15 +261,15 @@ impl<B: Backend> ForwardRenderPass<B> {
         );
         for idx in 0..renderer.frames_in_flight {
             unsafe {
-                device.write_descriptor_sets(iter::once(DescriptorSetWrite {
-                    set: &desc_set[idx],
+                device.write_descriptor_set(DescriptorSetWrite {
+                    set: &mut desc_set[idx],
                     binding: 1,
                     array_offset: 0,
                     descriptors: iter::once(Descriptor::Buffer(
                         instance_buffer.get_buffer(),
-                        None..None,
+                        SubRange::WHOLE,
                     )),
-                }));
+                });
             }
         }
 
@@ -283,7 +290,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             device,
             render_pass.deref(),
             render_set_layout.deref(),
-            pso::PolygonMode::Line(Static(1.0)),
+            pso::PolygonMode::Line,
         );
         let framebuffer = Framebuffer::new(
             device,
@@ -358,7 +365,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             &self.device,
             self.render_pass.deref(),
             self.render_set_layout.deref(),
-            pso::PolygonMode::Line(Static(1.0)),
+            pso::PolygonMode::Line,
         );
     }
 
@@ -427,12 +434,12 @@ impl<B: Backend> ForwardRenderPass<B> {
 
         unsafe {
             self.device
-                .write_descriptor_sets(iter::once(DescriptorSetWrite {
-                    set: &self.desc_set[frame_idx],
+                .write_descriptor_set(DescriptorSetWrite {
+                    set: &mut self.desc_set[frame_idx],
                     binding: 1,
                     array_offset: 0,
-                    descriptors: iter::once(Descriptor::Buffer(buf_lock.get_buffer(), None..None)),
-                }));
+                    descriptors: iter::once(Descriptor::Buffer(buf_lock.get_buffer(), SubRange::WHOLE)),
+                });
         }
     }
 }
@@ -462,7 +469,7 @@ impl<B: Backend> Drop for ForwardRenderPass<B> {
 
 impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     fn sync(&mut self, frame_idx: usize) {
-        let (fe, _fi, _framebuffer, pool, _command_buffers, _semaphore) =
+        let (fe, _fi, _di, _framebuffer, pool, _command_buffers, _semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -480,7 +487,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         queue: &mut B::CommandQueue,
         wait_semaphores: Vec<&B::Semaphore>,
     ) -> &B::Semaphore {
-        let (fe, _fi, _framebuffer, _pool, command_buffers, semaphore) =
+        let (fe, _fi, _di, _framebuffer, _pool, command_buffers, semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -489,12 +496,10 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 .map(|sem| (*sem, pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT))
                 .collect::<Vec<(&B::Semaphore, pso::PipelineStage)>>();
 
-            let submission = Submission {
-                command_buffers: command_buffers.iter(),
-                wait_semaphores: wait_sem,
-                signal_semaphores: vec![&*semaphore],
-            };
-            queue.submit(submission, Some(fe));
+            queue.submit(command_buffers.iter(),
+                         wait_sem.into_iter(),
+                         vec![&*semaphore].into_iter(),
+                         Some(fe));
         }
 
         semaphore
@@ -513,11 +518,11 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         queue: &mut B::CommandQueue,
         surface_image: &B::Image,
         frame_idx: usize,
-        acquire_semaphore: &B::Semaphore,
+        // acquire_semaphore: &B::Semaphore,
     ) -> &B::Semaphore {
         self.sync(frame_idx);
 
-        let (fe, fi, _framebuffer, pool, command_buffers, semaphore) =
+        let (fe, fi, _di, _framebuffer, pool, command_buffers, semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -536,15 +541,17 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 families: None,
                 range: SubresourceRange {
                     aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
+                    level_start: 0,
+                    level_count: Some(1),
+                    layer_start: 0,
+                    layer_count: Some(1),
                 },
             };
 
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
                 gfx_hal::memory::Dependencies::empty(),
-                &[target_image_barrier],
+                iter::once(target_image_barrier),
             );
 
             let image_barrier = Barrier::Image {
@@ -554,15 +561,17 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 families: None,
                 range: SubresourceRange {
                     aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
+                    level_start: 0,
+                    level_count: Some(1),
+                    layer_start: 0,
+                    layer_count: Some(1),
                 },
             };
 
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::TOP_OF_PIPE..pso::PipelineStage::TRANSFER,
                 gfx_hal::memory::Dependencies::all(),
-                &[image_barrier],
+                iter::once(image_barrier),
             );
 
             //            cmd_buffer.copy_image(&fi.image,
@@ -629,15 +638,17 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 families: None,
                 range: SubresourceRange {
                     aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
+                    level_start: 0,
+                    level_count: Some(1),
+                    layer_start: 0,
+                    layer_count: Some(1),
                 },
             };
 
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
                 gfx_hal::memory::Dependencies::empty(),
-                &[image_barrier],
+                iter::once(image_barrier),
             );
 
             let target_image_barrier = Barrier::Image {
@@ -647,15 +658,17 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 families: None,
                 range: SubresourceRange {
                     aspects: format::Aspects::COLOR,
-                    levels: 0..1,
-                    layers: 0..1,
+                    level_start: 0,
+                    level_count: Some(1),
+                    layer_start: 0,
+                    layer_count: Some(1),
                 },
             };
 
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::TRANSFER..pso::PipelineStage::TRANSFER,
                 gfx_hal::memory::Dependencies::empty(),
-                &[target_image_barrier],
+                iter::once(target_image_barrier),
             );
 
             cmd_buffer.finish();
@@ -664,22 +677,20 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         }
 
         unsafe {
-            let submission = Submission {
-                command_buffers: command_buffers.iter(),
-                wait_semaphores: vec![
-                    (&*semaphore, pso::PipelineStage::TRANSFER),
-                    (acquire_semaphore, pso::PipelineStage::TRANSFER),
-                ],
-                signal_semaphores: vec![&*semaphore],
-            };
-            queue.submit(submission, Some(fe));
+            queue.submit(command_buffers.iter(),
+                         vec![
+                             (&*semaphore, pso::PipelineStage::TRANSFER),
+                             // (acquire_semaphore, pso::PipelineStage::TRANSFER),
+                         ].into_iter(),
+                         vec![&*semaphore].into_iter(),
+                         Some(fe));
         }
 
         semaphore
     }
 
     fn record(&mut self, frame_idx: usize) {
-        let (_fe, _fi, framebuffer, pool, command_buffers, _semaphore) =
+        let (_fe, fi, di, framebuffer, pool, command_buffers, _semaphore) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -701,26 +712,32 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 },
             );
 
-            command_buffer.set_viewports(0, &[self.viewport.clone()]);
-            command_buffer.set_scissors(0, &[self.viewport.rect]);
+            command_buffer.set_viewports(0, iter::once(self.viewport.clone()));
+            command_buffer.set_scissors(0, iter::once(self.viewport.rect));
 
             command_buffer.begin_render_pass(
                 &self.render_pass,
                 framebuffer,
                 self.viewport.rect,
-                &[
-                    command::ClearValue {
-                        color: command::ClearColor {
-                            float32: [0.025, 0.025, 0.025, 1.0],
+                vec![
+                    command::RenderAttachmentInfo {
+                        image_view: fi.image_view.deref(),
+                        clear_value: command::ClearValue {
+                            color: command::ClearColor {
+                                float32: [0.025, 0.025, 0.025, 1.0],
+                            },
                         },
                     },
-                    command::ClearValue {
-                        depth_stencil: ClearDepthStencil {
-                            depth: 1f32,
-                            stencil: 0,
+                    command::RenderAttachmentInfo {
+                        image_view: di.image_view.deref(),
+                        clear_value: command::ClearValue {
+                            depth_stencil: ClearDepthStencil {
+                                depth: 1f32,
+                                stencil: 0,
+                            },
                         },
                     },
-                ],
+                ].into_iter(),
                 command::SubpassContents::Inline,
             );
 
@@ -734,7 +751,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                         &self.forward_pipeline.get_layout(false),
                         0,
                         iter::once(&self.desc_set[frame_idx]),
-                        &[],
+                        iter::empty(),
                     );
                 }
 
@@ -755,14 +772,9 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                             &push_data,
                         );
 
-                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, SubRange::WHOLE)));
 
-                        let index_buffer_view = IndexBufferView {
-                            buffer: ind_buf,
-                            offset: 0,
-                            index_type: mesh.index_type,
-                        };
-                        command_buffer.bind_index_buffer(index_buffer_view);
+                        command_buffer.bind_index_buffer(ind_buf, SubRange::WHOLE, mesh.index_type);
                         command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
                     }
                 }
@@ -775,7 +787,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                         &self.forward_wireframe_pipeline.get_layout(false),
                         0,
                         iter::once(&self.desc_set[frame_idx]),
-                        &[],
+                        iter::empty(),
                     );
                 }
 
@@ -796,14 +808,9 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                             &push_data,
                         );
 
-                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, SubRange::WHOLE)));
 
-                        let index_buffer_view = IndexBufferView {
-                            buffer: ind_buf,
-                            offset: 0,
-                            index_type: mesh.index_type,
-                        };
-                        command_buffer.bind_index_buffer(index_buffer_view);
+                        command_buffer.bind_index_buffer(ind_buf, SubRange::WHOLE, mesh.index_type);
                         command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..1);
                     }
                 }
@@ -819,7 +826,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                         &self.forward_pipeline.get_layout(true),
                         0,
                         iter::once(&self.desc_set[frame_idx]),
-                        &[],
+                        iter::empty(),
                     );
                 }
 
@@ -830,7 +837,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                     let ind_buf = &**mesh.index_buffer;
 
                     for (range, transform) in instance_ranges {
-                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, 0)));
+                        command_buffer.bind_vertex_buffers(0, iter::once((vert_buf, SubRange::WHOLE)));
 
                         let data: &[f32; 16] = transform.as_ref();
                         let push_data: [u32; 16] = std::mem::transmute_copy(data);
@@ -848,12 +855,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                             &[range.start as u32],
                         );
 
-                        let index_buffer_view = IndexBufferView {
-                            buffer: ind_buf,
-                            offset: 0,
-                            index_type: mesh.index_type,
-                        };
-                        command_buffer.bind_index_buffer(index_buffer_view);
+                        command_buffer.bind_index_buffer(ind_buf, SubRange::WHOLE, mesh.index_type);
                         command_buffer.draw_indexed(0..mesh.num_indices, 0, 0..range.end as u32);
                     }
                 }

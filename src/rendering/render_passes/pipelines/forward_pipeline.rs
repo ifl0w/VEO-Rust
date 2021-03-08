@@ -8,10 +8,7 @@ use gfx_hal::{
 };
 use gfx_hal::device::Device;
 use gfx_hal::pass::Subpass;
-use gfx_hal::pso::{
-    Comparison, DepthStencilDesc, DepthTest, FrontFace, PolygonMode,
-    ShaderStageFlags, VertexInputRate,
-};
+use gfx_hal::pso::{Comparison, DepthStencilDesc, DepthTest, FrontFace, PolygonMode, ShaderStageFlags, State, VertexInputRate};
 
 use crate::rendering::{ENTRY_NAME, Pipeline, ShaderCode, Vertex};
 
@@ -42,9 +39,9 @@ impl<B: Backend> ForwardPipeline<B> {
             unsafe {
                 device.create_pipeline_layout(
                     iter::once(set_layout),
-                    &[
+                    iter::once(
                         (ShaderStageFlags::VERTEX, 0..68), // model matrix and offset into instance data
-                    ],
+                    ),
                 )
             }
                 .expect("Can't create pipelines layout"),
@@ -64,7 +61,7 @@ impl<B: Backend> ForwardPipeline<B> {
                 return None;
             }
             let vs_module = {
-                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0)).unwrap();
+                let spirv = gfx_auxil::read_spirv(Cursor::new(compile_result.unwrap().0)).unwrap();
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
 
@@ -82,34 +79,69 @@ impl<B: Backend> ForwardPipeline<B> {
                 return None;
             }
             let fs_module = {
-                let spirv = pso::read_spirv(Cursor::new(compile_result.unwrap().0)).unwrap();
+                let spirv = gfx_auxil::read_spirv(Cursor::new(compile_result.unwrap().0)).unwrap();
                 unsafe { device.create_shader_module(&spirv) }.unwrap()
             };
 
             let pipeline = {
-                let (vs_entry, fs_entry) = (
-                    pso::EntryPoint {
-                        entry: ENTRY_NAME,
-                        module: &vs_module,
-                        specialization: if enable_instancing {
-                            gfx_hal::spec_const_list![true]
-                        } else {
-                            pso::Specialization::default()
-                        },
+                let vs_entry = pso::EntryPoint {
+                    entry: ENTRY_NAME,
+                    module: &vs_module,
+                    specialization: if enable_instancing {
+                        gfx_hal::spec_const_list![true]
+                    } else {
+                        pso::Specialization::default()
                     },
-                    pso::EntryPoint {
-                        entry: ENTRY_NAME,
-                        module: &fs_module,
-                        specialization: pso::Specialization::default(),
-                    },
-                );
+                };
 
-                let shader_entries = pso::GraphicsShaderSet {
+                let fs_entry = pso::EntryPoint {
+                    entry: ENTRY_NAME,
+                    module: &fs_module,
+                    specialization: pso::Specialization::default(),
+                };
+
+                let primitive_assembler_desc = pso::PrimitiveAssemblerDesc::Vertex {
+                    buffers: &[
+                        pso::VertexBufferDesc {
+                            binding: 0,
+                            stride: mem::size_of::<Vertex>() as u32,
+                            rate: VertexInputRate::Vertex,
+                        }
+                    ],
+                    attributes: &[
+                        pso::AttributeDesc {
+                            location: 0,
+                            binding: 0,
+                            element: pso::Element {
+                                format: Format::Rgb32Sfloat,
+                                offset: 0,
+                            },
+                        },
+                        pso::AttributeDesc {
+                            location: 1,
+                            binding: 0,
+                            element: pso::Element {
+                                format: Format::Rgb32Sfloat,
+                                offset: 12,
+                            },
+                        },
+                        pso::AttributeDesc {
+                            location: 2,
+                            binding: 0,
+                            element: pso::Element {
+                                format: Format::Rgb32Sfloat,
+                                offset: 24,
+                            },
+                        }
+                    ],
+                    input_assembler: pso::InputAssemblerDesc {
+                        primitive: pso::Primitive::TriangleList,
+                        with_adjacency: false,
+                        restart_index: None,
+                    },
                     vertex: vs_entry,
-                    hull: None,
-                    domain: None,
                     geometry: None,
-                    fragment: Some(fs_entry),
+                    tessellation: None,
                 };
 
                 let subpass = Subpass {
@@ -117,10 +149,20 @@ impl<B: Backend> ForwardPipeline<B> {
                     main_pass: render_pass,
                 };
 
+                let rasterizer = pso::Rasterizer {
+                    polygon_mode: pso::PolygonMode::Fill,
+                    cull_face: pso::Face::BACK,
+                    front_face: pso::FrontFace::CounterClockwise,
+                    depth_clamping: true,
+                    depth_bias: None,
+                    conservative: true,
+                    line_width: State::Dynamic,
+                };
+
                 let mut pipeline_desc = pso::GraphicsPipelineDesc::new(
-                    shader_entries,
-                    pso::Primitive::TriangleList,
-                    pso::Rasterizer::FILL,
+                    primitive_assembler_desc,
+                    rasterizer,
+                    Some(fs_entry),
                     &*pipeline_layout,
                     subpass,
                 );
@@ -142,36 +184,36 @@ impl<B: Backend> ForwardPipeline<B> {
                     mask: pso::ColorMask::ALL,
                     blend: Some(pso::BlendState::ALPHA),
                 });
-                pipeline_desc.vertex_buffers.push(pso::VertexBufferDesc {
-                    binding: 0,
-                    stride: mem::size_of::<Vertex>() as u32,
-                    rate: VertexInputRate::Vertex,
-                });
-
-                pipeline_desc.attributes.push(pso::AttributeDesc {
-                    location: 0,
-                    binding: 0,
-                    element: pso::Element {
-                        format: Format::Rgb32Sfloat,
-                        offset: 0,
-                    },
-                });
-                pipeline_desc.attributes.push(pso::AttributeDesc {
-                    location: 1,
-                    binding: 0,
-                    element: pso::Element {
-                        format: Format::Rgb32Sfloat,
-                        offset: 12,
-                    },
-                });
-                pipeline_desc.attributes.push(pso::AttributeDesc {
-                    location: 2,
-                    binding: 0,
-                    element: pso::Element {
-                        format: Format::Rgb32Sfloat,
-                        offset: 24,
-                    },
-                });
+                // pipeline_desc.vertex_buffers.push(pso::VertexBufferDesc {
+                //     binding: 0,
+                //     stride: mem::size_of::<Vertex>() as u32,
+                //     rate: VertexInputRate::Vertex,
+                // });
+                //
+                // pipeline_desc.attributes.push(pso::AttributeDesc {
+                //     location: 0,
+                //     binding: 0,
+                //     element: pso::Element {
+                //         format: Format::Rgb32Sfloat,
+                //         offset: 0,
+                //     },
+                // });
+                // pipeline_desc.attributes.push(pso::AttributeDesc {
+                //     location: 1,
+                //     binding: 0,
+                //     element: pso::Element {
+                //         format: Format::Rgb32Sfloat,
+                //         offset: 12,
+                //     },
+                // });
+                // pipeline_desc.attributes.push(pso::AttributeDesc {
+                //     location: 2,
+                //     binding: 0,
+                //     element: pso::Element {
+                //         format: Format::Rgb32Sfloat,
+                //         offset: 24,
+                //     },
+                // });
 
                 unsafe { device.create_graphics_pipeline(&pipeline_desc, None) }
             };

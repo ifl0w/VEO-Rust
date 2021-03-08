@@ -42,7 +42,7 @@ impl<B: Backend, D: Device<B>> Image<B, D> {
                     format,
                     gfx_hal::image::Tiling::Optimal,
                     usage,
-                    gfx_hal::image::ViewCapabilities::empty(),
+                    gfx_hal::image::ViewCapabilities::MUTABLE_FORMAT,
                 )
                 .map_err(|_| "Couldn't crate the image!")?;
 
@@ -78,8 +78,10 @@ impl<B: Backend, D: Device<B>> Image<B, D> {
                     gfx_hal::format::Swizzle::NO,
                     SubresourceRange {
                         aspects: Aspects::COLOR,
-                        levels: 0..1,
-                        layers: 0..1,
+                        level_start: 0,
+                        level_count: Some(1),
+                        layer_start: 0,
+                        layer_count: Some(1),
                     },
                 )
                 .map_err(|_| "Couldn't create the image view!")?;

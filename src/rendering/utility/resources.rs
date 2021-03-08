@@ -12,6 +12,7 @@ use gfx_hal::adapter::PhysicalDevice;
 
 use crate::rendering::renderer::Renderer;
 use crate::rendering::utility::{GPUBuffer, Index, Vertex};
+use gfx_hal::memory::Segment;
 
 pub type MeshID = usize;
 pub type BufferID = usize;
@@ -107,9 +108,7 @@ pub trait MeshGenerator {
     }
 }
 
-pub struct GPUMesh<B>
-    where
-        B: gfx_hal::Backend,
+pub struct GPUMesh<B: gfx_hal::Backend>
 {
     device: Arc<B::Device>,
 
@@ -214,18 +213,24 @@ impl<B> GPUMesh<B>
 
         // TODO: check transitions: read/write mapping and vertex buffer read
         let buffer_memory = unsafe {
-            let memory = device
+            let mut memory = device
                 .allocate_memory(upload_type, buffer_req.size)
                 .unwrap();
             device
                 .bind_buffer_memory(&memory, 0, &mut vertex_buffer)
                 .unwrap();
-            let mapping = device.map_memory(&memory, 0..padded_buffer_len).unwrap();
+            let mapping = device.map_memory(&mut memory, Segment {
+                offset: 0,
+                size: Some(padded_buffer_len as u64)
+            }).unwrap();
             ptr::copy_nonoverlapping(vertices.as_ptr() as *const u8, mapping, buffer_len as usize);
             device
-                .flush_mapped_memory_ranges(iter::once((&memory, 0..padded_buffer_len)))
+                .flush_mapped_memory_ranges(iter::once((&memory, Segment {
+                    offset: 0,
+                    size: Some(padded_buffer_len as u64)
+                })))
                 .unwrap();
-            device.unmap_memory(&memory);
+            device.unmap_memory(&mut memory);
             ManuallyDrop::new(memory)
         };
 
@@ -274,18 +279,24 @@ impl<B> GPUMesh<B>
 
         // TODO: check transitions: read/write mapping and vertex buffer read
         let buffer_memory = unsafe {
-            let memory = device
+            let mut memory = device
                 .allocate_memory(upload_type, buffer_req.size)
                 .unwrap();
             device
                 .bind_buffer_memory(&memory, 0, &mut index_buffer)
                 .unwrap();
-            let mapping = device.map_memory(&memory, 0..padded_buffer_len).unwrap();
+            let mapping = device.map_memory(&mut memory, Segment {
+                offset: 0,
+                size: Some(padded_buffer_len as u64)
+            }).unwrap();
             ptr::copy_nonoverlapping(indices.as_ptr() as *const u8, mapping, buffer_len as usize);
             device
-                .flush_mapped_memory_ranges(iter::once((&memory, 0..padded_buffer_len)))
+                .flush_mapped_memory_ranges(iter::once((&memory, Segment {
+                    offset: 0,
+                    size: Some(padded_buffer_len as u64)
+                })))
                 .unwrap();
-            device.unmap_memory(&memory);
+            device.unmap_memory(&mut memory);
             ManuallyDrop::new(memory)
         };
 

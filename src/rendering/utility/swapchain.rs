@@ -12,14 +12,12 @@ use gfx_hal::image::Extent;
 use gfx_hal::image::Usage;
 use gfx_hal::window::{Extent2D, SwapchainConfig, SwapImageIndex};
 use gfx_hal::window::Surface;
-use gfx_hal::window::Swapchain;
+use gfx_hal::prelude::PresentationSurface;
 
 pub struct SwapchainWrapper<B: Backend, D: Device<B>> {
     device: Arc<B::Device>,
     adapter: Arc<Adapter<B>>,
 
-    swapchain: RwLock<ManuallyDrop<B::Swapchain>>,
-    backbuffer: Option<Vec<B::Image>>,
     acquire_fences: Vec<B::Fence>,
     acquire_semaphores: Vec<B::Semaphore>,
 
@@ -54,12 +52,10 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
         swap_config.image_usage = swap_config.image_usage | Usage::TRANSFER_DST;
 
         let extent = swap_config.extent.to_extent();
-        let (swapchain, backbuffer) = device
-            .create_swapchain(surface, swap_config, None)
-            .expect("Can't create swapchain");
+        surface.configure_swapchain(device, swap_config).expect("Can't create swapchain");
 
-        let mut acquire_fences = Vec::with_capacity(backbuffer.len());
-        let mut acquire_semaphores = Vec::with_capacity(backbuffer.len());
+        let mut acquire_fences = Vec::new();
+        let mut acquire_semaphores = Vec::new();
         for _ in 0..3 {
             acquire_fences.push(device.create_fence(false).expect("Failed to create fence."));
             acquire_semaphores.push(
@@ -69,12 +65,9 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
             );
         }
 
-        let swapchain = SwapchainWrapper {
+        Self {
             device: device.clone(),
             adapter: adapter.clone(),
-
-            swapchain: RwLock::new(ManuallyDrop::new(swapchain)),
-            backbuffer: Some(backbuffer),
 
             acquire_fences,
             acquire_semaphores,
@@ -83,8 +76,7 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
             format,
 
             phantom_data: PhantomData,
-        };
-        swapchain
+        }
     }
 
     pub fn recreate(&mut self, surface: &mut B::Surface, extent: Extent2D) {
@@ -104,79 +96,77 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
         swap_config.image_usage = swap_config.image_usage | Usage::TRANSFER_DST;
 
         unsafe {
-            self.device
-                .destroy_swapchain(ManuallyDrop::into_inner(ptr::read(
-                    self.swapchain.write().unwrap().deref(),
-                )));
+            // self.device
+            //     .destroy_swapchain(ManuallyDrop::into_inner(ptr::read(
+            //         self.swapchain.write().unwrap().deref(),
+            //     )));
 
-            let (swapchain, backbuffer) = self
-                .device
-                .create_swapchain(surface, swap_config, None)
-                .expect("Can't create swapchain");
+            // let (swapchain, backbuffer) = self
+            //     .device
+            //     .create_swapchain(surface, swap_config, None)
+            //     .expect("Can't create swapchain");
 
-            self.swapchain = RwLock::new(ManuallyDrop::new(swapchain));
-            self.backbuffer = Some(backbuffer);
+            surface.configure_swapchain(&self.device, swap_config).expect("Can't create swapchain");
+
+            // self.swapchain = RwLock::new(ManuallyDrop::new(swapchain));
+            // self.backbuffer = Some(backbuffer);
         }
     }
 
-    pub fn acquire_image(&self, frame_idx: usize) -> (SwapImageIndex, &B::Image) {
-        let image_index: SwapImageIndex;
-
-        unsafe {
-            let (idx, _) = self
-                .swapchain
-                .write()
-                .unwrap()
-                .acquire_image(!0, Some(&self.acquire_semaphores[frame_idx]), None)
-                .expect("Failed to aquire swapchain image.");
-
-            image_index = idx;
-        }
-
-        let image = self
-            .backbuffer
-            .as_ref()
-            .unwrap()
-            .get(image_index as usize)
-            .unwrap();
-        (image_index, image)
-    }
+    // pub fn acquire_image(&self, frame_idx: usize) -> (SwapImageIndex, &B::Image) {
+    //     let image_index: SwapImageIndex;
+    //
+    //     unsafe {
+    //         let (idx, _) = self
+    //             .swapchain
+    //             .write()
+    //             .unwrap()
+    //             .acquire_image(!0, Some(&self.acquire_semaphores[frame_idx]), None)
+    //             .expect("Failed to aquire swapchain image.");
+    //
+    //         image_index = idx;
+    //     }
+    //
+    //     let image = self
+    //         .backbuffer
+    //         .as_ref()
+    //         .unwrap()
+    //         .get(image_index as usize)
+    //         .unwrap();
+    //     (image_index, image)
+    // }
 
     pub fn get_semaphore(&self, frame_idx: usize) -> &B::Semaphore {
         &self.acquire_semaphores[frame_idx]
     }
 
-    pub fn present(
-        &self,
-        queue: &mut B::CommandQueue,
-        swap_image_index: SwapImageIndex,
-        present_semaphores: Option<Vec<&B::Semaphore>>,
-    ) {
-        let _result = unsafe {
-            let wait_semaphores = match present_semaphores {
-                Some(sem) => sem,
-                None => vec![],
-            };
-
-            self.swapchain
-                .write()
-                .unwrap()
-                .present(queue, swap_image_index, wait_semaphores.iter())
-        };
-
-        //        if result.is_err() {
-        //            self.recreate();
-        //        }
-    }
+    // pub fn present(
+    //     &self,
+    //     queue: &mut B::CommandQueue,
+    //     swap_image_index: SwapImageIndex,
+    //     present_semaphores: Option<Vec<&B::Semaphore>>,
+    // ) {
+    //     let _result = unsafe {
+    //         let wait_semaphores = match present_semaphores {
+    //             Some(sem) => sem,
+    //             None => vec![],
+    //         };
+    //
+    //         queue.present(queue, swap_image_index, wait_semaphores.iter())
+    //     };
+    // }
 }
 
 impl<B: Backend, D: Device<B>> Drop for SwapchainWrapper<B, D> {
     fn drop(&mut self) {
         unsafe {
-            self.device
-                .destroy_swapchain(ManuallyDrop::into_inner(ptr::read(
-                    self.swapchain.write().unwrap().deref(),
-                )));
+            // TODO: IMPORTANT: unconfigure swapchain cleanly!!!
+            // self.surface.unconfigure_swapchain(&self.device);
+
+            // self.device
+            //     .destroy_swapchain(ManuallyDrop::into_inner(ptr::read(
+            //         self.swapchain.write().unwrap().deref(),
+            //     )));
 
             for acquire_fence in self.acquire_fences.drain(0..) {
                 self.device.destroy_fence(acquire_fence);

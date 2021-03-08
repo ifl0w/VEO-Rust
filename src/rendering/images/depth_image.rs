@@ -73,8 +73,10 @@ impl<B: Backend, D: Device<B>> DepthImage<B, D> {
                     gfx_hal::format::Swizzle::NO,
                     SubresourceRange {
                         aspects: Aspects::DEPTH,
-                        levels: 0..1,
-                        layers: 0..1,
+                        level_start: 0,
+                        level_count: Some(1),
+                        layer_start: 0,
+                        layer_count: Some(1),
                     },
                 )
                 .map_err(|_| "Couldn't create the image view!")?;
