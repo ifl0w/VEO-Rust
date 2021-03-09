@@ -184,36 +184,6 @@ impl<B: Backend> ForwardPipeline<B> {
                     mask: pso::ColorMask::ALL,
                     blend: Some(pso::BlendState::ALPHA),
                 });
-                // pipeline_desc.vertex_buffers.push(pso::VertexBufferDesc {
-                //     binding: 0,
-                //     stride: mem::size_of::<Vertex>() as u32,
-                //     rate: VertexInputRate::Vertex,
-                // });
-                //
-                // pipeline_desc.attributes.push(pso::AttributeDesc {
-                //     location: 0,
-                //     binding: 0,
-                //     element: pso::Element {
-                //         format: Format::Rgb32Sfloat,
-                //         offset: 0,
-                //     },
-                // });
-                // pipeline_desc.attributes.push(pso::AttributeDesc {
-                //     location: 1,
-                //     binding: 0,
-                //     element: pso::Element {
-                //         format: Format::Rgb32Sfloat,
-                //         offset: 12,
-                //     },
-                // });
-                // pipeline_desc.attributes.push(pso::AttributeDesc {
-                //     location: 2,
-                //     binding: 0,
-                //     element: pso::Element {
-                //         format: Format::Rgb32Sfloat,
-                //         offset: 24,
-                //     },
-                // });
 
                 unsafe { device.create_graphics_pipeline(&pipeline_desc, None) }
             };

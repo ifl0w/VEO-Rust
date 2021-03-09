@@ -480,7 +480,7 @@ impl<B> Renderer<B>
         unsafe {
             // TODO: IMPORTANT: check if wait on present semaphore is required
             // queue.present(&mut self.surface, image, Some(&mut present_semaphore));
-            queue.present(&mut self.surface, image, None);
+            queue.present(&mut self.surface, image, Some(present_semaphore));
         }
 
         // Increment our frame

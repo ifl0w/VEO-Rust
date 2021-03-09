@@ -519,7 +519,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         surface_image: &B::Image,
         frame_idx: usize,
         // acquire_semaphore: &B::Semaphore,
-    ) -> &B::Semaphore {
+    ) -> &mut B::Semaphore {
         self.sync(frame_idx);
 
         let (fe, fi, _di, _framebuffer, pool, command_buffers, semaphore) =
