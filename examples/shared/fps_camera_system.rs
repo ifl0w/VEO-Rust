@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cgmath::{Deg, Matrix3, Quaternion, Vector3};
+use cgmath::{Deg, Matrix3, Quaternion, Vector3, Rotation};
 use winit::event::DeviceEvent::MouseMotion;
 use winit::event::ElementState::Pressed;
 use winit::event::{Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
@@ -9,6 +9,7 @@ use winit::window::WindowId;
 
 use nse::core::{Filter, MainWindow, Message, System};
 use nse::rendering::{Camera, Transformation};
+use glium::RawUniformValue::Vec3;
 
 pub struct FPSCameraSystem {
     mouse_delta: (f32, f32),
@@ -163,17 +164,8 @@ impl System for FPSCameraSystem {
             let angle_x = Deg(-self.mouse_delta.1 / 10.0 * self.mouse_speed);
             let angle_y = Deg(-self.mouse_delta.0 / 10.0 * self.mouse_speed);
 
-            let camera_y = Vector3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0,
-            };
-            let camera_x = transform.rotation
-                * Vector3 {
-                    x: 1.0,
-                    y: 0.0,
-                    z: 0.0,
-                };
+            let camera_y = Vector3::unit_y();
+            let camera_x = transform.rotation.rotate_vector(Vector3::unit_x());
 
             let x = Quaternion::from(Matrix3::from_axis_angle(camera_x, angle_x));
             let y = Quaternion::from(Matrix3::from_axis_angle(camera_y, angle_y));

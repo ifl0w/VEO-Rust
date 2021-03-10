@@ -181,7 +181,6 @@ impl System for RenderSystem {
         let mutex = filter[1].lock().unwrap();
         if mutex.entities.is_empty() {
             println!("No camera provided.");
-            self.window.request_redraw();
             return;
         }
         let camera_entity = mutex.entities[0].lock().unwrap();
@@ -279,8 +278,6 @@ impl System for RenderSystem {
             render_time: Some(execution_time),
             ..Default::default()
         }));
-
-        self.window.request_redraw();
     }
 
     fn get_messages(&mut self) -> Vec<Message> {
@@ -449,9 +446,6 @@ impl<B> Renderer<B>
         // versus when the swapchain image index we got from acquire_image is needed.
         let frame_idx = self.current_swap_chain_image;
 
-        // let (swap_idx, image) = self.swapchain.acquire_image(frame_idx);
-        // let acquire_semaphore = self.swapchain.get_semaphore(frame_idx);
-
         let mut image = unsafe {
             let ret = self.surface.acquire_image(!0).unwrap();
 
@@ -478,8 +472,6 @@ impl<B> Renderer<B>
         };
 
         unsafe {
-            // TODO: IMPORTANT: check if wait on present semaphore is required
-            // queue.present(&mut self.surface, image, Some(&mut present_semaphore));
             queue.present(&mut self.surface, image, Some(present_semaphore));
         }
 
