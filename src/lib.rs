@@ -68,13 +68,9 @@ impl NSE {
 
             let frame_start = Instant::now();
             let mut exit = false;
-            let systems = system_manager_lock
-                .systems
-                .values()
-                .cloned()
-                .collect::<Vec<Arc<Mutex<dyn System>>>>();
+            let systems = system_manager_lock.systems.clone();
 
-            for sys in systems {
+            for (tid, sys) in systems {
                 sys.lock().unwrap().handle_input(&event);
             }
             match event {

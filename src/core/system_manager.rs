@@ -78,7 +78,7 @@ pub trait System {
 }
 
 pub struct SystemManager {
-    pub systems: HashMap<TypeId, Arc<Mutex<dyn System>>>,
+    pub systems: Vec<(TypeId, Arc<Mutex<dyn System>>)>,
     pub filter: HashMap<TypeId, Vec<Arc<Mutex<Filter>>>>,
 
     system_names: HashMap<TypeId, String>,
@@ -87,7 +87,7 @@ pub struct SystemManager {
 impl SystemManager {
     pub fn new() -> Self {
         SystemManager {
-            systems: HashMap::new(),
+            systems: Vec::new(),
             filter: HashMap::new(),
 
             system_names: HashMap::new(),
@@ -111,7 +111,7 @@ impl SystemManager {
         let id = TypeId::of::<T>();
 
         self.system_names.insert(id, name);
-        self.systems.insert(TypeId::of::<T>(), sys.clone());
+        self.systems.push((TypeId::of::<T>(), sys.clone()));
     }
 
     pub fn get_system_name(&self, typeid: &TypeId) -> &str {
