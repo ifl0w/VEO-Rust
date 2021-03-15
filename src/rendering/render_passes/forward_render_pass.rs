@@ -13,7 +13,6 @@ use gfx_hal::{
 use gfx_hal::buffer::SubRange;
 use gfx_hal::command::{ClearDepthStencil, CommandBuffer, ImageBlit};
 use gfx_hal::device::Device;
-use gfx_hal::format::ChannelType;
 use gfx_hal::image::{Filter, Layout, Offset, SubresourceLayers, SubresourceRange};
 use gfx_hal::image::Usage;
 use gfx_hal::memory::Barrier;
@@ -22,10 +21,10 @@ use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{BufferDescriptorFormat, BufferDescriptorType, Descriptor, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, ShaderStageFlags};
 use gfx_hal::query::Query;
 use gfx_hal::queue::CommandQueue;
-use gfx_hal::window::{Extent2D, Surface};
+use gfx_hal::window::Extent2D;
 
 use crate::rendering::{
-    CameraData, ForwardPipeline, GPUBuffer, InstanceData, MeshID, Pipeline, RenderPass,
+    CameraData, ForwardPipeline, GPUBuffer, MeshID, Pipeline, RenderPass,
     ResourceManager, Uniform,
 };
 use crate::rendering::framebuffer::Framebuffer;
@@ -88,6 +87,16 @@ impl<B: Backend> ForwardRenderPass<B> {
         let device = &renderer.device;
         let adapter = &renderer.adapter;
 
+        let camera_ubo_type = DescriptorType::Buffer {
+            ty: BufferDescriptorType::Uniform,
+            format: BufferDescriptorFormat::Structured { dynamic_offset: false },
+        };
+
+        let instance_data_desc_type = DescriptorType::Buffer {
+            ty: BufferDescriptorType::Storage { read_only: false },
+            format: BufferDescriptorFormat::Structured { dynamic_offset: false },
+        };
+
         // Setup renderpass and pipelines
         let render_set_layout = ManuallyDrop::new(
             unsafe {
@@ -96,10 +105,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                         DescriptorSetLayoutBinding {
                             // Camera UBO
                             binding: 0,
-                            ty: DescriptorType::Buffer {
-                                ty: BufferDescriptorType::Uniform,
-                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
-                            },
+                            ty: camera_ubo_type,
                             count: 1,
                             stage_flags: ShaderStageFlags::all(),
                             immutable_samplers: false,
@@ -107,10 +113,7 @@ impl<B: Backend> ForwardRenderPass<B> {
                         DescriptorSetLayoutBinding {
                             // Instance Data SSBO
                             binding: 1,
-                            ty: DescriptorType::Buffer {
-                                ty: BufferDescriptorType::Storage { read_only: false },
-                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
-                            },
+                            ty: instance_data_desc_type,
                             count: 1,
                             stage_flags: ShaderStageFlags::all(),
                             immutable_samplers: false,
@@ -129,17 +132,11 @@ impl<B: Backend> ForwardRenderPass<B> {
                     renderer.frames_in_flight, // sets
                     vec![
                         DescriptorRangeDesc {
-                            ty: DescriptorType::Buffer {
-                                ty: BufferDescriptorType::Uniform,
-                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
-                            },
+                            ty: camera_ubo_type,
                             count: renderer.frames_in_flight,
                         },
                         DescriptorRangeDesc {
-                            ty: DescriptorType::Buffer {
-                                ty: BufferDescriptorType::Storage { read_only: false },
-                                format: BufferDescriptorFormat::Structured { dynamic_offset: false },
-                            },
+                            ty: instance_data_desc_type,
                             count: renderer.frames_in_flight,
                         },
                     ].into_iter(),
@@ -150,29 +147,9 @@ impl<B: Backend> ForwardRenderPass<B> {
         );
 
         let mut desc_set = Vec::new();
-        unsafe {
-            for _ in 0..renderer.frames_in_flight {
-                desc_set.push(desc_pool.allocate_one(&render_set_layout).unwrap());
-            }
-        };
-
-        let _caps = renderer.surface.capabilities(&adapter.physical_device);
-        let formats = &renderer.surface.supported_formats(&adapter.physical_device);
-        println!("formats: {:?}", formats);
-        let _format = formats.clone().map_or(Format::Rgba8Srgb, |formats| {
-            formats
-                .iter()
-                .find(|format| format.base_format().1 == ChannelType::Srgb)
-                .map(|format| *format)
-                .unwrap_or(formats[0])
-        });
-        let _depth_stencil_format = formats.clone().map_or(Format::D24UnormS8Uint, |formats| {
-            formats
-                .iter()
-                .find(|format| format.base_format().1 == ChannelType::Sfloat)
-                .map(|format| *format)
-                .unwrap_or(formats[0])
-        });
+        for _ in 0..renderer.frames_in_flight {
+            desc_set.push(unsafe { desc_pool.allocate_one(&render_set_layout).unwrap() });
+        }
 
         let render_pass = {
             let attachment = pass::Attachment {
@@ -251,27 +228,6 @@ impl<B: Backend> ForwardRenderPass<B> {
             CAMERA_UNIFORM_BINDING,
             &mut desc_set,
         );
-
-        // instance/draw buffer
-        let instance_buffer = GPUBuffer::new_with_size(
-            device,
-            adapter,
-            std::mem::size_of::<InstanceData>() * 1000,
-            gfx_hal::buffer::Usage::STORAGE,
-        );
-        for idx in 0..renderer.frames_in_flight {
-            unsafe {
-                device.write_descriptor_set(DescriptorSetWrite {
-                    set: &mut desc_set[idx],
-                    binding: 1,
-                    array_offset: 0,
-                    descriptors: iter::once(Descriptor::Buffer(
-                        instance_buffer.get_buffer(),
-                        SubRange::WHOLE,
-                    )),
-                });
-            }
-        }
 
         let mut cmd_buffers = Vec::with_capacity(renderer.frames_in_flight);
         for i in 0..renderer.frames_in_flight {
@@ -573,30 +529,6 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                 gfx_hal::memory::Dependencies::all(),
                 iter::once(image_barrier),
             );
-
-            //            cmd_buffer.copy_image(&fi.image,
-            //                                  Layout::TransferSrcOptimal,
-            //                                  surface_image,
-            //                                  Layout::TransferDstOptimal,
-            //                                  iter::once(ImageCopy {
-            //                                      extent: Extent {
-            //                                          width: self.extent.width,
-            //                                          height: self.extent.height,
-            //                                          depth: 1,
-            //                                      },
-            //                                      src_subresource: SubresourceLayers {
-            //                                          aspects: format::Aspects::COLOR,
-            //                                          level: 0,
-            //                                          layers: 0..1,
-            //                                      },
-            //                                      src_offset: Offset { x: 0, y: 0, z: 0 },
-            //                                      dst_subresource: SubresourceLayers {
-            //                                          aspects: format::Aspects::COLOR,
-            //                                          level: 0,
-            //                                          layers: 0..1,
-            //                                      },
-            //                                      dst_offset: Offset { x: 0, y: 0, z: 0 },
-            //                                  }));
 
             cmd_buffer.blit_image(
                 &fi.image,
