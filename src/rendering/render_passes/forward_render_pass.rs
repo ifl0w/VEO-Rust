@@ -526,7 +526,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
             cmd_buffer.pipeline_barrier(
                 pso::PipelineStage::TOP_OF_PIPE..pso::PipelineStage::TRANSFER,
-                gfx_hal::memory::Dependencies::all(),
+                gfx_hal::memory::Dependencies::BY_REGION,
                 iter::once(image_barrier),
             );
 
