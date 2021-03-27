@@ -161,7 +161,7 @@ impl Octree {
 
         oct.root.lock().unwrap().populate();
 
-        Arc::new(Mutex::new(Octree::traverse_sierpinsky(
+        Arc::new(Mutex::new(Octree::traverse_mandelbulb(
             &mut oct.root.lock().unwrap(),
             0,
             depth,
@@ -294,6 +294,112 @@ impl Octree {
                     if current_depth < target_depth && traverse {
                         child.populate();
                         Octree::traverse_mandelbrot(child, new_depth, target_depth)
+                    }
+                });
+        }
+    }
+
+    fn traverse_mandelbulb(node: &mut Node, current_depth: u64, target_depth: u64) {
+        if node.children.is_some() {
+            node.children.as_mut().unwrap()
+                .iter_mut()
+                .enumerate()
+                .for_each(|(idx, child)| {
+                    let new_depth = current_depth + 1;
+
+                    let mandelbrot = |child: &mut Node, zoom: f32, depth: u64| {
+                        let origin = &child.position;
+                        let scale = child.scale;
+
+                        let position = origin * zoom;
+
+                        let escape_radius = 3.0 as f64;
+                        let mut iter = 10 * ((depth as f64).log2() as i32 + 1);
+
+                        fn to_spherical(a: Vector3<f64>) -> Vector3<f64> {
+                            let r = a.magnitude();
+                            let mut phi = (a.y / a.x).atan();
+                            let mut theta = (a.z / r).acos();
+
+                            // handle 0/0
+                            if a.y == 0.0 && a.x == 0.0 { phi = 0.0; };
+                            if a.z == 0.0 && r == 0.0 { theta = 0.0; };
+
+                            return vec3(r, phi, theta);
+                        };
+
+                        fn to_cartesian(a: Vector3<f64>) -> Vector3<f64> {
+                            let x = a.z.sin() * a.y.cos();
+                            let y = a.y.sin() * a.z.sin();
+                            let z = a.z.cos();
+
+                            return a.x * vec3(x,y,z);
+                        };
+
+                        // nth power in polar coordinates
+                        fn spherical_pow(a: Vector3<f64>, n: f64) -> Vector3<f64> {
+                            let r = a.x.pow(n);
+                            let phi = n * a.y;
+                            let theta = n * a.z;
+                            return vec3(r, phi, theta);
+                        }
+
+                        let mut c = vec3(position.x as f64, position.y as f64, position.z as f64);
+
+                        // z_0 = 0 + i0
+                        let mut v = vec3(0.0, 0.0, 0.0);
+                        let mut r = 0.0;
+
+                        // z_0' = 1 + 0i
+                        let mut dr = 1.0;
+
+                        let n = 8.0;
+                        while iter > 0 {
+                            let v_p = to_spherical(v);
+
+                            r = v_p.x;
+                            if r as f64 > escape_radius {
+                                break;
+                            }
+
+                            // scalar distance estimation
+                            // source: http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/
+                            dr = r.pow(n - 1.0) * n * dr + 1.0;
+
+                            let mut v_next = spherical_pow(v_p, n);
+                            v = to_cartesian(v_next) + c;
+
+                            iter -= 1;
+                        }
+
+                        // values
+                        let distance = 0.5 * r * r.ln() / dr;
+
+                        let half_length = (scale * 0.5 * zoom) as f64;
+                        let radius = (half_length * half_length * 3.0).sqrt();
+
+                        let mut traverse = false;
+
+                        // added a small bias to the radius to ensure deeper traversal while keeping
+                        // the octree somewhat sparse. Note: there is probably a better way.
+                        let bias = 1.5;
+                        if distance.abs() <= radius * bias {
+                            traverse = true;
+                        }
+
+                        if distance.abs() <= radius {
+                            child.solid = true;
+                        }
+
+                        return traverse;
+                    };
+
+                    let zoom = 2.5;
+                    let traverse = mandelbrot(child, zoom, current_depth + 1);
+
+                    if current_depth < target_depth && traverse {
+                        child.populate();
+                        Octree::traverse_mandelbulb(child, new_depth, target_depth)
                     }
                 });
         }
