@@ -662,6 +662,7 @@ impl OctreeSystem {
         }
 
         let mut traverse_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
+        let mut render_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
 
         let camera_pos = optimization_data.camera_transform.position;
         let camera_mag = camera_pos.magnitude();
@@ -689,16 +690,9 @@ impl OctreeSystem {
                 include = include || (child.is_leaf() && child.solid);
 
                 if include {
-                    let idx = atomic_counter.fetch_add(1, Ordering::SeqCst);
-                    if idx < collected_data.len() {
-                        unsafe {
-                            // IMPORTANT: really not that nice and really unsafe!!
-                            let mut data_ptr = collected_data.as_ptr() as *mut InstanceData;
-                            *data_ptr.offset(idx as isize) = InstanceData {
-                                transformation: child.position.extend(child.scale).into(),
-                            };
-                        }
-                    }
+                    render_children.push( InstanceData {
+                        transformation: child.position.extend(child.scale).into(),
+                    });
                 }
 
                 // check weather to traverse further
@@ -710,6 +704,17 @@ impl OctreeSystem {
                 }
 
             });
+
+        if render_children.len() > 0 {
+            let idx = atomic_counter.fetch_add(render_children.len(), Ordering::SeqCst);
+            if idx + render_children.len() < collected_data.len() {
+                unsafe {
+                    // IMPORTANT: really not that nice and really unsafe!!
+                    let mut data_ptr = collected_data.as_ptr() as *mut InstanceData;
+                    std::ptr::copy(render_children.as_ptr(), data_ptr.offset(idx as isize), render_children.len())
+                }
+            }
+        }
 
         traverse_children
             .par_iter_mut()
