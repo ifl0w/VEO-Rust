@@ -26,6 +26,8 @@ use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSys
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use cgmath::num_traits::Pow;
 use rayon::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::mem::size_of;
 
 enum NodePosition {
     Flt = 0,
@@ -66,6 +68,8 @@ pub struct Octree {
 
     pub config: OctreeConfig,
     pub info: OctreeInfo,
+
+    collect_buffer: Arc<Vec<InstanceData>>,
 }
 
 #[derive(Clone, Debug)]
@@ -149,6 +153,10 @@ impl Octree {
             gpu_byte_size: max_gpu_byte_size * ring_buffer_length,
         };
 
+        let mut collect_buf = Vec::new();
+        collect_buf.resize(config.max_rendered_nodes.unwrap_or(0) as usize,
+                           InstanceData::default());
+
         let mut oct = Octree {
             root: Arc::new(Mutex::new(
                 Node::new_inner(vec3(0.0, 0.0, 0.0), 1.0)
@@ -158,6 +166,8 @@ impl Octree {
 
             config,
             info: octree_info,
+
+            collect_buffer: Arc::new(collect_buf)
         };
 
         oct.root.lock().unwrap().populate();
@@ -674,7 +684,8 @@ impl OctreeSystem {
     fn generate_instance_data(
         optimization_data: &OptimizationData,
         node: &mut Node,
-        collected_data: &mut Vec<InstanceData>,
+        collected_data: &Vec<InstanceData>,
+        atomic_counter: &AtomicUsize,
     ) {
         let limit_depth_reached = limit_depth_traversal(optimization_data, node);
 
@@ -683,9 +694,16 @@ impl OctreeSystem {
         include = include || (node.is_leaf() && node.solid);
 
         if include {
-            collected_data.push(InstanceData {
-                transformation: node.position.extend(node.scale).into(),
-            });
+            let idx = atomic_counter.fetch_add(1, Ordering::SeqCst);
+            if idx < collected_data.len() {
+                unsafe {
+                    // IMPORTANT: really not that nice and really unsafe!!
+                    let mut data_ptr = collected_data.as_ptr() as *mut InstanceData;
+                    *data_ptr.offset(idx as isize) = InstanceData {
+                        transformation: node.position.extend(node.scale).into(),
+                    };
+                }
+            }
         }
 
         // check weather to traverse further
@@ -709,13 +727,13 @@ impl OctreeSystem {
             node.children
                 .as_mut()
                 .unwrap()
-                .iter_mut()
-                .enumerate()
-                .for_each(|(_i, child)| {
+                .par_iter_mut()
+                .for_each(|child| {
                     &mut OctreeSystem::generate_instance_data(
                         optimization_data,
                         child,
                         collected_data,
+                        atomic_counter
                     );
                 });
         }
@@ -807,14 +825,16 @@ impl System for OctreeSystem {
                 };
 
                 // building matrices
-                let mut model_matrices = Vec::with_capacity(octree.info.render_count);
+                let max_nodes = octree.collect_buffer.len();
+                let mut model_matrix_counter = std::sync::atomic::AtomicUsize::new(0);
 
                 let instance_data_start = Instant::now();
 
                 OctreeSystem::generate_instance_data(
                     &optimization_data,
                     &mut root,
-                    &mut model_matrices,
+                    &mut octree.collect_buffer,
+                    &mut model_matrix_counter
                 );
 
                 // store data
@@ -825,14 +845,17 @@ impl System for OctreeSystem {
                     % octree.instance_data_buffer.len();
                 octree.active_instance_buffer_idx = Some(buffer_idx);
                 let buffer = &octree.instance_data_buffer[buffer_idx];
-                let mut gpu_buffer_lock = buffer.lock().unwrap();
 
-                gpu_buffer_lock.replace_data(
-                    &model_matrices[0..model_matrices
-                        .len()
-                        .min(octree.config.max_rendered_nodes.unwrap_or(1e3 as u64) as usize)],
-                );
-                octree.info.render_count = model_matrices.len();
+                {
+                    let mut gpu_buffer_lock = buffer.lock().unwrap();
+
+                    let num_matrices = model_matrix_counter.load(Ordering::SeqCst)
+                        .min(max_nodes as usize);
+
+                    gpu_buffer_lock.replace_data(&octree.collect_buffer[0..num_matrices]);
+
+                    octree.info.render_count = num_matrices;
+                }
 
                 let instance_data_end = Instant::now();
                 let instance_data_duration = instance_data_end - instance_data_start;
