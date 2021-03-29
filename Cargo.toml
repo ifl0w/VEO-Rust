@@ -12,6 +12,7 @@ mopa = "0.2.2"
 env_logger = "0.8.2"
 bytes = "1.0.0"
 rand = "0.8.1"
+rayon = "1.5"
 
 winit = { version = "0.24.0", features = ["web-sys"]}
 

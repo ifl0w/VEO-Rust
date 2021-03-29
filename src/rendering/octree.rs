@@ -25,6 +25,7 @@ use crate::core::{Component, Filter, Message, Payload, System};
 use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use cgmath::num_traits::Pow;
+use rayon::prelude::*;
 
 enum NodePosition {
     Flt = 0,
@@ -161,11 +162,15 @@ impl Octree {
 
         oct.root.lock().unwrap().populate();
 
-        Arc::new(Mutex::new(Octree::traverse_mandelbulb(
+        let start = std::time::Instant::now();
+        Arc::new(Mutex::new(Octree::build_tree(
             &mut oct.root.lock().unwrap(),
             0,
             depth,
         )));
+        let end = std::time::Instant::now();
+
+        println!("Octree build time: {:?}", end-start);
 
         oct.info.byte_size = self::Octree::size_in_bytes(&oct);
 
@@ -207,358 +212,322 @@ impl Octree {
         count + 1
     }
 
-    fn traverse_mandelbrot(node: &mut Node, current_depth: u64, target_depth: u64) {
+    fn build_tree(node: &mut Node, current_depth: u64, target_depth: u64) {
         if node.children.is_some() {
             node.children.as_mut().unwrap()
-                .iter_mut()
+                .par_iter_mut()
                 .enumerate()
                 .for_each(|(idx, child)| {
                     let new_depth = current_depth + 1;
 
-                    let mandelbrot = |child: &mut Node, zoom: f32| {
-                        let origin = &child.position;
-                        let scale = child.scale;
-
-                        // only a slice
-                        let thickness = 0.01;
-                        if origin.y + child.scale * 0.5 < -thickness
-                            || origin.y - child.scale * 0.5 > thickness {
-                            return false;
-                        };
-
-                        let position = origin * zoom - vec3(0.5, 0.0, 0.0);
-
-                        let escape_radius = 4.0 * 10000.0 as f64;
-                        let mut iter = 100;
-
-                        let c_re = position.x as f64;
-                        let c_im = position.z as f64;
-
-                        // z_0 = 0 + i0
-                        let mut z_re = 0.0;
-                        let mut z_im = 0.0;
-                        let mut z_re2 = z_re * z_re;
-                        let mut z_im2 = z_im * z_im;
-
-                        // z_0' = 1 + 0i
-                        let mut zp_re = 1.0;
-                        let mut zp_im = 0.0;
-
-                        while iter > 0 {
-                            zp_re = 2.0 * (z_re * zp_re - z_im * zp_im) + 1.0;
-                            zp_im = 2.0 * (z_re * zp_im + z_im * zp_re);
-
-                            let z_re_new = z_re2 - z_im2 + c_re;
-                            let z_im_new = 2.0 * z_re * z_im + c_im;
-                            z_re = z_re_new;
-                            z_im = z_im_new;
-                            z_re2 = z_re * z_re;
-                            z_im2 = z_im * z_im;
-
-                            let val2: f64 = z_re2 + z_im2;
-
-                            if val2 > (escape_radius * escape_radius) {
-                                break;
-                            }
-
-                            iter -= 1;
-                        }
-
-                        // values
-                        let z_val = (z_re2 + z_im2).sqrt();
-                        let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
-
-                        // let dist = 2.0 * z_val * z_val.ln() / zp_val;
-                        // let dist = z_val * z_val.ln() / zp_val;
-                        let distance = 0.5 * z_val * z_val.ln() / zp_val;
-
-                        let half_length: f64 = (scale * 0.5 * zoom) as f64;
-                        let radius = (half_length * half_length * 2.0).sqrt() as f64;
-
-                        let mut traverse = false;
-
-                        if distance < radius as f64 {
-                            traverse = true;
-
-                            if distance <= 0.0 {
-                                child.solid = true;
-                            }
-                        }
-
-                        return traverse;
-                    };
-
                     let zoom = 2.5;
-                    let traverse = mandelbrot(child, zoom);
+                    // let traverse = Octree::generate_mandelbrot(child, zoom, current_depth + 1);
+                    let traverse = Octree::generate_mandelbulb(child, zoom, current_depth + 1);
+                    // let traverse = Octree::generate_sierpinsky(child, zoom, current_depth);
+                    // let traverse = Octree::generate_menger(child, zoom, current_depth);
 
                     if current_depth < target_depth && traverse {
                         child.populate();
-                        Octree::traverse_mandelbrot(child, new_depth, target_depth)
+                        Octree::build_tree(child, new_depth, target_depth)
                     }
                 });
         }
     }
 
-    fn traverse_mandelbulb(node: &mut Node, current_depth: u64, target_depth: u64) {
-        if node.children.is_some() {
-            node.children.as_mut().unwrap()
-                .iter_mut()
-                .enumerate()
-                .for_each(|(idx, child)| {
-                    let new_depth = current_depth + 1;
+    fn generate_mandelbulb(child: &mut Node, zoom: f32, depth: u64) -> bool {
+        let origin = &child.position;
+        let scale = child.scale;
 
-                    let mandelbrot = |child: &mut Node, zoom: f32, depth: u64| {
-                        let origin = &child.position;
-                        let scale = child.scale;
+        let position = origin * zoom;
 
-                        let position = origin * zoom;
+        let escape_radius = 3.0 as f64;
+        let mut iter = 10 * ((depth as f64).log2() as i32 + 1);
 
-                        let escape_radius = 3.0 as f64;
-                        let mut iter = 10 * ((depth as f64).log2() as i32 + 1);
+        fn to_spherical(a: Vector3<f64>) -> Vector3<f64> {
+            let r = a.magnitude();
+            let mut phi = (a.y / a.x).atan();
+            let mut theta = (a.z / r).acos();
 
-                        fn to_spherical(a: Vector3<f64>) -> Vector3<f64> {
-                            let r = a.magnitude();
-                            let mut phi = (a.y / a.x).atan();
-                            let mut theta = (a.z / r).acos();
+            // handle 0/0
+            if a.y == 0.0 && a.x == 0.0 { phi = 0.0; };
+            if a.z == 0.0 && r == 0.0 { theta = 0.0; };
 
-                            // handle 0/0
-                            if a.y == 0.0 && a.x == 0.0 { phi = 0.0; };
-                            if a.z == 0.0 && r == 0.0 { theta = 0.0; };
+            return vec3(r, phi, theta);
+        };
 
-                            return vec3(r, phi, theta);
-                        };
+        fn to_cartesian(a: Vector3<f64>) -> Vector3<f64> {
+            let x = a.z.sin() * a.y.cos();
+            let y = a.y.sin() * a.z.sin();
+            let z = a.z.cos();
 
-                        fn to_cartesian(a: Vector3<f64>) -> Vector3<f64> {
-                            let x = a.z.sin() * a.y.cos();
-                            let y = a.y.sin() * a.z.sin();
-                            let z = a.z.cos();
+            return a.x * vec3(x,y,z);
+        };
 
-                            return a.x * vec3(x,y,z);
-                        };
-
-                        // nth power in polar coordinates
-                        fn spherical_pow(a: Vector3<f64>, n: f64) -> Vector3<f64> {
-                            let r = a.x.pow(n);
-                            let phi = n * a.y;
-                            let theta = n * a.z;
-                            return vec3(r, phi, theta);
-                        }
-
-                        let mut c = vec3(position.x as f64, position.y as f64, position.z as f64);
-
-                        // z_0 = 0 + i0
-                        let mut v = vec3(0.0, 0.0, 0.0);
-                        let mut r = 0.0;
-
-                        // z_0' = 1 + 0i
-                        let mut dr = 1.0;
-
-                        let n = 8.0;
-                        while iter > 0 {
-                            let v_p = to_spherical(v);
-
-                            r = v_p.x;
-                            if r as f64 > escape_radius {
-                                break;
-                            }
-
-                            // scalar distance estimation
-                            // source: http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/
-                            dr = r.pow(n - 1.0) * n * dr + 1.0;
-
-                            let mut v_next = spherical_pow(v_p, n);
-                            v = to_cartesian(v_next) + c;
-
-                            iter -= 1;
-                        }
-
-                        // values
-                        let distance = 0.5 * r * r.ln() / dr;
-
-                        let half_length = (scale * 0.5 * zoom) as f64;
-                        let radius = (half_length * half_length * 3.0).sqrt();
-
-                        let mut traverse = false;
-
-                        // added a small bias to the radius to ensure deeper traversal while keeping
-                        // the octree somewhat sparse. Note: there is probably a better way.
-                        let bias = 1.5;
-                        if distance.abs() <= radius * bias {
-                            traverse = true;
-                        }
-
-                        if distance.abs() <= radius {
-                            child.solid = true;
-                        }
-
-                        return traverse;
-                    };
-
-                    let zoom = 2.5;
-                    let traverse = mandelbrot(child, zoom, current_depth + 1);
-
-                    if current_depth < target_depth && traverse {
-                        child.populate();
-                        Octree::traverse_mandelbulb(child, new_depth, target_depth)
-                    }
-                });
+        // nth power in polar coordinates
+        fn spherical_pow(a: Vector3<f64>, n: f64) -> Vector3<f64> {
+            let r = a.x.pow(n);
+            let phi = n * a.y;
+            let theta = n * a.z;
+            return vec3(r, phi, theta);
         }
+
+        let mut c = vec3(position.x as f64, position.y as f64, position.z as f64);
+
+        // z_0 = 0 + i0
+        let mut v = vec3(0.0, 0.0, 0.0);
+        let mut r = 0.0;
+
+        // z_0' = 1 + 0i
+        let mut dr = 1.0;
+
+        let n = 8.0;
+        while iter > 0 {
+            let v_p = to_spherical(v);
+
+            r = v_p.x;
+            if r as f64 > escape_radius {
+                break;
+            }
+
+            // scalar distance estimation
+            // source: http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/
+            dr = r.pow(n - 1.0) * n * dr + 1.0;
+
+            let mut v_next = spherical_pow(v_p, n);
+            v = to_cartesian(v_next) + c;
+
+            iter -= 1;
+        }
+
+        // values
+        let distance = 0.5 * r * r.ln() / dr;
+
+        let half_length = (scale * 0.5 * zoom) as f64;
+        let radius = (half_length * half_length * 3.0).sqrt();
+
+        let mut traverse = false;
+
+        // added a small bias to the radius to ensure deeper traversal while keeping
+        // the octree somewhat sparse. Note: there is probably a better way.
+        let bias = 1.5;
+        if distance.abs() <= radius * bias {
+            traverse = true;
+        }
+
+        if distance.abs() <= radius {
+            child.solid = true;
+        }
+
+        return traverse;
     }
 
-    fn traverse_menger_sponge(node: &mut Node, current_depth: u64, target_depth: u64) {
-        if node.children.is_some() {
-            node.children.as_mut().unwrap()
-                .iter_mut()
-                .enumerate()
-                .for_each(|(idx, child)| {
-                    let t: Vector3<f64> = vec3(
-                        child.position.x as f64,
-                        child.position.y as f64,
-                        child.position.z as f64,
-                    );
-                    let s: f64 = child.scale as f64;
+    fn generate_mandelbrot(child: &mut Node, zoom: f32, depth: u64) -> bool {
+        let origin = &child.position;
+        let scale = child.scale;
 
-                    let mut box_points: Vec<Vector3<f64>> = vec![
-                        t + vec3(-0.5, -0.5, -0.5) * s,
-                        t + vec3(0.5, -0.5, -0.5) * s,
-                        t + vec3(-0.5, 0.5, -0.5) * s,
-                        t + vec3(0.5, 0.5, -0.5) * s,
-                        t + vec3(-0.5, -0.5, 0.5) * s,
-                        t + vec3(0.5, -0.5, 0.5) * s,
-                        t + vec3(-0.5, 0.5, 0.5) * s,
-                        t + vec3(0.5, 0.5, 0.5) * s,
-                    ];
-                    // transform box points into 0 - 1 range
-                    box_points = box_points.iter()
-                        .map(|p| { p + vec3(0.50, 0.50, 0.50) }).collect();
+        // only a slice
+        let thickness = 0.01;
+        if origin.y + child.scale * 0.5 < -thickness
+            || origin.y - child.scale * 0.5 > thickness {
+            return false;
+        };
 
-                    // reduces the effective depth but prevents errors
-                    // good values are 2 - 4
-                    let oversampling = 3;
-                    let e_min = (1.0 / 3.0);
-                    // let e_min = 0.25;
-                    let e_max = (2.0 / 3.0);
-                    // let e_max = 0.75;
-                    let scale_base = 1.0 / 3.0;
-                    // let scale_base = 0.25; // 0.5
+        let position = origin * zoom - vec3(0.5, 0.0, 0.0);
 
-                    let mut in_empty = false;
+        let escape_radius = 4.0 * 10000.0 as f64;
+        let mut iter = 100;
 
-                    let sample_range = (
-                        (current_depth as i32 - oversampling * 4).max(0),
-                        (current_depth as i32 - oversampling).max(0)
-                    );
-                    for i in sample_range.0..sample_range.1 {
-                        let scale = (scale_base).pow(i as f64);
+        let c_re = position.x as f64;
+        let c_im = position.z as f64;
 
-                        in_empty = box_points.iter()
-                            .all(|p| {
-                                // get remainder of linear transform
-                                let mut v = (p / scale) - (p / scale).map(|w| { w.floor() });
+        // z_0 = 0 + i0
+        let mut z_re = 0.0;
+        let mut z_im = 0.0;
+        let mut z_re2 = z_re * z_re;
+        let mut z_im2 = z_im * z_im;
 
-                                let x = v.x >= e_min && v.x <= e_max;
-                                let y = v.y >= e_min && v.y <= e_max;
-                                let z = v.z >= e_min && v.z <= e_max;
+        // z_0' = 1 + 0i
+        let mut zp_re = 1.0;
+        let mut zp_im = 0.0;
 
-                                x && y || y && z || x && z
-                            });
+        while iter > 0 {
+            zp_re = 2.0 * (z_re * zp_re - z_im * zp_im) + 1.0;
+            zp_im = 2.0 * (z_re * zp_im + z_im * zp_re);
 
-                        if in_empty { break; }
-                    }
+            let z_re_new = z_re2 - z_im2 + c_re;
+            let z_im_new = 2.0 * z_re * z_im + c_im;
+            z_re = z_re_new;
+            z_im = z_im_new;
+            z_re2 = z_re * z_re;
+            z_im2 = z_im * z_im;
 
-                    if !in_empty {
-                        child.solid = true;
+            let val2: f64 = z_re2 + z_im2;
 
-                        if current_depth < target_depth {
-                            child.populate();
-                            Octree::traverse_menger_sponge(child, current_depth + 1, target_depth)
-                        }
-                    }
-                });
+            if val2 > (escape_radius * escape_radius) {
+                break;
+            }
+
+            iter -= 1;
         }
+
+        // values
+        let z_val = (z_re2 + z_im2).sqrt();
+        let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
+
+        // let dist = 2.0 * z_val * z_val.ln() / zp_val;
+        // let dist = z_val * z_val.ln() / zp_val;
+        let distance = 0.5 * z_val * z_val.ln() / zp_val;
+
+        let half_length: f64 = (scale * 0.5 * zoom) as f64;
+        let radius = (half_length * half_length * 2.0).sqrt() as f64;
+
+        let mut traverse = false;
+
+        if distance < radius as f64 {
+            traverse = true;
+
+            if distance <= 0.0 {
+                child.solid = true;
+            }
+        }
+
+        return traverse;
     }
 
-    fn traverse_sierpinsky(node: &mut Node, current_depth: u64, target_depth: u64) {
-        if node.children.is_some() {
-            node.children.as_mut().unwrap()
-                .iter_mut()
-                .enumerate()
-                .for_each(|(idx, child)| {
-                    let s = child.scale;
-                    let p = child.position;
+    fn generate_menger(child: &mut Node, zoom: f32, depth: u64) -> bool {
+        let t: Vector3<f64> = vec3(
+            child.position.x as f64,
+            child.position.y as f64,
+            child.position.z as f64,
+        );
+        let s: f64 = child.scale as f64;
 
-                    fn f1(p: Vector3<f32>, s: f32, max: i32) -> f32 {
-                        let a = (p.x + 0.5).abs();
-                        let b = (p.z + 0.5).abs();
-                        let c = (p.y + 0.5).abs();
+        let mut box_points: Vec<Vector3<f64>> = vec![
+            t + vec3(-0.5, -0.5, -0.5) * s,
+            t + vec3(0.5, -0.5, -0.5) * s,
+            t + vec3(-0.5, 0.5, -0.5) * s,
+            t + vec3(0.5, 0.5, -0.5) * s,
+            t + vec3(-0.5, -0.5, 0.5) * s,
+            t + vec3(0.5, -0.5, 0.5) * s,
+            t + vec3(-0.5, 0.5, 0.5) * s,
+            t + vec3(0.5, 0.5, 0.5) * s,
+        ];
+        // transform box points into 0 - 1 range
+        box_points = box_points.iter()
+            .map(|p| { p + vec3(0.50, 0.50, 0.50) }).collect();
 
-                        return (a + b + c) - 1.0;
-                    };
+        // reduces the effective depth but prevents errors
+        // good values are 2 - 4
+        let oversampling = 3;
+        let e_min = (1.0 / 3.0);
+        // let e_min = 0.25;
+        let e_max = (2.0 / 3.0);
+        // let e_max = 0.75;
+        let scale_base = 1.0 / 3.0;
+        // let scale_base = 0.25; // 0.5
 
-                    fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
-                        if n == 0 { return true; }
+        let mut in_empty = false;
 
-                        // bounding box of the current iteration/contraction
-                        let bb_min = bb_center - Vector3::from_value(bb_size);
-                        let bb_max = bb_center + Vector3::from_value(bb_size);
+        let sample_range = (
+            (depth as i32 - oversampling * 4).max(0),
+            (depth as i32 - oversampling).max(0)
+        );
+        for i in sample_range.0..sample_range.1 {
+            let scale = (scale_base).pow(i as f64);
 
-                        // bounding box of node
-                        let node_min = p - Vector3::from_value(s);
-                        let node_max = p + Vector3::from_value(s);
+            in_empty = box_points.iter()
+                .all(|p| {
+                    // get remainder of linear transform
+                    let mut v = (p / scale) - (p / scale).map(|w| { w.floor() });
 
-                        // test node bb and iteration bb intersection
-                        if node_max.x >= bb_min.x && node_min.x <= bb_max.x
-                            && node_max.y >= bb_min.y && node_min.y <= bb_max.y
-                            && node_max.z >= bb_min.z && node_min.z <= bb_max.z {
+                    let x = v.x >= e_min && v.x <= e_max;
+                    let y = v.y >= e_min && v.y <= e_max;
+                    let z = v.z >= e_min && v.z <= e_max;
 
-                            // calculate contraction bounding size
-                            let c_size = bb_size * 0.5;
-
-                            // calculate next contraction positions
-                            // note: the actual iteration of the IFS
-                            // Pyramid (numerically more stable in octree)
-                            let bounding = [
-                                bb_center + vec3(-c_size, -c_size, c_size),
-                                bb_center + vec3(-c_size, -c_size, -c_size),
-                                bb_center + vec3(c_size, -c_size, -c_size),
-                                bb_center + vec3(c_size, -c_size, c_size),
-                                bb_center + vec3(0.0, c_size, 0.0),
-                            ];
-                            // Tetrahedron (less stable in octree)
-                            /*let c_size_diag = (c_size * c_size * 0.5).sqrt();
-                            let bounding = [
-                                bb_center + vec3(-c_size_diag, -c_size, c_size_diag),
-                                bb_center + vec3(c_size_diag, -c_size, c_size_diag),
-                                bb_center + vec3(0.0, -c_size, -c_size),
-                                bb_center + vec3(0.0, c_size, 0.0),
-                            ];*/
-
-                            // check if any of the next bounding volumes intersects with the node
-                            // if none does then we definitely have a node that we do not need
-                            // to consider anymore
-                            let inside = bounding.iter().any(|bb| {
-                                iterate(p, s, *bb, c_size, n-1)
-                            });
-
-                            return inside;
-                        }
-
-                        // they do not intersect
-                        return false;
-                    }
-
-                    let d = iterate(p, s * 0.5, vec3(0.0, 0.0,0.0), 0.5,15);
-
-                    if d  {
-                        child.solid = true;
-                    }
-
-                    if d && current_depth < target_depth {
-                        child.populate();
-                        Octree::traverse_sierpinsky(child, current_depth + 1, target_depth)
-                    }
+                    x && y || y && z || x && z
                 });
+
+            if in_empty { break; }
         }
+
+        if !in_empty {
+            child.solid = true;
+        }
+
+        return !in_empty;
+    }
+
+    fn generate_sierpinsky(child: &mut Node, zoom: f32, depth: u64) -> bool {
+        let s = child.scale;
+        let p = child.position;
+
+        fn f1(p: Vector3<f32>, s: f32, max: i32) -> f32 {
+            let a = (p.x + 0.5).abs();
+            let b = (p.z + 0.5).abs();
+            let c = (p.y + 0.5).abs();
+
+            return (a + b + c) - 1.0;
+        };
+
+        fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
+            if n == 0 { return true; }
+
+            // bounding box of the current iteration/contraction
+            let bb_min = bb_center - Vector3::from_value(bb_size);
+            let bb_max = bb_center + Vector3::from_value(bb_size);
+
+            // bounding box of node
+            let node_min = p - Vector3::from_value(s);
+            let node_max = p + Vector3::from_value(s);
+
+            // test node bb and iteration bb intersection
+            if node_max.x >= bb_min.x && node_min.x <= bb_max.x
+                && node_max.y >= bb_min.y && node_min.y <= bb_max.y
+                && node_max.z >= bb_min.z && node_min.z <= bb_max.z {
+
+                // calculate contraction bounding size
+                let c_size = bb_size * 0.5;
+
+                // calculate next contraction positions
+                // note: the actual iteration of the IFS
+                // Pyramid (numerically more stable in octree)
+                let bounding = [
+                    bb_center + vec3(-c_size, -c_size, c_size),
+                    bb_center + vec3(-c_size, -c_size, -c_size),
+                    bb_center + vec3(c_size, -c_size, -c_size),
+                    bb_center + vec3(c_size, -c_size, c_size),
+                    bb_center + vec3(0.0, c_size, 0.0),
+                ];
+                // Tetrahedron (less stable in octree)
+                /*let c_size_diag = (c_size * c_size * 0.5).sqrt();
+                let bounding = [
+                    bb_center + vec3(-c_size_diag, -c_size, c_size_diag),
+                    bb_center + vec3(c_size_diag, -c_size, c_size_diag),
+                    bb_center + vec3(0.0, -c_size, -c_size),
+                    bb_center + vec3(0.0, c_size, 0.0),
+                ];*/
+
+                // check if any of the next bounding volumes intersects with the node
+                // if none does then we definitely have a node that we do not need
+                // to consider anymore
+                let inside = bounding.iter().any(|bb| {
+                    iterate(p, s, *bb, c_size, n-1)
+                });
+
+                return inside;
+            }
+
+            // they do not intersect
+            return false;
+        }
+
+        let d = iterate(p, s * 0.5, vec3(0.0, 0.0,0.0), 0.5,15);
+
+        if d  {
+            child.solid = true;
+        }
+
+        return d;
     }
 }
 
@@ -706,8 +675,6 @@ impl OctreeSystem {
         optimization_data: &OptimizationData,
         node: &mut Node,
         collected_data: &mut Vec<InstanceData>,
-        traversal_criteria: &Vec<&TraversalFunction>,
-        filter_functions: &Vec<&FilterFunction>,
     ) {
         let limit_depth_reached = limit_depth_traversal(optimization_data, node);
 
@@ -749,8 +716,6 @@ impl OctreeSystem {
                         optimization_data,
                         child,
                         collected_data,
-                        traversal_criteria,
-                        filter_functions,
                     );
                 });
         }
@@ -850,8 +815,6 @@ impl System for OctreeSystem {
                     &optimization_data,
                     &mut root,
                     &mut model_matrices,
-                    &traversal_fnc,
-                    &filter_fnc,
                 );
 
                 // store data
