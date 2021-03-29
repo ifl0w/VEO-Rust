@@ -29,34 +29,8 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::mem::size_of;
 
-enum NodePosition {
-    Flt = 0,
-    Frt = 1,
-    Flb = 2,
-    Frb = 3,
-    Blt = 4,
-    Brt = 5,
-    Blb = 6,
-    Brb = 7,
-}
-
-impl TryFrom<i32> for NodePosition {
-    type Error = ();
-
-    fn try_from(v: i32) -> Result<Self, Self::Error> {
-        match v {
-            x if x == NodePosition::Flt as i32 => Ok(NodePosition::Flt),
-            x if x == NodePosition::Frt as i32 => Ok(NodePosition::Frt),
-            x if x == NodePosition::Flb as i32 => Ok(NodePosition::Flb),
-            x if x == NodePosition::Frb as i32 => Ok(NodePosition::Frb),
-            x if x == NodePosition::Blt as i32 => Ok(NodePosition::Blt),
-            x if x == NodePosition::Brt as i32 => Ok(NodePosition::Brt),
-            x if x == NodePosition::Blb as i32 => Ok(NodePosition::Blb),
-            x if x == NodePosition::Brb as i32 => Ok(NodePosition::Brb),
-            _ => Err(()),
-        }
-    }
-}
+const SUBDIVISIONS: usize = 2;
+const DEFAULT_DEPTH: u64 = 4;
 
 #[derive(Clone)]
 pub struct Octree {
@@ -82,7 +56,7 @@ impl Default for OctreeConfig {
     fn default() -> Self {
         OctreeConfig {
             max_rendered_nodes: Some(5e5 as u64),
-            depth: Some(5),
+            depth: Some(DEFAULT_DEPTH),
         }
     }
 }
@@ -124,11 +98,11 @@ impl Octree {
         let adapter = render_system.lock().unwrap().renderer.adapter.clone();
 
         // read config
-        let depth = config.depth.unwrap_or(5);
+        let depth = config.depth.unwrap_or(DEFAULT_DEPTH);
         let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(5e5 as u64);
 
         // byte size calculations
-        let max_num_nodes = 8_i64.pow(depth.try_into().unwrap()) as usize;
+        let max_num_nodes = (SUBDIVISIONS as i64).pow(3 * depth as u32) as usize;
         let max_byte_size = std::mem::size_of::<Octree>() * max_num_nodes;
         let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
 
@@ -578,26 +552,22 @@ impl Node {
             panic!("Repopulating a octree cell is currently not supported");
         }
 
-        self.children = Some(Vec::with_capacity(8));
+        let scale_factor = 1.0 / SUBDIVISIONS as f32;
 
-        for child_idx in 0..8 {
-            let s = self.scale * (0.5);
-            let mut t = self.position;
+        self.children = Some(Vec::with_capacity(SUBDIVISIONS.pow(3)));
 
-            // calculate correct translation
-            match (child_idx as i32).try_into() {
-                Ok(NodePosition::Flt) => t += vec3(-0.5, -0.5, -0.5) * s,
-                Ok(NodePosition::Frt) => t += vec3(0.5, -0.5, -0.5) * s,
-                Ok(NodePosition::Flb) => t += vec3(-0.5, 0.5, -0.5) * s,
-                Ok(NodePosition::Frb) => t += vec3(0.5, 0.5, -0.5) * s,
-                Ok(NodePosition::Blt) => t += vec3(-0.5, -0.5, 0.5) * s,
-                Ok(NodePosition::Brt) => t += vec3(0.5, -0.5, 0.5) * s,
-                Ok(NodePosition::Blb) => t += vec3(-0.5, 0.5, 0.5) * s,
-                Ok(NodePosition::Brb) => t += vec3(0.5, 0.5, 0.5) * s,
-                Err(_) => panic!("Octree node has more than 8 children!"),
+        for id_x in 0..SUBDIVISIONS {
+            for id_y in 0..SUBDIVISIONS {
+                for id_z in 0..SUBDIVISIONS {
+                    let s = self.scale * scale_factor;
+
+                    let mut t = self.position;
+                    t -= Vector3::from_value(self.scale * 0.5 - s * 0.5);
+                    t += vec3( s * id_x as f32,  s * id_y as f32,  s * id_z as f32);
+
+                    self.children.as_mut().unwrap().push(Node::new_inner(t, s));
+                }
             }
-
-            self.children.as_mut().unwrap().push(Node::new_inner(t, s));
         }
     }
 
@@ -687,56 +657,71 @@ impl OctreeSystem {
         collected_data: &Vec<InstanceData>,
         atomic_counter: &AtomicUsize,
     ) {
-        let limit_depth_reached = limit_depth_traversal(optimization_data, node);
-
-        // add transformation data
-        let mut include = !limit_depth_reached && node.solid;
-        include = include || (node.is_leaf() && node.solid);
-
-        if include {
-            let idx = atomic_counter.fetch_add(1, Ordering::SeqCst);
-            if idx < collected_data.len() {
-                unsafe {
-                    // IMPORTANT: really not that nice and really unsafe!!
-                    let mut data_ptr = collected_data.as_ptr() as *mut InstanceData;
-                    *data_ptr.offset(idx as isize) = InstanceData {
-                        transformation: node.position.extend(node.scale).into(),
-                    };
-                }
-            }
+        if node.children.is_none() {
+            return;
         }
 
-        // check weather to traverse further
-        let mut continue_traversal = cull_frustum(optimization_data, node);
-        continue_traversal = continue_traversal && limit_depth_reached;
+        let mut traverse_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
 
-        if continue_traversal && node.children.is_some() {
-            let camera_pos = optimization_data.camera_transform.position;
-            let camera_mag = camera_pos.magnitude();
-            let camera_dir = optimization_data.camera_transform.rotation.rotate_vector(-Vector3::unit_z());
+        let camera_pos = optimization_data.camera_transform.position;
+        let camera_mag = camera_pos.magnitude();
+        let camera_dir = optimization_data.camera_transform.rotation.rotate_vector(-Vector3::unit_z());
 
-            node.children.as_mut().unwrap().sort_unstable_by(|a,b| {
-                let dist_a = camera_dir.extend(camera_mag)
-                    .dot((a.position).extend(1.0));
-                let dist_b = camera_dir.extend(camera_mag)
-                    .dot((b.position).extend(1.0));
+        node.children.as_mut().unwrap().sort_unstable_by(|a,b| {
+            let dist_a = camera_dir.extend(camera_mag)
+                .dot((a.position).extend(1.0));
+            let dist_b = camera_dir.extend(camera_mag)
+                .dot((b.position).extend(1.0));
 
-                dist_a.partial_cmp(&dist_b).unwrap()
+            dist_a.partial_cmp(&dist_b).unwrap()
+        });
+
+        node.children
+            .as_mut()
+            .unwrap()
+            .iter_mut()
+            .for_each(|child| {
+
+                let limit_depth_reached = limit_depth_traversal(optimization_data, child);
+
+                // add transformation data
+                let mut include = !limit_depth_reached && child.solid;
+                include = include || (child.is_leaf() && child.solid);
+
+                if include {
+                    let idx = atomic_counter.fetch_add(1, Ordering::SeqCst);
+                    if idx < collected_data.len() {
+                        unsafe {
+                            // IMPORTANT: really not that nice and really unsafe!!
+                            let mut data_ptr = collected_data.as_ptr() as *mut InstanceData;
+                            *data_ptr.offset(idx as isize) = InstanceData {
+                                transformation: child.position.extend(child.scale).into(),
+                            };
+                        }
+                    }
+                }
+
+                // check weather to traverse further
+                let mut continue_traversal = cull_frustum(optimization_data, child);
+                continue_traversal = continue_traversal && limit_depth_reached;
+
+                if continue_traversal {
+                    traverse_children.push(child);
+                }
+
             });
 
-            node.children
-                .as_mut()
-                .unwrap()
-                .par_iter_mut()
-                .for_each(|child| {
-                    &mut OctreeSystem::generate_instance_data(
-                        optimization_data,
-                        child,
-                        collected_data,
-                        atomic_counter
-                    );
-                });
-        }
+        traverse_children
+            .par_iter_mut()
+            .for_each(|child| {
+                &mut OctreeSystem::generate_instance_data(
+                    optimization_data,
+                    child,
+                    collected_data,
+                    atomic_counter
+                );
+            });
+
     }
 }
 
