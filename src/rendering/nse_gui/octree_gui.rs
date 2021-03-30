@@ -148,7 +148,8 @@ impl OctreeGuiSystem {
             }
 
             if Slider::new(im_str!("Depth Culling Threshold (px)"))
-                .range(RangeInclusive::new(1.0, 100.0))
+                .range(RangeInclusive::new(2.0, 50.0))
+                .flags(SliderFlags::LOGARITHMIC)
                 .build(&ui, &mut self.octree_optimizations.depth_threshold)
             {
                 self.messages
@@ -158,7 +159,7 @@ impl OctreeGuiSystem {
             ui.separator();
 
             Slider::new(im_str!("Max. Rendered Nodes"))
-                .range(RangeInclusive::new(1e3 as u64, 5e6 as u64))
+                .range(RangeInclusive::new(1e4 as u64, 1e7 as u64))
                 .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap());
 
             Slider::new(im_str!("Octree Depth"))
