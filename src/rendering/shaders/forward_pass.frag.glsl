@@ -151,8 +151,8 @@ vec3 sunDir)// sun light direction
 
     float sunAmount = max(dot(rayDir, sunDir)/2, 0.0);
     vec3  fogColor  = mix(
-        vec3(0.5, 0.6, 0.7), // bluish
-        vec3(1.0, 0.9, 0.7), // yellowish
+        vec3(0.01, 0.015, 0.02), // bluish
+        vec3(0.05, 0.04, 0.01), // yellowish
         sunAmount
     );
 
@@ -160,7 +160,7 @@ vec3 sunDir)// sun light direction
 }
 
 void main() {
-    vec3 ambient_light = vec3(0.33, 0.33, 0.45);
+    vec3 ambient_light = vec3(0.05, 0.05, 0.1);
 
     Light sun;
     sun.color = vec3(2, 2, 1.8);
