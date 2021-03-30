@@ -12,8 +12,7 @@ pub extern crate gfx_backend_gl as Backend;
 pub extern crate gfx_backend_vulkan as Backend;
 extern crate rand;
 
-use std::convert::{TryFrom, TryInto};
-use std::result::Result;
+use std::convert::{TryInto};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -26,8 +25,7 @@ use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSys
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use cgmath::num_traits::Pow;
 use rayon::prelude::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::mem::size_of;
+use std::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
 
 const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -38,12 +36,10 @@ pub struct Octree {
 
     pub instance_data_buffer: Vec<Arc<Mutex<GPUBuffer<Backend::Backend>>>>,
     /// points into the instance_data_buffer vec
-    pub active_instance_buffer_idx: Option<usize>,
+    pub active_instance_buffer_idx: Arc<AtomicUsize>,
 
     pub config: OctreeConfig,
     pub info: OctreeInfo,
-
-    collect_buffer: Arc<Vec<InstanceData>>,
 }
 
 #[derive(Clone, Debug)]
@@ -127,21 +123,15 @@ impl Octree {
             gpu_byte_size: max_gpu_byte_size * ring_buffer_length,
         };
 
-        let mut collect_buf = Vec::new();
-        collect_buf.resize(config.max_rendered_nodes.unwrap_or(0) as usize,
-                           InstanceData::default());
-
         let mut oct = Octree {
             root: Arc::new(Mutex::new(
                 Node::new_inner(vec3(0.0, 0.0, 0.0), 1.0)
             )),
             instance_data_buffer,
-            active_instance_buffer_idx: Some(0),
+            active_instance_buffer_idx: Arc::new(AtomicUsize::new(0)),
 
             config,
             info: octree_info,
-
-            collect_buffer: Arc::new(collect_buf)
         };
 
         oct.root.lock().unwrap().populate();
@@ -162,15 +152,8 @@ impl Octree {
     }
 
     pub fn get_instance_buffer(&self) -> Option<&Arc<Mutex<GPUBuffer<Backend::Backend>>>> {
-        if self.active_instance_buffer_idx.is_some() {
-            Some(
-                self.instance_data_buffer
-                    .get(self.active_instance_buffer_idx.unwrap())
-                    .unwrap(),
-            )
-        } else {
-            None
-        }
+        let idx = self.active_instance_buffer_idx.load(Ordering::SeqCst);
+        self.instance_data_buffer.get(idx)
     }
 
     pub fn count_leaves(&self) -> i64 {
@@ -613,7 +596,12 @@ pub struct OctreeSystem {
     optimizations: OctreeOptimizations,
 
     messages: Vec<Message>,
+
+    collecting_data: Arc<AtomicBool>,
+    collected_nodes: Arc<AtomicUsize>,
 }
+
+unsafe impl Send for OctreeSystem { }
 
 #[derive(Debug, Copy, Clone)]
 pub struct OctreeOptimizations {
@@ -640,6 +628,11 @@ impl Payload for OctreeOptimizations {}
 
 impl OctreeSystem {
     pub fn new(render_sys: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
+
+        let mut collect_buf = Vec::new();
+        collect_buf.resize(1 as usize,
+                           InstanceData::default());
+
         Arc::new(Mutex::new(OctreeSystem {
             render_sys,
 
@@ -648,7 +641,45 @@ impl OctreeSystem {
             optimizations: OctreeOptimizations::default(),
 
             messages: Vec::new(),
+
+            collecting_data: Arc::new(AtomicBool::new(false)),
+            collected_nodes: Arc::new(AtomicUsize::new(0)),
         }))
+    }
+
+    async fn init_data_generation(collecting_data: Arc<AtomicBool>,
+                                  collected_nodes: Arc<AtomicUsize>,
+                                  optimization_data: OptimizationData,
+                                  root: Arc<Mutex<Node>>,
+                                  gpu_buffer: Arc<Mutex<GPUBuffer<Backend::Backend>>>,
+                                  buffer_idx: Arc<AtomicUsize>,
+                                  next_idx: usize,) {
+        let mut root_lock = root.lock().unwrap();
+
+        let mut collect_buff = {
+            let buffer_len = optimization_data.config.max_rendered_nodes.unwrap_or(0) as usize;
+            let mut vec = Vec::with_capacity(buffer_len);
+            vec.resize(buffer_len, InstanceData::default());
+
+            vec
+        };
+
+        // building matrices
+        let mut node_count = std::sync::atomic::AtomicUsize::new(0);
+
+        OctreeSystem::generate_instance_data(
+            &optimization_data,
+            &mut root_lock,
+            &mut collect_buff,
+            &mut node_count
+        );
+
+        gpu_buffer.lock().unwrap().replace_data(collect_buff.as_slice());
+
+        collected_nodes.store(node_count.load(Ordering::SeqCst), Ordering::SeqCst);
+
+        buffer_idx.store(next_idx, Ordering::SeqCst);
+        collecting_data.store(false, Ordering::SeqCst);
     }
 
     fn generate_instance_data(
@@ -713,6 +744,8 @@ impl OctreeSystem {
                     let mut data_ptr = collected_data.as_ptr() as *mut InstanceData;
                     std::ptr::copy(render_children.as_ptr(), data_ptr.offset(idx as isize), render_children.len())
                 }
+            } else {
+                atomic_counter.fetch_sub(render_children.len(), Ordering::SeqCst);
             }
         }
 
@@ -768,13 +801,11 @@ impl System for OctreeSystem {
                 .clone();
 
             if self.update_config.is_some() {
-                octree = Octree::new(&self.render_sys, self.update_config.take().unwrap());
+                let conf = self.update_config.take().unwrap();
+                octree = Octree::new(&self.render_sys, conf);
             }
 
             if !camera_entities.is_empty() {
-                // scope to enclose mutex
-                let mut root = octree.root.lock().unwrap();
-
                 // camera data
                 let camera_mutex = camera_entities[0].lock().unwrap();
                 let camera_transform = camera_mutex
@@ -800,8 +831,8 @@ impl System for OctreeSystem {
                 }
 
                 let optimization_data = OptimizationData {
-                    camera: &camera,
-                    camera_transform: &camera_transform,
+                    camera: camera.clone(),
+                    camera_transform: camera_transform.clone(),
                     octree_mvp: camera.projection
                         * Matrix4::inverse_transform(&camera_transform.get_model_matrix()).unwrap()
                         * octree_transform.get_model_matrix(),
@@ -812,40 +843,30 @@ impl System for OctreeSystem {
                     ),
                     depth_threshold: self.optimizations.depth_threshold,
                     octree_scale: octree_transform.scale.x,
+                    config: octree.config.clone()
                 };
-
-                // building matrices
-                let max_nodes = octree.collect_buffer.len();
-                let mut model_matrix_counter = std::sync::atomic::AtomicUsize::new(0);
 
                 let instance_data_start = Instant::now();
 
-                OctreeSystem::generate_instance_data(
-                    &optimization_data,
-                    &mut root,
-                    &mut octree.collect_buffer,
-                    &mut model_matrix_counter
-                );
+                if !self.collecting_data.load(Ordering::SeqCst) {
+                    self.collecting_data.store(true, Ordering::SeqCst);
 
-                // store data
-                let rm = self.render_sys.lock().unwrap().resource_manager.clone();
-                let _rm_lock = rm.lock().unwrap();
+                    let buffer_idx = (octree.active_instance_buffer_idx.load(Ordering::SeqCst) + 1)
+                        % octree.instance_data_buffer.len();
+                    let buffer = octree.instance_data_buffer[buffer_idx].clone();
 
-                let buffer_idx = (octree.active_instance_buffer_idx.unwrap_or(0) + 1)
-                    % octree.instance_data_buffer.len();
-                octree.active_instance_buffer_idx = Some(buffer_idx);
-                let buffer = &octree.instance_data_buffer[buffer_idx];
-
-                {
-                    let mut gpu_buffer_lock = buffer.lock().unwrap();
-
-                    let num_matrices = model_matrix_counter.load(Ordering::SeqCst)
-                        .min(max_nodes as usize);
-
-                    gpu_buffer_lock.replace_data(&octree.collect_buffer[0..num_matrices]);
-
-                    octree.info.render_count = num_matrices;
+                    async_std::task::spawn(OctreeSystem::init_data_generation(
+                        self.collecting_data.clone(),
+                        self.collected_nodes.clone(),
+                        optimization_data,
+                        octree.root.clone(),
+                        buffer,
+                        octree.active_instance_buffer_idx.clone(),
+                        buffer_idx,
+                    ));
                 }
+
+                octree.info.render_count = self.collected_nodes.load(Ordering::SeqCst);
 
                 let instance_data_end = Instant::now();
                 let instance_data_duration = instance_data_end - instance_data_start;
@@ -882,13 +903,14 @@ impl System for OctreeSystem {
 type FilterFunction = dyn Fn(&OptimizationData, &Node) -> bool;
 type TraversalFunction = dyn Fn(&OptimizationData, &Node) -> bool;
 
-struct OptimizationData<'a> {
-    camera: &'a Camera,
-    camera_transform: &'a Transformation,
+struct OptimizationData {
+    camera: Camera,
+    camera_transform: Transformation,
     octree_mvp: Matrix4<f32>,
     octree_scale: f32,
     frustum: Frustum,
     depth_threshold: f64,
+    config: OctreeConfig,
 }
 
 fn cull_frustum(optimization_data: &OptimizationData, node: &Node) -> bool {
