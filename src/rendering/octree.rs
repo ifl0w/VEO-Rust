@@ -293,7 +293,7 @@ impl Octree {
         let scale = child.scale;
 
         // only a slice
-        let thickness = 0.01;
+        let thickness = 0.0;
         if origin.y + child.scale * 0.5 < -thickness
             || origin.y - child.scale * 0.5 > thickness {
             return false;
@@ -331,7 +331,7 @@ impl Octree {
             let val2: f64 = z_re2 + z_im2;
 
             if val2 > (escape_radius * escape_radius) {
-                break;
+                return false;
             }
 
             iter -= 1;
@@ -350,7 +350,7 @@ impl Octree {
 
         let mut traverse = false;
 
-        if distance < radius as f64 {
+        if distance <= radius as f64 {
             traverse = true;
 
             if distance <= 0.0 {
