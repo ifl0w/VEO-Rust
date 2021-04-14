@@ -26,6 +26,7 @@ use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use cgmath::num_traits::Pow;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
+use self::rand::random;
 
 const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -140,7 +141,7 @@ impl Octree {
         Arc::new(Mutex::new(Octree::build_tree(
             &mut oct.root.lock().unwrap(),
             0,
-            depth,
+            1,
         )));
         let end = std::time::Instant::now();
 
@@ -182,7 +183,7 @@ impl Octree {
     fn build_tree(node: &mut Node, current_depth: u64, target_depth: u64) {
         if node.children.is_some() {
             node.children.as_mut().unwrap()
-                .par_iter_mut()
+                .iter_mut()
                 .enumerate()
                 .for_each(|(idx, child)| {
                     let new_depth = current_depth + 1;
@@ -671,7 +672,8 @@ impl OctreeSystem {
             &optimization_data,
             &mut root_lock,
             &mut collect_buff,
-            &mut node_count
+            &mut node_count,
+            false
         );
 
         gpu_buffer.lock().unwrap().replace_data(collect_buff.as_slice());
@@ -687,10 +689,9 @@ impl OctreeSystem {
         node: &mut Node,
         collected_data: &Vec<InstanceData>,
         atomic_counter: &AtomicUsize,
+        extended: bool // allow at most the extension by a single level
     ) {
-        if node.children.is_none() {
-            return;
-        }
+        if node.children.is_none() { return; }
 
         let mut traverse_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
         let mut render_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
@@ -717,7 +718,7 @@ impl OctreeSystem {
                 let limit_depth_reached = limit_depth_traversal(optimization_data, child);
 
                 // add transformation data
-                let mut include = !limit_depth_reached && child.solid;
+                let mut include = limit_depth_reached && child.solid;
                 include = include || (child.is_leaf() && child.solid);
 
                 if include {
@@ -727,13 +728,20 @@ impl OctreeSystem {
                 }
 
                 // check weather to traverse further
-                let mut continue_traversal = cull_frustum(optimization_data, child);
-                continue_traversal = continue_traversal && limit_depth_reached;
+                // IMPORTANT NOTE: it seems that the transformation of the frustum into the octree
+                // space causes problems with floating point precision. Thus the blocks are culled
+                // too early at the near plane. Either use f64 instead of f32 for frustum culling or
+                // embed the octree directly in world space.
+                let mut intersect_frustum = cull_frustum(optimization_data, child);
+                let continue_traversal = intersect_frustum && !limit_depth_reached;
+
+                if limit_depth_reached {
+                    child.children.take(); // drop children
+                }
 
                 if continue_traversal {
                     traverse_children.push(child);
                 }
-
             });
 
         if render_children.len() > 0 {
@@ -752,11 +760,22 @@ impl OctreeSystem {
         traverse_children
             .par_iter_mut()
             .for_each(|child| {
+                let extend = child.is_leaf();
+                    // && random::<f32>() < 0.25;
+                    // && random::<f32>() < child.scale * (1.0 / child.scale).log2(); // random sampling distributed over scale
+                let mut added_level = false;
+                if extend && !extended {
+                    child.populate();
+                    Octree::build_tree(child, 0, 1);
+                    added_level = true;
+                }
+
                 &mut OctreeSystem::generate_instance_data(
                     optimization_data,
                     child,
                     collected_data,
-                    atomic_counter
+                    atomic_counter,
+                    added_level
                 );
             });
 
@@ -935,14 +954,19 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Node) -> b
     let proj_matrix = optimization_data.octree_mvp;
 
     let projected_position = proj_matrix * node.position.extend(1.0);
+    if projected_position.w <= 1.0 {
+        true;
+    }
+
     let mut projected_scale = node.scale / projected_position.w;
+    // let mut projected_scale = node.scale / projected_position.w.pow(1.5); // non linear scale
     projected_scale *= optimization_data.camera.resolution[0] / 2.0;
 
     let target_size = optimization_data.depth_threshold as f32 / optimization_data.octree_scale;
     return if projected_scale.abs() < target_size as f32 {
-        false
-    } else {
         true
+    } else {
+        false
     };
 }
 
