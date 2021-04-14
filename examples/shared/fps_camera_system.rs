@@ -1,15 +1,15 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cgmath::{Deg, Matrix3, Quaternion, Vector3, Rotation};
-use winit::event::DeviceEvent::MouseMotion;
+use cgmath::{Deg, Matrix3, Quaternion, Rotation, Vector3};
+use glium::RawUniformValue::Vec3;
+use winit::event::{Event, KeyboardInput, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent};
+use winit::event::DeviceEvent::{MouseMotion, MouseWheel};
 use winit::event::ElementState::Pressed;
-use winit::event::{Event, KeyboardInput, MouseButton, VirtualKeyCode, WindowEvent};
 use winit::window::WindowId;
 
 use nse::core::{Filter, MainWindow, Message, System};
 use nse::rendering::{Camera, Transformation};
-use glium::RawUniformValue::Vec3;
 
 pub struct FPSCameraSystem {
     mouse_delta: (f32, f32),
@@ -104,6 +104,13 @@ impl System for FPSCameraSystem {
                             self.mouse_delta = (0.0, 0.0);
                         }
                         _ => (),
+                    },
+                    WindowEvent::MouseWheel { delta, .. } => match delta {
+                        MouseScrollDelta::LineDelta(_x, y) => {
+                            let change = 0.1;
+                            self.movement_speed = self.movement_speed * (1.0 + y.signum() * change);
+                        }
+                        _ => ()
                     },
                     _ => (),
                 }
