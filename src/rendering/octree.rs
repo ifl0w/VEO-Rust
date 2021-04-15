@@ -275,14 +275,8 @@ impl Octree {
 
         let mut traverse = false;
 
-        // added a small bias to the radius to ensure deeper traversal while keeping
-        // the octree somewhat sparse. Note: there is probably a better way.
-        let bias = 1.5;
-        if distance.abs() <= radius * bias {
-            traverse = true;
-        }
-
         if distance.abs() <= radius {
+            traverse = true;
             child.solid = true;
         }
 
