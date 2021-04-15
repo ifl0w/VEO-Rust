@@ -104,10 +104,23 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 }
 
 vec3 evaluateLight(Light light, Material mat, vec3 position, vec3 normal) {
-    vec3 toLight = normalize(-light.direction.xyz);
+    vec3 toLight = vec3(0);
+    float attenuation = 1;
+
+    switch(light.type) {
+        case 0:
+            toLight = normalize(-light.direction.xyz);
+            break;
+        case 1:
+            toLight = light.direction.xyz - position;
+            attenuation = length(light.direction.xyz - position);
+            toLight = normalize(toLight);
+            break;
+        default:
+            toLight = vec3(0);
+    }
     vec3 toCam = normalize(camera_ubo.position.xyz - position);
 
-    float attenuation = 1;
     float intensityFactor = 1;
 
     vec3 halfVec = normalize(toCam + toLight);
@@ -160,19 +173,25 @@ vec3 sunDir)// sun light direction
 }
 
 void main() {
-    vec3 ambient_light = vec3(0.05, 0.05, 0.1);
+    vec3 ambient_light = vec3(0.1, 0.1, 0.1);
 
     Light sun;
-    sun.color = vec3(2, 2, 1.8);
+    sun.color = vec3(1, 1, 0.95);
     sun.type = 0;
     sun.direction = vec3(1.0, -0.5, -0.8);
 
+    Light camlight;
+    camlight.color = vec3(10, 10, 10);
+    camlight.type = 1;
+    camlight.direction = camera_ubo.position.xyz;
+
     Material defaultMat;
-    defaultMat.albedo = vec3(0.1, 0.1, 0.2);// clamp(abs(fragNormal) * 0.75, vec3(0), vec3(1));
+    defaultMat.albedo = vec3(0.25, 0.25, 0.25) + abs(fragNormal) * 0.05;
     defaultMat.metallic = 0;
     defaultMat.roughness = 0.6;
 
     vec3 shadedColor = evaluateLight(sun, defaultMat, fragPosition, normalize(fragNormal));
+    shadedColor += evaluateLight(camlight, defaultMat, fragPosition, normalize(fragNormal));
     vec3 ambient_corrected_color = (shadedColor + ambient_light * defaultMat.albedo).xyz;
 
     vec3 cam_to_frag = fragPosition.xyz - camera_ubo.position.xyz;
