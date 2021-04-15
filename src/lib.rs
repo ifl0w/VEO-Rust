@@ -70,7 +70,7 @@ impl NSE {
             let mut exit = false;
             let systems = system_manager_lock.systems.clone();
 
-            for (tid, sys) in systems {
+            for (_tid, sys) in systems {
                 sys.lock().unwrap().handle_input(&event);
             }
             match event {

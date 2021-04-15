@@ -1,9 +1,10 @@
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use nse;
 use nse::core::{Component, Entity, Filter, System};
-use nse::rendering::RenderSystem;
 use nse::NSE;
-use std::time::Duration;
-use std::sync::{Mutex, Arc};
+use nse::rendering::RenderSystem;
 
 #[derive(Debug)]
 struct TestSystem {}

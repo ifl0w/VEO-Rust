@@ -17,7 +17,7 @@ pub extern crate gfx_backend_vulkan as Backend;
 
 use std::sync::{Arc, Mutex};
 
-use cgmath::{Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, Vector2, Vector3, Vector4, vec4};
+use cgmath::{Deg, Euler, InnerSpace, Matrix4, Quaternion, Rad, SquareMatrix, Transform, vec3, vec4, Vector2, Vector3, Vector4};
 
 use crate::core::Component;
 use crate::rendering::{AABB, GPUMesh, MeshGenerator, MeshID, RenderSystem, Vertex};
@@ -243,7 +243,7 @@ impl Frustum {
         })
     }
 
-    pub fn intersect_sphere(&self, center: Vector3<f32>, radius: f32) -> bool{
+    pub fn intersect_sphere(&self, center: Vector3<f32>, radius: f32) -> bool {
         self.planes_hessian.iter().all(|plane| {
             let distance = plane.dot(center.extend(1.0));
             return distance + radius >= 0.0;

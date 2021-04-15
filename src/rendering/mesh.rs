@@ -20,7 +20,6 @@ use crate::rendering::{GPUMesh, RenderSystem};
 use crate::rendering::utility::MeshGenerator;
 use crate::rendering::utility::resources::MeshID;
 
-
 static mut LAST_MESH_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]

@@ -109,9 +109,6 @@ impl OctreeGuiSystem {
     }
 
     fn display_octree_ui(&mut self, ui: &Ui, config: &OctreeConfig, info: &OctreeInfo) {
-
-
-
         if CollapsingHeader::new(im_str!("Settings"))
             .default_open(true)
             .build(&ui)

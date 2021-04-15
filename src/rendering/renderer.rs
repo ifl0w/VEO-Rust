@@ -23,9 +23,9 @@ pub extern crate gfx_backend_empty as Backend;
 #[cfg(feature = "vulkan")]
 pub extern crate gfx_backend_vulkan as Backend;
 
-use std::borrow::Borrow;
-
 use std::{mem::ManuallyDrop, ptr};
+use std::borrow::Borrow;
+use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -46,7 +46,6 @@ use crate::rendering::{
 };
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use crate::rendering::utility::ResourceManager;
-use std::ops::DerefMut;
 
 /* Constants */
 // Window
@@ -279,7 +278,7 @@ impl System for RenderSystem {
 
         // Currently only a single pass can be rendered since fences and semaphores are in the
         // renderer instead of the render passes
-        let execution_time =self.renderer.render(&self.forward_render_pass);
+        let execution_time = self.renderer.render(&self.forward_render_pass);
 
         // send execution time
         self.messages.push(Message::new(ProfilingData {
@@ -454,8 +453,8 @@ impl<B> Renderer<B>
         // versus when the swapchain image index we got from acquire_image is needed.
         let frame_idx = self.current_swap_chain_image;
 
-        let mut image = unsafe {
-            let mut res = self.surface.acquire_image(!0);
+        let image = unsafe {
+            let res = self.surface.acquire_image(!0);
 
             if res.is_err() {
                 return 0;
@@ -475,7 +474,7 @@ impl<B> Renderer<B>
 
         let mut render_pass_lock = render_pass.lock().unwrap();
 
-        let mut present_semaphore = {
+        let present_semaphore = {
             render_pass_lock.sync(frame_idx);
             render_pass_lock.record(frame_idx);
             render_pass_lock.submit(frame_idx, queue, vec![]);
@@ -486,7 +485,8 @@ impl<B> Renderer<B>
         };
 
         unsafe {
-            queue.present(&mut self.surface, image, Some(present_semaphore));
+            queue.present(&mut self.surface, image, Some(present_semaphore))
+                .expect("Could not present frame!");
         }
 
         // Increment our frame

@@ -6,13 +6,13 @@ use std::time::Duration;
 
 use cgmath::{vec3, Vector3};
 use winit::event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
+use winit::event::ElementState::Pressed;
 
 use nse::core::{Filter, Message, System};
-use nse::rendering::nse_gui::octree_gui::ProfilingData;
 use nse::rendering::{Camera, OctreeConfig, OctreeOptimizations, Transformation};
+use nse::rendering::nse_gui::octree_gui::ProfilingData;
 
 use crate::shared::benchmark_system::Benchmark::CircularMotion;
-use winit::event::ElementState::Pressed;
 
 enum Benchmark {
     CircularMotion,

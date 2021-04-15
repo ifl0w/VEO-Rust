@@ -1,8 +1,8 @@
-use std::ptr;
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
+
+
+
+use std::sync::{Arc};
 
 use gfx_hal::adapter::Adapter;
 use gfx_hal::Backend;
@@ -10,9 +10,9 @@ use gfx_hal::device::Device;
 use gfx_hal::format::{ChannelType, Format};
 use gfx_hal::image::Extent;
 use gfx_hal::image::Usage;
-use gfx_hal::window::{Extent2D, SwapchainConfig, SwapImageIndex};
-use gfx_hal::window::Surface;
 use gfx_hal::prelude::PresentationSurface;
+use gfx_hal::window::{Extent2D, SwapchainConfig};
+use gfx_hal::window::Surface;
 
 pub struct SwapchainWrapper<B: Backend, D: Device<B>> {
     device: Arc<B::Device>,

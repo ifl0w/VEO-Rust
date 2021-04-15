@@ -12,7 +12,7 @@ layout(binding = 0) uniform UniformBufferObject {
 } camera_ubo;
 
 layout(binding = 1) buffer InstanceDataBuffer {
-    vec4 transformation[]; // w = uniform scale value
+    vec4 transformation[];// w = uniform scale value
 } instance_ssbo;
 
 layout(push_constant) uniform PushConsts {

@@ -1,12 +1,11 @@
-use cgmath::{Vector3};
+use cgmath::Vector3;
 
 use nse;
 use nse::core::Entity;
-use nse::rendering::{utility::Cube, Camera, Frustum, Mesh, RenderSystem, Transformation, AABB};
 use nse::NSE;
+use nse::rendering::{AABB, Camera, Frustum, Mesh, RenderSystem, Transformation, utility::Cube};
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
-
 
 mod shared;
 

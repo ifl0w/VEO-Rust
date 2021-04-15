@@ -107,17 +107,17 @@ vec3 evaluateLight(Light light, Material mat, vec3 position, vec3 normal) {
     vec3 toLight = vec3(0);
     float attenuation = 1;
 
-    switch(light.type) {
+    switch (light.type) {
         case 0:
-            toLight = normalize(-light.direction.xyz);
-            break;
+        toLight = normalize(-light.direction.xyz);
+        break;
         case 1:
-            toLight = light.direction.xyz - position;
-            attenuation = length(light.direction.xyz - position);
-            toLight = normalize(toLight);
-            break;
-        default:
-            toLight = vec3(0);
+        toLight = light.direction.xyz - position;
+        attenuation = length(light.direction.xyz - position);
+        toLight = normalize(toLight);
+        break;
+        default :
+        toLight = vec3(0);
     }
     vec3 toCam = normalize(camera_ubo.position.xyz - position);
 
@@ -164,9 +164,9 @@ vec3 sunDir)// sun light direction
 
     float sunAmount = max(dot(rayDir, sunDir)/2, 0.0);
     vec3  fogColor  = mix(
-        vec3(0.01, 0.015, 0.02), // bluish
-        vec3(0.05, 0.04, 0.01), // yellowish
-        sunAmount
+    vec3(0.01, 0.015, 0.02), // bluish
+    vec3(0.05, 0.04, 0.01), // yellowish
+    sunAmount
     );
 
     return mix(rgb, fogColor, fogAmount);

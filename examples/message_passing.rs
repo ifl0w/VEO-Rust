@@ -1,8 +1,9 @@
-use nse;
-use nse::core::{Exit, Message, System, Text, Filter};
-use nse::NSE;
-use std::time::Duration;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use nse;
+use nse::core::{Exit, Filter, Message, System, Text};
+use nse::NSE;
 
 #[derive(Debug)]
 struct Sys1 {

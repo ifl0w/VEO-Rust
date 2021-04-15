@@ -9,10 +9,10 @@ use gfx_hal::{
 };
 use gfx_hal::adapter::Adapter;
 use gfx_hal::adapter::PhysicalDevice;
+use gfx_hal::memory::Segment;
 
 use crate::rendering::renderer::Renderer;
 use crate::rendering::utility::{GPUBuffer, Index, Vertex};
-use gfx_hal::memory::Segment;
 
 pub type MeshID = usize;
 pub type BufferID = usize;
@@ -221,13 +221,13 @@ impl<B> GPUMesh<B>
                 .unwrap();
             let mapping = device.map_memory(&mut memory, Segment {
                 offset: 0,
-                size: Some(padded_buffer_len as u64)
+                size: Some(padded_buffer_len as u64),
             }).unwrap();
             ptr::copy_nonoverlapping(vertices.as_ptr() as *const u8, mapping, buffer_len as usize);
             device
                 .flush_mapped_memory_ranges(iter::once((&memory, Segment {
                     offset: 0,
-                    size: Some(padded_buffer_len as u64)
+                    size: Some(padded_buffer_len as u64),
                 })))
                 .unwrap();
             device.unmap_memory(&mut memory);
@@ -287,13 +287,13 @@ impl<B> GPUMesh<B>
                 .unwrap();
             let mapping = device.map_memory(&mut memory, Segment {
                 offset: 0,
-                size: Some(padded_buffer_len as u64)
+                size: Some(padded_buffer_len as u64),
             }).unwrap();
             ptr::copy_nonoverlapping(indices.as_ptr() as *const u8, mapping, buffer_len as usize);
             device
                 .flush_mapped_memory_ranges(iter::once((&memory, Segment {
                     offset: 0,
-                    size: Some(padded_buffer_len as u64)
+                    size: Some(padded_buffer_len as u64),
                 })))
                 .unwrap();
             device.unmap_memory(&mut memory);

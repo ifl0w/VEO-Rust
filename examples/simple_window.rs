@@ -1,6 +1,6 @@
 use nse;
-use nse::rendering::RenderSystem;
 use nse::NSE;
+use nse::rendering::RenderSystem;
 
 fn main() {
     let mut engine: NSE = NSE::new();

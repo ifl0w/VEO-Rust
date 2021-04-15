@@ -71,12 +71,12 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
                             image::FramebufferAttachment {
                                 usage: usage,
                                 view_caps: ViewCapabilities::MUTABLE_FORMAT,
-                                format: format
+                                format: format,
                             },
                             image::FramebufferAttachment {
                                 usage: Usage::DEPTH_STENCIL_ATTACHMENT,
                                 view_caps: ViewCapabilities::MUTABLE_FORMAT,
-                                format: Format::D24UnormS8Uint
+                                format: Format::D24UnormS8Uint,
                             }
                         ].into_iter(),
                         extent,

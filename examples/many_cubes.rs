@@ -2,8 +2,8 @@ use cgmath::Vector3;
 
 use nse;
 use nse::core::Entity;
-use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation};
 use nse::NSE;
+use nse::rendering::{Camera, Cube, Mesh, RenderSystem, Transformation};
 
 use crate::shared::fps_camera_system::FPSCameraSystem;
 

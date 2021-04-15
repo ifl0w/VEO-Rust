@@ -1,18 +1,18 @@
 use std::{iter, ptr};
+
 use std::mem::{ManuallyDrop, size_of};
+use std::ops::DerefMut;
 use std::sync::Arc;
 
 use gfx_hal::{Backend, buffer, memory};
 use gfx_hal::adapter::Adapter;
 use gfx_hal::adapter::PhysicalDevice;
+use gfx_hal::buffer::SubRange;
 use gfx_hal::device::Device;
+use gfx_hal::memory::Segment;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 
 use crate::rendering::renderer::Renderer;
-use gfx_hal::memory::Segment;
-use gfx_hal::buffer::SubRange;
-use std::ops::DerefMut;
-use std::borrow::BorrowMut;
 
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,
@@ -111,13 +111,13 @@ impl<B: Backend> GPUBuffer<B> {
         let upload_size = data_source.len() * stride;
 
         assert!(offset + upload_size <= self.size);
-        let mut memory = self.memory.deref_mut();
+        let memory = self.memory.deref_mut();
 
         unsafe {
             let mapping = device
                 .map_memory(memory, Segment {
                     offset: offset as u64,
-                    size: Some(self.size as u64)
+                    size: Some(self.size as u64),
                 })
                 .unwrap();
             ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);

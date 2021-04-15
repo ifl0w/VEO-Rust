@@ -2,15 +2,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cgmath::{Deg, Matrix3, Quaternion, Rotation, Vector3};
-use glium::RawUniformValue::Vec3;
+
+use winit::dpi::{PhysicalSize};
 use winit::event::{Event, KeyboardInput, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent};
-use winit::event::DeviceEvent::{MouseMotion, MouseWheel};
+use winit::event::DeviceEvent::{MouseMotion};
 use winit::event::ElementState::Pressed;
 use winit::window::WindowId;
 
 use nse::core::{Filter, MainWindow, Message, System};
 use nse::rendering::{Camera, Transformation};
-use winit::dpi::{PhysicalSize, Size};
 
 pub struct FPSCameraSystem {
     mouse_delta: (f32, f32),
@@ -28,7 +28,7 @@ pub struct FPSCameraSystem {
 
     main_window: Option<WindowId>,
 
-    update_camera_resolution: Option<PhysicalSize<u32>>
+    update_camera_resolution: Option<PhysicalSize<u32>>,
 }
 
 impl FPSCameraSystem {

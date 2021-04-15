@@ -12,21 +12,19 @@ pub extern crate gfx_backend_gl as Backend;
 pub extern crate gfx_backend_vulkan as Backend;
 extern crate rand;
 
-use std::convert::{TryInto};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use cgmath::{Array, Matrix4, Transform, vec3, Vector3, Rotation, InnerSpace};
+use cgmath::{Array, InnerSpace, Matrix4, Rotation, Transform, vec3, Vector3};
+use cgmath::num_traits::Pow;
 use gfx_hal::buffer;
+use rayon::prelude::*;
 use winit::event::Event;
 
 use crate::core::{Component, Filter, Message, Payload, System};
 use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
-use cgmath::num_traits::Pow;
-use rayon::prelude::*;
-use std::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
-use self::rand::random;
 
 const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -145,7 +143,7 @@ impl Octree {
         )));
         let end = std::time::Instant::now();
 
-        println!("Octree build time: {:?}", end-start);
+        println!("Octree build time: {:?}", end - start);
 
         oct.info.byte_size = self::Octree::size_in_bytes(&oct);
 
@@ -185,7 +183,7 @@ impl Octree {
             node.children.as_mut().unwrap()
                 .iter_mut()
                 .enumerate()
-                .for_each(|(idx, child)| {
+                .for_each(|(_idx, child)| {
                     let new_depth = current_depth + 1;
 
                     let zoom = 2.5;
@@ -221,15 +219,17 @@ impl Octree {
             if a.z == 0.0 && r == 0.0 { theta = 0.0; };
 
             return vec3(r, phi, theta);
-        };
+        }
+        ;
 
         fn to_cartesian(a: Vector3<f64>) -> Vector3<f64> {
             let x = a.z.sin() * a.y.cos();
             let y = a.y.sin() * a.z.sin();
             let z = a.z.cos();
 
-            return a.x * vec3(x,y,z);
-        };
+            return a.x * vec3(x, y, z);
+        }
+        ;
 
         // nth power in polar coordinates
         fn spherical_pow(a: Vector3<f64>, n: f64) -> Vector3<f64> {
@@ -239,7 +239,7 @@ impl Octree {
             return vec3(r, phi, theta);
         }
 
-        let mut c = vec3(position.x as f64, position.y as f64, position.z as f64);
+        let c = vec3(position.x as f64, position.y as f64, position.z as f64);
 
         // z_0 = 0 + i0
         let mut v = vec3(0.0, 0.0, 0.0);
@@ -261,7 +261,7 @@ impl Octree {
             // source: http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/
             dr = r.pow(n - 1.0) * n * dr + 1.0;
 
-            let mut v_next = spherical_pow(v_p, n);
+            let v_next = spherical_pow(v_p, n);
             v = to_cartesian(v_next) + c;
 
             iter -= 1;
@@ -283,7 +283,7 @@ impl Octree {
         return traverse;
     }
 
-    fn generate_mandelbrot(child: &mut Node, zoom: f32, depth: u64) -> bool {
+    fn generate_mandelbrot(child: &mut Node, zoom: f32, _depth: u64) -> bool {
         let origin = &child.position;
         let scale = child.scale;
 
@@ -356,7 +356,7 @@ impl Octree {
         return traverse;
     }
 
-    fn generate_menger(child: &mut Node, zoom: f32, depth: u64) -> bool {
+    fn generate_menger(child: &mut Node, _zoom: f32, depth: u64) -> bool {
         let t: Vector3<f64> = vec3(
             child.position.x as f64,
             child.position.y as f64,
@@ -381,9 +381,9 @@ impl Octree {
         // reduces the effective depth but prevents errors
         // good values are 2 - 4
         let oversampling = 3;
-        let e_min = (1.0 / 3.0);
+        let e_min = 1.0 / 3.0;
         // let e_min = 0.25;
-        let e_max = (2.0 / 3.0);
+        let e_max = 2.0 / 3.0;
         // let e_max = 0.75;
         let scale_base = 1.0 / 3.0;
         // let scale_base = 0.25; // 0.5
@@ -400,7 +400,7 @@ impl Octree {
             in_empty = box_points.iter()
                 .all(|p| {
                     // get remainder of linear transform
-                    let mut v = (p / scale) - (p / scale).map(|w| { w.floor() });
+                    let v = (p / scale) - (p / scale).map(|w| { w.floor() });
 
                     let x = v.x >= e_min && v.x <= e_max;
                     let y = v.y >= e_min && v.y <= e_max;
@@ -419,17 +419,9 @@ impl Octree {
         return !in_empty;
     }
 
-    fn generate_sierpinsky(child: &mut Node, zoom: f32, depth: u64) -> bool {
+    fn generate_sierpinsky(child: &mut Node, _zoom: f32, _depth: u64) -> bool {
         let s = child.scale;
         let p = child.position;
-
-        fn f1(p: Vector3<f32>, s: f32, max: i32) -> f32 {
-            let a = (p.x + 0.5).abs();
-            let b = (p.z + 0.5).abs();
-            let c = (p.y + 0.5).abs();
-
-            return (a + b + c) - 1.0;
-        };
 
         fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
             if n == 0 { return true; }
@@ -473,7 +465,7 @@ impl Octree {
                 // if none does then we definitely have a node that we do not need
                 // to consider anymore
                 let inside = bounding.iter().any(|bb| {
-                    iterate(p, s, *bb, c_size, n-1)
+                    iterate(p, s, *bb, c_size, n - 1)
                 });
 
                 return inside;
@@ -483,9 +475,9 @@ impl Octree {
             return false;
         }
 
-        let d = iterate(p, s * 0.5, vec3(0.0, 0.0,0.0), 0.5,15);
+        let d = iterate(p, s * 0.5, vec3(0.0, 0.0, 0.0), 0.5, 15);
 
-        if d  {
+        if d {
             child.solid = true;
         }
 
@@ -496,14 +488,16 @@ impl Octree {
 #[derive(Clone, Debug)]
 pub struct Node {
     children: Option<Vec<Node>>,
-    position: Vector3<f32>, // position of the node
-    scale: f32, // length of a side of the node
+    position: Vector3<f32>,
+    // position of the node
+    scale: f32,
+    // length of a side of the node
     solid: bool,
 }
 
 impl Node {
     pub fn new() -> Self {
-        let mut tmp = Node {
+        let tmp = Node {
             children: None,
             position: vec3(0.0, 0.0, 0.0),
             scale: 1.0,
@@ -515,7 +509,7 @@ impl Node {
     }
 
     pub fn new_inner(position: Vector3<f32>, scale: f32) -> Self {
-        let mut tmp = Node {
+        let tmp = Node {
             children: None,
             position,
             scale,
@@ -541,7 +535,7 @@ impl Node {
 
                     let mut t = self.position;
                     t -= Vector3::from_value(self.scale * 0.5 - s * 0.5);
-                    t += vec3( s * id_x as f32,  s * id_y as f32,  s * id_z as f32);
+                    t += vec3(s * id_x as f32, s * id_y as f32, s * id_z as f32);
 
                     self.children.as_mut().unwrap().push(Node::new_inner(t, s));
                 }
@@ -596,7 +590,7 @@ pub struct OctreeSystem {
     collected_nodes: Arc<AtomicUsize>,
 }
 
-unsafe impl Send for OctreeSystem { }
+unsafe impl Send for OctreeSystem {}
 
 #[derive(Debug, Copy, Clone)]
 pub struct OctreeOptimizations {
@@ -623,7 +617,6 @@ impl Payload for OctreeOptimizations {}
 
 impl OctreeSystem {
     pub fn new(render_sys: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
-
         let mut collect_buf = Vec::new();
         collect_buf.resize(1 as usize,
                            InstanceData::default());
@@ -648,7 +641,7 @@ impl OctreeSystem {
                                   root: Arc<Mutex<Node>>,
                                   gpu_buffer: Arc<Mutex<GPUBuffer<Backend::Backend>>>,
                                   buffer_idx: Arc<AtomicUsize>,
-                                  next_idx: usize,) {
+                                  next_idx: usize, ) {
         let mut root_lock = root.lock().unwrap();
 
         let mut collect_buff = {
@@ -667,7 +660,7 @@ impl OctreeSystem {
             &mut root_lock,
             &mut collect_buff,
             &mut node_count,
-            false
+            false,
         );
 
         gpu_buffer.lock().unwrap().replace_data(collect_buff.as_slice());
@@ -683,7 +676,7 @@ impl OctreeSystem {
         node: &mut Node,
         collected_data: &Vec<InstanceData>,
         atomic_counter: &AtomicUsize,
-        extended: bool // allow at most the extension by a single level
+        extended: bool, // allow at most the extension by a single level
     ) {
         if node.children.is_none() { return; }
 
@@ -694,7 +687,7 @@ impl OctreeSystem {
         let camera_mag = camera_pos.magnitude();
         let camera_dir = optimization_data.camera_transform.rotation.rotate_vector(-Vector3::unit_z());
 
-        node.children.as_mut().unwrap().sort_unstable_by(|a,b| {
+        node.children.as_mut().unwrap().sort_unstable_by(|a, b| {
             let dist_a = camera_dir.extend(camera_mag)
                 .dot((a.position).extend(1.0));
             let dist_b = camera_dir.extend(camera_mag)
@@ -708,7 +701,6 @@ impl OctreeSystem {
             .unwrap()
             .iter_mut()
             .for_each(|child| {
-
                 let limit_depth_reached = limit_depth_traversal(optimization_data, child);
 
                 // add transformation data
@@ -716,7 +708,7 @@ impl OctreeSystem {
                 include = include || (child.is_leaf() && child.solid);
 
                 if include {
-                    render_children.push( InstanceData {
+                    render_children.push(InstanceData {
                         transformation: child.position.extend(child.scale).into(),
                     });
                 }
@@ -726,7 +718,7 @@ impl OctreeSystem {
                 // space causes problems with floating point precision. Thus the blocks are culled
                 // too early at the near plane. Either use f64 instead of f32 for frustum culling or
                 // embed the octree directly in world space.
-                let mut intersect_frustum = cull_frustum(optimization_data, child);
+                let intersect_frustum = cull_frustum(optimization_data, child);
                 let continue_traversal = intersect_frustum && !limit_depth_reached;
 
                 if limit_depth_reached {
@@ -743,7 +735,7 @@ impl OctreeSystem {
             if idx + render_children.len() < collected_data.len() {
                 unsafe {
                     // IMPORTANT: really not that nice and really unsafe!!
-                    let mut data_ptr = collected_data.as_ptr() as *mut InstanceData;
+                    let data_ptr = collected_data.as_ptr() as *mut InstanceData;
                     std::ptr::copy(render_children.as_ptr(), data_ptr.offset(idx as isize), render_children.len())
                 }
             } else {
@@ -755,8 +747,8 @@ impl OctreeSystem {
             .par_iter_mut()
             .for_each(|child| {
                 let extend = child.is_leaf();
-                    // && random::<f32>() < 0.25;
-                    // && random::<f32>() < child.scale * (1.0 / child.scale).log2(); // random sampling distributed over scale
+                // && random::<f32>() < 0.25;
+                // && random::<f32>() < child.scale * (1.0 / child.scale).log2(); // random sampling distributed over scale
                 let mut added_level = false;
                 if extend && !extended {
                     child.populate();
@@ -769,10 +761,9 @@ impl OctreeSystem {
                     child,
                     collected_data,
                     atomic_counter,
-                    added_level
+                    added_level,
                 );
             });
-
     }
 }
 
@@ -856,7 +847,7 @@ impl System for OctreeSystem {
                     ),
                     depth_threshold: self.optimizations.depth_threshold,
                     octree_scale: octree_transform.scale.x,
-                    config: octree.config.clone()
+                    config: octree.config.clone(),
                 };
 
                 let instance_data_start = Instant::now();

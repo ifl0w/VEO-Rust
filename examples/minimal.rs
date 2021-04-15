@@ -1,9 +1,9 @@
-use nse;
-use nse::core::{Entity, Exit, Message, System, Filter};
-use nse::NSE;
-use std::time::Duration;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use nse;
+use nse::core::{Entity, Exit, Filter, Message, System};
+use nse::NSE;
 
 #[derive(Debug)]
 struct NoopSystem {
@@ -12,7 +12,7 @@ struct NoopSystem {
 
 impl NoopSystem {
     fn new(count: u64) -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(NoopSystem{ counter: count }))
+        Arc::new(Mutex::new(NoopSystem { counter: count }))
     }
 }
 
