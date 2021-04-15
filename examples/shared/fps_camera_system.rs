@@ -10,6 +10,7 @@ use winit::window::WindowId;
 
 use nse::core::{Filter, MainWindow, Message, System};
 use nse::rendering::{Camera, Transformation};
+use winit::dpi::{PhysicalSize, Size};
 
 pub struct FPSCameraSystem {
     mouse_delta: (f32, f32),
@@ -26,6 +27,8 @@ pub struct FPSCameraSystem {
     mouse_speed: f32,
 
     main_window: Option<WindowId>,
+
+    update_camera_resolution: Option<PhysicalSize<u32>>
 }
 
 impl FPSCameraSystem {
@@ -45,6 +48,7 @@ impl FPSCameraSystem {
             mouse_speed: 0.25,
 
             main_window: None,
+            update_camera_resolution: None,
         }))
     }
 
@@ -112,6 +116,9 @@ impl System for FPSCameraSystem {
                         }
                         _ => ()
                     },
+                    WindowEvent::Resized(size) => {
+                        self.update_camera_resolution = Some(size.clone());
+                    }
                     _ => (),
                 }
             }
@@ -139,6 +146,14 @@ impl System for FPSCameraSystem {
             .expect("No camera provided")
             .lock()
             .unwrap();
+
+        if self.update_camera_resolution.is_some() {
+            let size = self.update_camera_resolution.take().unwrap();
+            let current = camera.get_component::<Camera>().unwrap();
+            let new = Camera::new(current.near, current.far, current.fov,
+                                  [size.width as f32, size.height as f32]);
+            camera.add_component(new);
+        }
 
         let mut transform = camera
             .get_component::<Transformation>()

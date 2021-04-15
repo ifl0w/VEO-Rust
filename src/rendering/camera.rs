@@ -39,8 +39,8 @@ impl Camera {
     pub fn new(near: f32, far: f32, fov: f32, resolution: [f32; 2]) -> Self {
         let aspect = resolution[0] as f32 / resolution[1] as f32;
 
-        let fov_y = Rad::from(Deg(fov / aspect));
-        let fov_x = Rad::from(Deg(fov));
+        let fov_y = Rad::from(Deg((fov / aspect).min(179.0)));
+        let fov_x = Rad::from(Deg(fov.min(179.0)));
 
         let proj = cgmath::perspective(fov_y, aspect, near, far);
 

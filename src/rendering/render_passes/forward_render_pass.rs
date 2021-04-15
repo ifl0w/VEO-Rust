@@ -310,6 +310,31 @@ impl<B: Backend> ForwardRenderPass<B> {
         }
     }
 
+    pub fn recreate_framebuffers(&mut self, renderer: &mut Renderer<B>) {
+        self.framebuffer = Framebuffer::new(
+            &renderer.device,
+            &renderer.adapter,
+            &renderer.queue_group,
+            &self.render_pass,
+            renderer.dimensions,
+            Usage::COLOR_ATTACHMENT | Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
+            Format::Rgba32Sfloat,
+            renderer.frames_in_flight,
+        ).unwrap();
+
+        self.viewport = pso::Viewport {
+            rect: pso::Rect {
+                x: 0,
+                y: 0,
+                w: renderer.dimensions.width as _,
+                h: renderer.dimensions.height as _,
+            },
+            depth: 0.0..1.0,
+        };
+
+        self.extent = renderer.dimensions;
+    }
+
     pub fn recreate_pipeline(&mut self) {
         self.forward_pipeline = ForwardPipeline::new(
             &self.device,

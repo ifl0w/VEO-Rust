@@ -46,6 +46,7 @@ use crate::rendering::{
 };
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 use crate::rendering::utility::ResourceManager;
+use std::ops::DerefMut;
 
 /* Constants */
 // Window
@@ -169,6 +170,18 @@ impl System for RenderSystem {
                                 _ => (),
                             },
                         },
+                        WindowEvent::Resized(size) => {
+                            println!("Resizing framebuffers to {:?}", size);
+
+                            let extent = window::Extent2D {
+                                width: size.width,
+                                height: size.height,
+                            };
+                            self.renderer.dimensions = extent;
+
+                            self.renderer.swapchain.recreate(self.renderer.surface.deref_mut(), self.renderer.dimensions);
+                            self.forward_render_pass.lock().unwrap().recreate_framebuffers(&mut self.renderer);
+                        }
                         _ => {}
                     }
                 }
@@ -266,14 +279,9 @@ impl System for RenderSystem {
 
         // Currently only a single pass can be rendered since fences and semaphores are in the
         // renderer instead of the render passes
-        self.renderer.render(&self.forward_render_pass);
+        let execution_time =self.renderer.render(&self.forward_render_pass);
 
         // send execution time
-        let execution_time = self
-            .forward_render_pass
-            .lock()
-            .unwrap()
-            .execution_time(frame_idx);
         self.messages.push(Message::new(ProfilingData {
             render_time: Some(execution_time),
             ..Default::default()
@@ -440,20 +448,26 @@ impl<B> Renderer<B>
         }
     }
 
-    fn render(&mut self, render_pass: &Arc<Mutex<ForwardRenderPass<B>>>) {
+    fn render(&mut self, render_pass: &Arc<Mutex<ForwardRenderPass<B>>>) -> u64 {
         // Compute index into our resource ring buffers based on the frame number
         // and number of frames in flight. Pay close attention to where this index is needed
         // versus when the swapchain image index we got from acquire_image is needed.
         let frame_idx = self.current_swap_chain_image;
 
         let mut image = unsafe {
-            let ret = self.surface.acquire_image(!0).unwrap();
+            let mut res = self.surface.acquire_image(!0);
 
-            if ret.1.is_some() {
-                println!("Not optimal surface: {:?}", ret.1)
+            if res.is_err() {
+                return 0;
             }
 
-            ret.0
+            let acquired = res.unwrap();
+
+            if acquired.1.is_some() {
+                println!("Not optimal surface: {:?}", acquired.1)
+            }
+
+            acquired.0
         };
 
         // Rendering
@@ -477,6 +491,11 @@ impl<B> Renderer<B>
 
         // Increment our frame
         self.current_swap_chain_image = (self.current_swap_chain_image + 1) % self.frames_in_flight;
+
+        // get render time
+        let execution_time = render_pass_lock.execution_time(frame_idx);
+
+        return execution_time;
     }
 }
 
