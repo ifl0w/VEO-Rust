@@ -485,8 +485,11 @@ impl<B> Renderer<B>
         };
 
         unsafe {
-            queue.present(&mut self.surface, image, Some(present_semaphore))
-                .expect("Could not present frame!");
+            let res = queue.present(&mut self.surface, image, Some(present_semaphore));
+
+            if res.is_err() {
+                println!("Could not present frame!");
+            }
         }
 
         // Increment our frame
