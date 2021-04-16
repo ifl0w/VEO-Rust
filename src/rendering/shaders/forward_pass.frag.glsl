@@ -1,6 +1,9 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
+#define AMD_EXTENSIONS true
+#define NV_EXTENSIONS true
+
 #define PI 3.1415926535897932384626433832795
 
 layout(binding = 0) uniform UniformBufferObject {
@@ -186,7 +189,7 @@ void main() {
     camlight.direction = camera_ubo.position.xyz;
 
     Material defaultMat;
-    defaultMat.albedo = vec3(0.25, 0.25, 0.25) + abs(fragNormal) * 0.05;
+    defaultMat.albedo = vec3(0.15) + abs(fragNormal) * 0.25;
     defaultMat.metallic = 0;
     defaultMat.roughness = 0.6;
 
@@ -196,8 +199,6 @@ void main() {
 
     vec3 cam_to_frag = fragPosition.xyz - camera_ubo.position.xyz;
     vec3 fog_added_color = applyFog(ambient_corrected_color, length(cam_to_frag), normalize(cam_to_frag), -sun.direction);
-    //    vec3 gamma_corrected_color = pow(ambient_corrected_color, vec3(2.2));
 
     outColor = vec4(fog_added_color, 1.0);
-    //outColor = vec4(fragColor, 1.0);
 }

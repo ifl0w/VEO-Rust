@@ -64,6 +64,8 @@ pub struct ForwardRenderPass<B: Backend> {
     pub desc_set: Vec<B::DescriptorSet>,
     pub render_set_layout: ManuallyDrop<B::DescriptorSetLayout>,
     framebuffer: Framebuffer<B, B::Device>,
+    colorAttachmentFormat: Format,
+    depthAttachmentFormat: Format,
 
     timestamp_query_pool: ManuallyDrop<B::QueryPool>,
 
@@ -151,9 +153,11 @@ impl<B: Backend> ForwardRenderPass<B> {
             desc_set.push(unsafe { desc_pool.allocate_one(&render_set_layout).unwrap() });
         }
 
+        let colorAttachmentFormat = Format::Rgba32Sfloat;
+        let depthAttachmentFormat = Format::D24UnormS8Uint;
         let render_pass = {
             let attachment = pass::Attachment {
-                format: Some(Format::Rgba32Sfloat), //Some(format),
+                format: Some(colorAttachmentFormat),
                 samples: 1,
                 ops: pass::AttachmentOps::new(
                     pass::AttachmentLoadOp::Clear,
@@ -164,7 +168,7 @@ impl<B: Backend> ForwardRenderPass<B> {
             };
 
             let depth_attachment = pass::Attachment {
-                format: Some(Format::D24UnormS8Uint), //Some(format),
+                format: Some(depthAttachmentFormat),
                 samples: 1,
                 ops: pass::AttachmentOps::new(
                     pass::AttachmentLoadOp::Clear,
@@ -255,7 +259,8 @@ impl<B: Backend> ForwardRenderPass<B> {
             &render_pass,
             renderer.dimensions,
             Usage::COLOR_ATTACHMENT | Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
-            Format::Rgba32Sfloat,
+            colorAttachmentFormat,
+            depthAttachmentFormat,
             renderer.frames_in_flight,
         )
             .unwrap();
@@ -296,6 +301,8 @@ impl<B: Backend> ForwardRenderPass<B> {
             desc_set,
             render_set_layout,
             framebuffer,
+            colorAttachmentFormat,
+            depthAttachmentFormat,
 
             timestamp_query_pool,
 
@@ -318,7 +325,8 @@ impl<B: Backend> ForwardRenderPass<B> {
             &self.render_pass,
             renderer.dimensions,
             Usage::COLOR_ATTACHMENT | Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
-            Format::Rgba32Sfloat,
+            self.colorAttachmentFormat,
+            self.depthAttachmentFormat,
             renderer.frames_in_flight,
         ).unwrap();
 

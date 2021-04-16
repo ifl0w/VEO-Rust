@@ -36,7 +36,8 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
         render_pass: &B::RenderPass,
         extent: Extent2D,
         usage: Usage,
-        format: Format,
+        colorFormat: Format,
+        depthFormat: Format,
         frames: usize,
     ) -> Result<Self, &'static str> {
         let extend_2d = extent;
@@ -58,7 +59,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
 
         for _ in 0..frames {
             unsafe {
-                let fb_image = Image::new(adapter, device, extend_2d, usage, format)
+                let fb_image = Image::new(adapter, device, extend_2d, usage, colorFormat)
                     .expect("Image creation failed!");
 
                 let fb_depth_image =
@@ -71,12 +72,12 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
                             image::FramebufferAttachment {
                                 usage: usage,
                                 view_caps: ViewCapabilities::MUTABLE_FORMAT,
-                                format: format,
+                                format: colorFormat,
                             },
                             image::FramebufferAttachment {
                                 usage: Usage::DEPTH_STENCIL_ATTACHMENT,
                                 view_caps: ViewCapabilities::MUTABLE_FORMAT,
-                                format: Format::D24UnormS8Uint,
+                                format: depthFormat,
                             }
                         ].into_iter(),
                         extent,
