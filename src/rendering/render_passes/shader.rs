@@ -76,7 +76,7 @@ impl ShaderCode {
         let text_result = compiler
             .compile_into_spirv_assembly(
                 self.contents.as_str(),
-                shaderc::ShaderKind::Vertex,
+                shader_kind,
                 self.path.as_str(),
                 entry_name.as_str(),
                 Some(&options),
