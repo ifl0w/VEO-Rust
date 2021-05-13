@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use cgmath::{Array, InnerSpace, Matrix4, Rotation, Transform, vec3, Vector3};
+use cgmath::{Array, InnerSpace, Matrix4, Rotation, Transform, vec3, Vector3, SquareMatrix};
 use cgmath::num_traits::Pow;
 use gfx_hal::buffer;
 use rayon::prelude::*;
@@ -25,6 +25,12 @@ use winit::event::Event;
 use crate::core::{Component, Filter, Message, Payload, System};
 use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
+use async_std::task::JoinHandle;
+
+use std::thread::sleep;
+use riffy::MpscQueue;
+
+use std::collections::VecDeque;
 
 const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -50,7 +56,7 @@ pub struct OctreeConfig {
 impl Default for OctreeConfig {
     fn default() -> Self {
         OctreeConfig {
-            max_rendered_nodes: Some(5e5 as u64),
+            max_rendered_nodes: Some(4e6 as u64),
             depth: Some(DEFAULT_DEPTH),
         }
     }
@@ -94,14 +100,14 @@ impl Octree {
 
         // read config
         let depth = config.depth.unwrap_or(DEFAULT_DEPTH);
-        let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(5e5 as u64);
+        let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(4e6 as u64);
 
         // byte size calculations
         let max_num_nodes = (SUBDIVISIONS as i64).pow(3 * depth as u32) as usize;
-        let max_byte_size = std::mem::size_of::<Octree>() * max_num_nodes;
+        let max_byte_size = std::mem::size_of::<Node>() * max_num_nodes;
         let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
 
-        let ring_buffer_length = 3;
+        let ring_buffer_length = 2;
         let mut instance_data_buffer = Vec::with_capacity(ring_buffer_length);
         for _ in 0..ring_buffer_length {
             let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(
@@ -588,6 +594,13 @@ pub struct OctreeSystem {
 
     collecting_data: Arc<AtomicBool>,
     collected_nodes: Arc<AtomicUsize>,
+
+    generate_handle: Option<JoinHandle<()>>,
+    upload_handle: Option<i32>,
+
+    data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
+    last_viewpoint: Matrix4<f32>,
+    debounce_delay: i64,
 }
 
 unsafe impl Send for OctreeSystem {}
@@ -632,53 +645,65 @@ impl OctreeSystem {
 
             collecting_data: Arc::new(AtomicBool::new(false)),
             collected_nodes: Arc::new(AtomicUsize::new(0)),
+
+            generate_handle: None,
+            upload_handle: None,
+
+            data_queue: Arc::new(MpscQueue::new()),
+            last_viewpoint: Matrix4::identity(),
+            debounce_delay: 500
         }))
     }
 
     async fn init_data_generation(collecting_data: Arc<AtomicBool>,
-                                  collected_nodes: Arc<AtomicUsize>,
                                   optimization_data: OptimizationData,
                                   root: Arc<Mutex<Node>>,
-                                  gpu_buffer: Arc<Mutex<GPUBuffer<Backend::Backend>>>,
-                                  buffer_idx: Arc<AtomicUsize>,
-                                  next_idx: usize, ) {
+                                  collected_nodes: Arc<AtomicUsize>,
+                                  data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
+                                  _view_changed: bool) {
+        // if view_changed {
+        //     sleep(Duration::from_millis(25));
+        // } else {
+        // }
+
         let mut root_lock = root.lock().unwrap();
 
-        let mut collect_buff = {
-            let buffer_len = optimization_data.config.max_rendered_nodes.unwrap_or(0) as usize;
-            let mut vec = Vec::with_capacity(buffer_len);
-            vec.resize(buffer_len, InstanceData::default());
-
-            vec
-        };
-
         // building matrices
-        let mut node_count = std::sync::atomic::AtomicUsize::new(0);
+        // let mut node_count = std::sync::atomic::AtomicUsize::new(0);
+        // collected_nodes.store(0, Ordering::SeqCst);
+        collecting_data.store(true, Ordering::SeqCst);
 
         OctreeSystem::generate_instance_data(
             &optimization_data,
             &mut root_lock,
-            &mut collect_buff,
-            &mut node_count,
+            &collected_nodes,
+            &collecting_data,
             false,
+            &data_queue
         );
 
-        gpu_buffer.lock().unwrap().replace_data(collect_buff.as_slice());
+        if collecting_data.load(Ordering::SeqCst) { // really finished
+            data_queue.enqueue(Err(0)); // completely finished traversal
+        } else {
+            data_queue.enqueue(Err(1)); // cancelled traversal
+        }
 
-        collected_nodes.store(node_count.load(Ordering::SeqCst), Ordering::SeqCst);
-
-        buffer_idx.store(next_idx, Ordering::SeqCst);
         collecting_data.store(false, Ordering::SeqCst);
     }
 
     fn generate_instance_data(
         optimization_data: &OptimizationData,
         node: &mut Node,
-        collected_data: &Vec<InstanceData>,
         atomic_counter: &AtomicUsize,
+        collecting_data: &AtomicBool,
         extended: bool, // allow at most the extension by a single level
+        data_queue: &Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>
     ) {
         if node.children.is_none() { return; }
+
+        if !collecting_data.load(Ordering::SeqCst) {
+            return;
+        }
 
         let mut traverse_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
         let mut render_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
@@ -704,8 +729,8 @@ impl OctreeSystem {
                 let limit_depth_reached = limit_depth_traversal(optimization_data, child);
 
                 // add transformation data
-                let mut include = limit_depth_reached && child.solid;
-                include = include || (child.is_leaf() && child.solid);
+                let include = limit_depth_reached && child.solid;
+                // include = include || (child.is_leaf() && child.solid);
 
                 if include {
                     render_children.push(InstanceData {
@@ -731,24 +756,16 @@ impl OctreeSystem {
             });
 
         if render_children.len() > 0 {
-            let idx = atomic_counter.fetch_add(render_children.len(), Ordering::SeqCst);
-            if idx + render_children.len() < collected_data.len() {
-                unsafe {
-                    // IMPORTANT: really not that nice and really unsafe!!
-                    let data_ptr = collected_data.as_ptr() as *mut InstanceData;
-                    std::ptr::copy(render_children.as_ptr(), data_ptr.offset(idx as isize), render_children.len())
-                }
-            } else {
-                atomic_counter.fetch_sub(render_children.len(), Ordering::SeqCst);
-            }
+            // atomic_counter.fetch_add(render_children.len(), Ordering::SeqCst);
+            data_queue.enqueue(Ok(render_children));
         }
 
         traverse_children
             .par_iter_mut()
             .for_each(|child| {
                 let extend = child.is_leaf();
-                // && random::<f32>() < 0.25;
-                // && random::<f32>() < child.scale * (1.0 / child.scale).log2(); // random sampling distributed over scale
+                    // && random::<f32>() < 0.5;
+                   // && random::<f32>() < child.scale * (1.0 / child.scale).log2(); // random sampling distributed over scale
                 let mut added_level = false;
                 if extend && !extended {
                     child.populate();
@@ -759,9 +776,10 @@ impl OctreeSystem {
                 &mut OctreeSystem::generate_instance_data(
                     optimization_data,
                     child,
-                    collected_data,
                     atomic_counter,
+                    collecting_data,
                     added_level,
+                    data_queue
                 );
             });
     }
@@ -804,9 +822,11 @@ impl System for OctreeSystem {
                 .unwrap()
                 .clone();
 
+            let mut settings_modified = false;
             if self.update_config.is_some() {
                 let conf = self.update_config.take().unwrap();
                 octree = Octree::new(&self.render_sys, conf);
+                settings_modified = true;
             }
 
             if !camera_entities.is_empty() {
@@ -818,6 +838,9 @@ impl System for OctreeSystem {
                     .unwrap()
                     .clone();
                 let camera = camera_mutex.get_component::<Camera>().ok().unwrap().clone();
+
+                let view_changed = camera_transform.model_matrix != self.last_viewpoint;
+                self.last_viewpoint = camera_transform.model_matrix;
 
                 // filter config
                 let mut traversal_fnc: Vec<&TraversalFunction> = Vec::new();
@@ -852,24 +875,100 @@ impl System for OctreeSystem {
 
                 let instance_data_start = Instant::now();
 
-                if !self.collecting_data.load(Ordering::SeqCst) {
-                    self.collecting_data.store(true, Ordering::SeqCst);
+                let mut debounced = false;
+                if self.debounce_delay > 0 {
+                    self.debounce_delay -= _delta_time.as_millis() as i64;
 
-                    let buffer_idx = (octree.active_instance_buffer_idx.load(Ordering::SeqCst) + 1)
-                        % octree.instance_data_buffer.len();
-                    let buffer = octree.instance_data_buffer[buffer_idx].clone();
-
-                    async_std::task::spawn(OctreeSystem::init_data_generation(
-                        self.collecting_data.clone(),
-                        self.collected_nodes.clone(),
-                        optimization_data,
-                        octree.root.clone(),
-                        buffer,
-                        octree.active_instance_buffer_idx.clone(),
-                        buffer_idx,
-                    ));
+                    if self.debounce_delay <= 0 {
+                        debounced = true;
+                    }
+                } else {
+                    if view_changed {
+                        self.debounce_delay = 150;
+                    }
                 }
 
+                let gen_data = debounced || settings_modified;
+
+                if gen_data { //|| !self.collecting_data.load(Ordering::SeqCst) {
+
+                    if self.generate_handle.is_some() {
+                        self.collecting_data.store(false, Ordering::SeqCst);
+                    }
+
+                    self.generate_handle = Some(async_std::task::spawn(OctreeSystem::init_data_generation(
+                        self.collecting_data.clone(),
+                        optimization_data,
+                        octree.root.clone(),
+                        self.collected_nodes.clone(),
+                        self.data_queue.clone(),
+                        view_changed
+                    )));
+
+                }
+
+                if self.upload_handle.is_none() {
+                    let active_buffer = octree.active_instance_buffer_idx.clone();
+                    let ring_buffer = octree.instance_data_buffer.clone();
+                    let ring_buffer_len = octree.instance_data_buffer.len();
+                    let _collecting_data = self.collecting_data.clone();
+                    let collected_nodes = self.collected_nodes.clone();
+
+                    let data_queue = self.data_queue.clone();
+
+                    self.upload_handle = Some(1);
+                    rayon::spawn(move || {
+                        let max_len = 4e6 as usize;
+                        println!("max_len: {}", max_len);
+
+                        let mut upload_buffer = VecDeque::new();
+                        let mut since_empty = 0;
+                        let mut block_sizes = VecDeque::new();
+
+                        loop {
+                            sleep(Duration::from_millis(50));
+
+                            while let Some(data) = data_queue.dequeue() {
+                                match data {
+                                    Ok(data) => {
+                                        since_empty += data.len();
+
+                                        for i in 0..data.len() {
+                                            upload_buffer.push_back(data[i]);
+                                        }
+                                    }
+                                    Err(0) => {
+                                        for _i in 0 .. block_sizes.pop_front().unwrap_or(0) {
+                                            upload_buffer.pop_front();
+                                        }
+
+                                        block_sizes.push_back(since_empty);
+                                        since_empty = 0;
+                                    }
+                                    Err(1) => {
+                                        let val = block_sizes.pop_front().unwrap_or(0);
+                                        block_sizes.push_front(val + since_empty);
+                                        since_empty = 0;
+                                    }
+                                    _ => ()
+                                }
+                            }
+
+                            let buffer_idx = (active_buffer.load(Ordering::SeqCst) + 1)
+                                % ring_buffer_len;
+                            let gpu_buffer = ring_buffer[buffer_idx].clone();
+
+                            let upload_len = upload_buffer.len().min(max_len);
+
+                            gpu_buffer.lock().unwrap().replace_data(&upload_buffer.make_contiguous()[0..upload_len]);
+
+                            active_buffer.store(buffer_idx, Ordering::SeqCst);
+                            collected_nodes.store(upload_len, Ordering::SeqCst);
+                        }
+                    })
+                }
+
+                // octree.info.render_count = 4e6 as usize;//self.collected_nodes.load(Ordering::SeqCst);
                 octree.info.render_count = self.collected_nodes.load(Ordering::SeqCst);
 
                 let instance_data_end = Instant::now();
