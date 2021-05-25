@@ -363,66 +363,75 @@ impl Octree {
     }
 
     fn generate_menger(child: &mut Node, _zoom: f32, depth: u64) -> bool {
-        let t: Vector3<f64> = vec3(
-            child.position.x as f64,
-            child.position.y as f64,
-            child.position.z as f64,
-        );
-        let s: f64 = child.scale as f64;
+        let s = child.scale;
+        let p = child.position;
 
-        let mut box_points: Vec<Vector3<f64>> = vec![
-            t + vec3(-0.5, -0.5, -0.5) * s,
-            t + vec3(0.5, -0.5, -0.5) * s,
-            t + vec3(-0.5, 0.5, -0.5) * s,
-            t + vec3(0.5, 0.5, -0.5) * s,
-            t + vec3(-0.5, -0.5, 0.5) * s,
-            t + vec3(0.5, -0.5, 0.5) * s,
-            t + vec3(-0.5, 0.5, 0.5) * s,
-            t + vec3(0.5, 0.5, 0.5) * s,
-        ];
-        // transform box points into 0 - 1 range
-        box_points = box_points.iter()
-            .map(|p| { p + vec3(0.50, 0.50, 0.50) }).collect();
+        fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
+            if n == 0 { return true; }
 
-        // reduces the effective depth but prevents errors
-        // good values are 2 - 4
-        let oversampling = 3;
-        let e_min = 1.0 / 3.0;
-        // let e_min = 0.25;
-        let e_max = 2.0 / 3.0;
-        // let e_max = 0.75;
-        let scale_base = 1.0 / 3.0;
-        // let scale_base = 0.25; // 0.5
+            // bounding box of the current iteration/contraction
+            let bb_min = bb_center - Vector3::from_value(bb_size);
+            let bb_max = bb_center + Vector3::from_value(bb_size);
 
-        let mut in_empty = false;
+            // bounding box of node
+            let node_min = p - Vector3::from_value(s);
+            let node_max = p + Vector3::from_value(s);
 
-        let sample_range = (
-            (depth as i32 - oversampling * 4).max(0),
-            (depth as i32 - oversampling).max(0)
-        );
-        for i in sample_range.0..sample_range.1 {
-            let scale = (scale_base).pow(i as f64);
+            // test node bb and iteration bb intersection
+            if node_max.x > bb_min.x && node_min.x < bb_max.x
+                && node_max.y > bb_min.y && node_min.y < bb_max.y
+                && node_max.z > bb_min.z && node_min.z < bb_max.z {
 
-            in_empty = box_points.iter()
-                .all(|p| {
-                    // get remainder of linear transform
-                    let v = (p / scale) - (p / scale).map(|w| { w.floor() });
+                // calculate contraction bounding size
+                let c_size = bb_size * 1.0 / 3.0;
+                let offset = bb_size * 2.0 / 3.0;
 
-                    let x = v.x >= e_min && v.x <= e_max;
-                    let y = v.y >= e_min && v.y <= e_max;
-                    let z = v.z >= e_min && v.z <= e_max;
+                // calculate next contraction
+                // note: the actual iteration of the IFS
+                let mut bounding = [vec3(0.0,0.0,0.0); 20];
 
-                    x && y || y && z || x && z
+                let mut i = 0;
+                for x in -1..=1 {
+                    for y in -1..=1 {
+                        for z in -1..=1 {
+                            let mut axis_count = 0;
+                            if x == 0 { axis_count += 1; }
+                            if y == 0 { axis_count += 1; }
+                            if z == 0 { axis_count += 1; }
+
+                            if axis_count != 2 && axis_count != 3 {
+                                bounding[i] = bb_center + vec3(
+                                    x as f32 * offset,
+                                    y as f32 * offset,
+                                    z as f32 * offset
+                                );
+                                i += 1;
+                            }
+                        }
+                    }
+                }
+
+                // check if any of the next bounding volumes intersects with the node
+                // if none does then we definitely have a node that we do not need
+                // to consider anymore
+                let inside = bounding.iter().any(|bb| {
+                    iterate(p, s, *bb, c_size, n - 1)
                 });
 
-            if in_empty { break; }
+                return inside;
+            }
+
+            // they do not intersect
+            return false;
         }
 
-        if !in_empty {
+        let inside = iterate(p, s / SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 15);
+
+        if inside {
             child.solid = true;
         }
 
-        return !in_empty;
+        return inside;
     }
 
     fn generate_sierpinsky(child: &mut Node, _zoom: f32, _depth: u64) -> bool {
@@ -481,7 +490,7 @@ impl Octree {
             return false;
         }
 
-        let d = iterate(p, s * 0.5, vec3(0.0, 0.0, 0.0), 0.5, 15);
+        let d = iterate(p, s / SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 15);
 
         if d {
             child.solid = true;
