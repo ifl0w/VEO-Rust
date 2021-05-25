@@ -266,8 +266,6 @@ impl System for OctreeGuiSystem {
                 platform
                     .prepare_frame(imgui.io_mut(), &gl_window.window()) // step 4
                     .expect("Failed to prepare frame");
-
-                gl_window.window().request_redraw();
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,

@@ -62,11 +62,11 @@ impl NSE {
         let delta_time = self.delta_time.clone();
 
         let mut profiling_data = ProfilingData::default();
+        let mut frame_start = Instant::now();
 
         self.event_loop.run(move |event, _, control_flow| {
             let system_manager_lock = system_manager.lock().unwrap();
 
-            let frame_start = Instant::now();
             let mut exit = false;
             let systems = system_manager_lock.systems.clone();
 
@@ -74,7 +74,7 @@ impl NSE {
                 sys.lock().unwrap().handle_input(&event);
             }
             match event {
-                Event::RedrawRequested(_) => {
+                Event::MainEventsCleared => {
                     let v: Vec<_> = message_manager
                         .lock()
                         .unwrap()
@@ -130,9 +130,10 @@ impl NSE {
 
                     let frame_end = Instant::now();
 
-                    *delta_time.lock().unwrap() = frame_end - frame_start
-                }
-                _ => (),
+                    *delta_time.lock().unwrap() = frame_end - frame_start;
+                    frame_start = frame_end;
+                },
+                _ => { },
             }
         });
     }

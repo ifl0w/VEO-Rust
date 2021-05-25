@@ -5,7 +5,7 @@ use cgmath::{Deg, Matrix3, Quaternion, Rotation, Vector3};
 
 use winit::dpi::{PhysicalSize};
 use winit::event::{Event, KeyboardInput, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent};
-use winit::event::DeviceEvent::{MouseMotion};
+use winit::event::DeviceEvent::{MouseMotion, Key, MouseWheel};
 use winit::event::ElementState::Pressed;
 use winit::window::WindowId;
 
@@ -78,12 +78,26 @@ impl System for FPSCameraSystem {
                 }
 
                 match event {
-                    WindowEvent::KeyboardInput { input, .. } => match input {
-                        KeyboardInput {
-                            virtual_keycode,
-                            state,
-                            ..
-                        } => match (virtual_keycode, state) {
+                    WindowEvent::MouseInput { button, state, .. } => match button {
+                        MouseButton::Left => {
+                            self.active = *state == Pressed;
+                            self.mouse_delta = (0.0, 0.0);
+                        }
+                        _ => (),
+                    },
+                    WindowEvent::Resized(size) => {
+                        self.update_camera_resolution = Some(size.clone());
+                    }
+                    _ => (),
+                }
+            }
+            Event::DeviceEvent { event, .. } => {
+                match event {
+                    Key(KeyboardInput {
+                        state,
+                        virtual_keycode, ..
+                    }) => {
+                        match (virtual_keycode, state) {
                             (Some(VirtualKeyCode::W), state) => {
                                 self.move_forward = *state == Pressed;
                             }
@@ -100,30 +114,15 @@ impl System for FPSCameraSystem {
                                 self.sprint = *state == Pressed;
                             }
                             _ => {}
-                        },
-                    },
-                    WindowEvent::MouseInput { button, state, .. } => match button {
-                        MouseButton::Left => {
-                            self.active = *state == Pressed;
-                            self.mouse_delta = (0.0, 0.0);
                         }
-                        _ => (),
                     },
-                    WindowEvent::MouseWheel { delta, .. } => match delta {
+                    MouseWheel { delta, .. } => match delta {
                         MouseScrollDelta::LineDelta(_x, y) => {
                             let change = 0.1;
-                            self.movement_speed = self.movement_speed * (1.0 + y.signum() * change);
+                            self.movement_speed = self.movement_speed * (1.0 - y.signum() * change);
                         }
                         _ => ()
                     },
-                    WindowEvent::Resized(size) => {
-                        self.update_camera_resolution = Some(size.clone());
-                    }
-                    _ => (),
-                }
-            }
-            Event::DeviceEvent { event, .. } => {
-                match event {
                     MouseMotion { delta, .. } => {
                         // sum up delta. Per frame there might be more than one MouseMotion event
                         self.mouse_delta = (
