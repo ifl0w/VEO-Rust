@@ -755,12 +755,10 @@ impl OctreeSystem {
                 let intersect_frustum = cull_frustum(optimization_data, child);
                 let continue_traversal = intersect_frustum && !limit_depth_reached;
 
-                if limit_depth_reached {
-                    child.children.take(); // drop children
-                }
-
                 if continue_traversal {
                     traverse_children.push(child);
+                } else {
+                    child.children.take(); // drop children
                 }
             });
 
