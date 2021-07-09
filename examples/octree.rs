@@ -3,10 +3,7 @@ use cgmath::{Deg, Euler, Quaternion, vec3};
 use nse;
 use nse::core::Entity;
 use nse::NSE;
-use nse::rendering::{
-    Camera, Cube, Mesh, Octree, OctreeConfig, OctreeGuiSystem, OctreeSystem, RenderSystem,
-    Transformation,
-};
+use nse::rendering::{Camera, Cube, Mesh, Octree, OctreeConfig, OctreeGuiSystem, OctreeSystem, RenderSystem, Transformation, Plane};
 
 use crate::shared::benchmark_system::BenchmarkSystem;
 use crate::shared::fps_camera_system::FPSCameraSystem;

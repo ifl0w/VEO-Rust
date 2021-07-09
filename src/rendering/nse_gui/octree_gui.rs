@@ -9,7 +9,7 @@ use glium::glutin;
 use glium::glutin::event::WindowEvent;
 use glium::glutin::window::WindowBuilder;
 use imgui::*;
-use imgui::{Context, FontConfig, FontGlyphRanges, FontSource};
+use imgui::{Context, FontConfig, FontGlyphRanges, FontSource, ImStr};
 //use imgui_gfx_renderer::Shaders;
 //use imgui_rs_vulkan_renderer::Renderer;
 //use imgui_glium_renderer::glium::Display;
@@ -19,10 +19,8 @@ use winit::event::{ElementState, Event, VirtualKeyCode};
 
 use crate::core::{Filter, Message, Payload, System};
 use crate::NSE;
-use crate::rendering::{
-    Camera, Mesh, Octree, OctreeConfig, OctreeInfo, OctreeOptimizations, RenderSystem,
-    Transformation,
-};
+use crate::rendering::{Camera, Mesh, Octree, OctreeConfig, OctreeInfo, OctreeOptimizations, RenderSystem, Transformation, FractalSelection};
+use num_traits::{FromPrimitive, ToPrimitive};
 
 pub struct OctreeGuiSystem {
     imgui: Arc<Mutex<Context>>,
@@ -118,54 +116,76 @@ impl OctreeGuiSystem {
                 info.byte_size as f64 / (1024f64 * 1024f64)
             ));
             ui.text(format!(
-                "Max. number of rendered nodes: {}",
-                config.max_rendered_nodes.unwrap_or(0)
-            ));
-            ui.text(format!(
                 "GPU Allocation: {:.2} MB",
                 info.gpu_byte_size as f64 / (1024f64 * 1024f64)
             ));
 
             ui.separator();
 
-            ui.text(format!("Optimizations"));
-            if ui.checkbox(
-                im_str!("Frustum Culling"),
-                &mut self.octree_optimizations.frustum_culling,
-            ) {
-                self.messages
-                    .push(Message::new(self.octree_optimizations.clone()));
-            }
-            if ui.checkbox(
-                im_str!("Depth Culling"),
-                &mut self.octree_optimizations.depth_culling,
-            ) {
-                self.messages
-                    .push(Message::new(self.octree_optimizations.clone()));
-            }
+            let mut modified = false;
 
-            if Slider::new(im_str!("Depth Culling Threshold (px)"))
-                .range(RangeInclusive::new(2.0, 50.0))
-                .flags(SliderFlags::LOGARITHMIC)
-                .build(&ui, &mut self.octree_optimizations.depth_threshold)
-            {
-                self.messages
-                    .push(Message::new(self.octree_optimizations.clone()));
+            ui.text(format!("Fractal Selection"));
+
+            let mut selected_fractal = self.octree_config.fractal.as_mut().unwrap().to_usize().unwrap_or(0);
+
+            let mut fractal_names = vec![];
+            for x in 0.. {
+                match FromPrimitive::from_i32(x) {
+                    Some(FractalSelection::MandelBulb) => fractal_names.push(im_str!("Mandel Bulb")),
+                    Some(FractalSelection::MandelBrot) => fractal_names.push(im_str!("Mandel Brot")),
+                    Some(FractalSelection::SierpinskyPyramid) => fractal_names.push(im_str!("Sierpinsky Pyramid")),
+                    Some(FractalSelection::MengerSponge) => fractal_names.push(im_str!("Menger Sponge")),
+                    Some(_) => fractal_names.push(im_str!("Unknown Fractal")),
+                    _ => break, // leave loop
+                }
+            }
+            if ComboBox::new(im_str!("Select Fractal"))
+                .build_simple_string(
+                    &ui,
+                    &mut selected_fractal,
+                    &fractal_names) {
+                self.octree_config.fractal = FromPrimitive::from_usize(selected_fractal);
+                modified = true;
             }
 
             ui.separator();
 
-            Slider::new(im_str!("Max. Rendered Nodes"))
-                .range(RangeInclusive::new(1e4 as u64, 1e7 as u64))
-                .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap());
+            ui.text(format!("Performance Settings"));
 
-            Slider::new(im_str!("Octree Depth"))
-                .range(RangeInclusive::new(2, 11))
-                .build(&ui, self.octree_config.depth.as_mut().unwrap());
-
-            if ui.button(im_str!("Regenerate Octree"), [0.0, 0.0]) {
+            if ui.button(im_str!("Update Now"), [0.0, 0.0]) {
                 self.messages.push(Message::new(self.octree_config.clone()));
             };
+            ui.same_line(0.0);
+            if ui.checkbox(im_str!("Continuous Update"), &mut self.octree_config.continuous_update.as_mut().unwrap())
+            {
+                modified = true;
+            }
+
+            if Slider::new(im_str!("Subdivision Threshold (px)"))
+                .range(RangeInclusive::new(2.0, 50.0))
+                .flags(SliderFlags::LOGARITHMIC)
+                .build(&ui, &mut self.octree_config.subdiv_threshold.as_mut().unwrap())
+            {
+                modified = true;
+            }
+            if Slider::new(im_str!("Distance Scale"))
+                .range(RangeInclusive::new(1.0 as f64, 2.0 as f64))
+                .flags(SliderFlags::LOGARITHMIC)
+                .build(&ui, self.octree_config.threshold_scale.as_mut().unwrap())
+            {
+                modified = true;
+            }
+            if Slider::new(im_str!("Max. Octree Nodes"))
+                .range(RangeInclusive::new(1e4 as u64, 1e7 as u64))
+                .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap())
+            {
+                modified = true;
+            }
+
+            if modified {
+                self.messages.push(Message::new(self.octree_config.clone()));
+            }
+
             if ui.button(im_str!("Reset Octree"), [0.0, 0.0]) {
                 self.octree_config = OctreeConfig::default();
                 self.messages.push(Message::new(self.octree_config.clone()));
@@ -370,7 +390,6 @@ impl System for OctreeGuiSystem {
         self.platform.prepare_render(&ui, &gl_window.window()); // step 5
         // render the UI with a renderer
         let draw_data = ui.render();
-        // application-specific rendering *over the UI*
 
         let mut target = display_lock.draw();
         target.clear_color_srgb(0.1, 0.1, 0.11, 1.0);

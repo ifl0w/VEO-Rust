@@ -36,10 +36,7 @@ pub struct BenchmarkSystem {
 
 impl BenchmarkSystem {
     pub fn new() -> Arc<Mutex<Self>> {
-        let config = OctreeConfig {
-            max_rendered_nodes: Some(4e6 as u64),
-            depth: Some(10),
-        };
+        let config = OctreeConfig::default();
 
         let stages = vec![
             (

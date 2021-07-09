@@ -22,15 +22,22 @@ use gfx_hal::buffer;
 use rayon::prelude::*;
 use winit::event::Event;
 
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
+
 use crate::core::{Component, Filter, Message, Payload, System};
 use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
-use async_std::task::JoinHandle;
 
-use std::thread::sleep;
+use std::thread::{sleep, JoinHandle};
 use riffy::MpscQueue;
 
 use std::collections::VecDeque;
+use std::fmt::Debug;
+use std::fmt;
+use crate::rendering::FractalSelection::MandelBulb;
+use std::fs::read;
+use self::rand::random;
 
 const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -47,17 +54,39 @@ pub struct Octree {
     pub info: OctreeInfo,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
+pub enum FractalSelection {
+    MandelBulb = 0,
+    MandelBrot,
+    SierpinskyPyramid,
+    MengerSponge
+}
+
+impl fmt::Display for FractalSelection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+#[derive(Clone, Debug, Copy)]
 pub struct OctreeConfig {
     pub max_rendered_nodes: Option<u64>,
+    pub subdiv_threshold: Option<f64>,
+    pub threshold_scale: Option<f64>,
     pub depth: Option<u64>,
+    pub fractal: Option<FractalSelection>,
+    pub continuous_update: Option<bool>,
 }
 
 impl Default for OctreeConfig {
     fn default() -> Self {
         OctreeConfig {
             max_rendered_nodes: Some(4e6 as u64),
+            subdiv_threshold: Some(20.0),
+            threshold_scale: Some(1.0),
             depth: Some(DEFAULT_DEPTH),
+            fractal: Some(MandelBulb),
+            continuous_update: Some(true)
         }
     }
 }
@@ -144,6 +173,7 @@ impl Octree {
         let start = std::time::Instant::now();
         Arc::new(Mutex::new(Octree::build_tree(
             &mut oct.root.lock().unwrap(),
+            oct.config,
             0,
             1,
         )));
@@ -184,7 +214,7 @@ impl Octree {
         count + 1
     }
 
-    fn build_tree(node: &mut Node, current_depth: u64, target_depth: u64) {
+    fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, target_depth: u64) {
         if node.children.is_some() {
             node.children.as_mut().unwrap()
                 .iter_mut()
@@ -193,14 +223,23 @@ impl Octree {
                     let new_depth = current_depth + 1;
 
                     let zoom = 2.5;
-                    // let traverse = Octree::generate_mandelbrot(child, zoom, current_depth + 1);
-                    let traverse = Octree::generate_mandelbulb(child, zoom, current_depth + 1);
-                    // let traverse = Octree::generate_sierpinsky(child, zoom, current_depth);
-                    // let traverse = Octree::generate_menger(child, zoom, current_depth);
+
+                    let traverse = match config.fractal {
+                        Some(FractalSelection::MandelBulb) =>
+                            Octree::generate_mandelbulb(child, zoom, current_depth + 1),
+                        Some(FractalSelection::MandelBrot) =>
+                            Octree::generate_mandelbrot(child, zoom, current_depth + 1),
+                        Some(FractalSelection::SierpinskyPyramid) =>
+                            Octree::generate_sierpinsky(child, zoom, current_depth),
+                        Some(FractalSelection::MengerSponge) =>
+                            Octree::generate_menger(child, zoom, current_depth),
+                        None => false,
+                        _ => false,
+                    };
 
                     if current_depth < target_depth && traverse {
                         child.populate();
-                        Octree::build_tree(child, new_depth, target_depth)
+                        Octree::build_tree(child, config, new_depth, target_depth)
                     }
                 });
         }
@@ -605,7 +644,7 @@ pub struct OctreeSystem {
     collected_nodes: Arc<AtomicUsize>,
 
     generate_handle: Option<JoinHandle<()>>,
-    upload_handle: Option<i32>,
+    upload_handle: Option<JoinHandle<()>>,
 
     data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
     last_viewpoint: Matrix4<f32>,
@@ -637,6 +676,22 @@ impl Default for OctreeOptimizations {
 
 impl Payload for OctreeOptimizations {}
 
+impl Drop for OctreeSystem {
+    fn drop(&mut self) {
+        match self.generate_handle.take() {
+            Some(handle) => { handle.join(); },
+            _ => {}
+        }
+
+        match self.upload_handle.take() {
+            Some(handle) => { handle.join(); },
+            _ => {}
+        }
+
+        return;
+    }
+}
+
 impl OctreeSystem {
     pub fn new(render_sys: Arc<Mutex<RenderSystem>>) -> Arc<Mutex<Self>> {
         let mut collect_buf = Vec::new();
@@ -664,12 +719,13 @@ impl OctreeSystem {
         }))
     }
 
-    async fn init_data_generation(collecting_data: Arc<AtomicBool>,
-                                  optimization_data: OptimizationData,
-                                  root: Arc<Mutex<Node>>,
-                                  collected_nodes: Arc<AtomicUsize>,
-                                  data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
-                                  _view_changed: bool) {
+    fn init_data_generation(collecting_data: Arc<AtomicBool>,
+                            optimization_data: OptimizationData,
+                            config: OctreeConfig,
+                            root: Arc<Mutex<Node>>,
+                            collected_nodes: Arc<AtomicUsize>,
+                            data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
+                            _view_changed: bool) {
         // if view_changed {
         //     sleep(Duration::from_millis(25));
         // } else {
@@ -684,6 +740,7 @@ impl OctreeSystem {
 
         OctreeSystem::generate_instance_data(
             &optimization_data,
+            config,
             &mut root_lock,
             &collected_nodes,
             &collecting_data,
@@ -702,6 +759,7 @@ impl OctreeSystem {
 
     fn generate_instance_data(
         optimization_data: &OptimizationData,
+        config: OctreeConfig,
         node: &mut Node,
         atomic_counter: &AtomicUsize,
         collecting_data: &AtomicBool,
@@ -776,12 +834,13 @@ impl OctreeSystem {
                 let mut added_level = false;
                 if extend && !extended {
                     child.populate();
-                    Octree::build_tree(child, 0, 1);
+                    Octree::build_tree(child, config,0, 1);
                     added_level = true;
                 }
 
                 &mut OctreeSystem::generate_instance_data(
                     optimization_data,
+                    config,
                     child,
                     atomic_counter,
                     collecting_data,
@@ -875,7 +934,6 @@ impl System for OctreeSystem {
                         Matrix4::inverse_transform(&octree_transform.get_model_matrix()).unwrap()
                             * camera_transform.get_model_matrix(),
                     ),
-                    depth_threshold: self.optimizations.depth_threshold,
                     octree_scale: octree_transform.scale.x,
                     config: octree.config.clone(),
                 };
@@ -895,7 +953,20 @@ impl System for OctreeSystem {
                     }
                 }
 
-                let gen_data = debounced || settings_modified;
+                let gen_data = (debounced && octree.config.continuous_update.unwrap_or(true))
+                    || settings_modified;
+
+                if settings_modified && self.generate_handle.is_some() {
+                    self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
+                    let handle = self.generate_handle.take().unwrap();
+                    handle.join();
+                }
+
+                if settings_modified && self.upload_handle.is_some() {
+                    let handle = self.upload_handle.take().unwrap();
+                    self.data_queue.enqueue(Err(127)); // exit code
+                    handle.join();
+                }
 
                 if gen_data { //|| !self.collecting_data.load(Ordering::SeqCst) {
 
@@ -903,14 +974,23 @@ impl System for OctreeSystem {
                         self.collecting_data.store(false, Ordering::SeqCst);
                     }
 
-                    self.generate_handle = Some(async_std::task::spawn(OctreeSystem::init_data_generation(
-                        self.collecting_data.clone(),
-                        optimization_data,
-                        octree.root.clone(),
-                        self.collected_nodes.clone(),
-                        self.data_queue.clone(),
-                        view_changed
-                    )));
+                    let collecting_data = self.collecting_data.clone();
+                    let collected_nodes = self.collected_nodes.clone();
+                    let data_queue = self.data_queue.clone();
+                    let octree_root = octree.root.clone();
+                    let octree_config = octree.config.clone();
+
+                    self.generate_handle = Some(std::thread::spawn(move || {
+                        OctreeSystem::init_data_generation(
+                            collecting_data,
+                            optimization_data,
+                            octree_config,
+                            octree_root,
+                            collected_nodes,
+                            data_queue,
+                            view_changed
+                        )
+                    }));
 
                 }
 
@@ -920,20 +1000,19 @@ impl System for OctreeSystem {
                     let ring_buffer_len = octree.instance_data_buffer.len();
                     let _collecting_data = self.collecting_data.clone();
                     let collected_nodes = self.collected_nodes.clone();
+                    let max_len = octree.config.max_rendered_nodes.unwrap_or(1e6 as u64) as usize;
 
                     let data_queue = self.data_queue.clone();
 
-                    self.upload_handle = Some(1);
-                    rayon::spawn(move || {
-                        let max_len = 4e6 as usize;
-                        println!("max_len: {}", max_len);
+                    self.upload_handle = Some(std::thread::spawn(move || {
 
                         let mut upload_buffer = VecDeque::new();
                         let mut since_empty = 0;
                         let mut block_sizes = VecDeque::new();
+                        let mut exit = false;
 
                         loop {
-                            sleep(Duration::from_millis(50));
+                            sleep(Duration::from_millis(25));
 
                             while let Some(data) = data_queue.dequeue() {
                                 match data {
@@ -957,6 +1036,9 @@ impl System for OctreeSystem {
                                         block_sizes.push_front(val + since_empty);
                                         since_empty = 0;
                                     }
+                                    Err(127) => {
+                                        exit = true; // special thread exit code
+                                    }
                                     _ => ()
                                 }
                             }
@@ -971,8 +1053,12 @@ impl System for OctreeSystem {
 
                             active_buffer.store(buffer_idx, Ordering::SeqCst);
                             collected_nodes.store(upload_len, Ordering::SeqCst);
+
+                            if exit {
+                                return;
+                            }
                         }
-                    })
+                    }));
                 }
 
                 // octree.info.render_count = 4e6 as usize;//self.collected_nodes.load(Ordering::SeqCst);
@@ -1019,7 +1105,6 @@ struct OptimizationData {
     octree_mvp: Matrix4<f32>,
     octree_scale: f32,
     frustum: Frustum,
-    depth_threshold: f64,
     config: OctreeConfig,
 }
 
@@ -1049,11 +1134,12 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Node) -> b
         true;
     }
 
-    let mut projected_scale = node.scale / projected_position.w;
-    // let mut projected_scale = node.scale / projected_position.w.pow(1.5); // non linear scale
+    // let mut projected_scale = node.scale / projected_position.w; // fixed linear scaling
+    let exponent = optimization_data.config.threshold_scale.unwrap(); // 1 = linear scaling
+    let mut projected_scale = node.scale / projected_position.w.pow(exponent as f32);
     projected_scale *= optimization_data.camera.resolution[0] / 2.0;
 
-    let target_size = optimization_data.depth_threshold as f32 / optimization_data.octree_scale;
+    let target_size = optimization_data.config.subdiv_threshold.unwrap() as f32 / optimization_data.octree_scale;
     return if projected_scale.abs() < target_size as f32 {
         true
     } else {
