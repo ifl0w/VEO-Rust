@@ -54,7 +54,7 @@ pub struct Octree {
     pub info: OctreeInfo,
 }
 
-#[derive(Clone, Copy, Debug, FromPrimitive, ToPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum FractalSelection {
     MandelBulb = 0,
     MandelBrot,
@@ -184,6 +184,38 @@ impl Octree {
         oct.info.byte_size = self::Octree::size_in_bytes(&oct);
 
         oct
+    }
+
+    pub fn reconfigure(&mut self, render_system: &Arc<Mutex<RenderSystem>>, config: OctreeConfig) {
+        let rm = render_system.lock().unwrap().resource_manager.clone();
+        let mut rm_lock = rm.lock().unwrap();
+
+        let dev = render_system.lock().unwrap().renderer.device.clone();
+        let adapter = render_system.lock().unwrap().renderer.adapter.clone();
+
+        // read config
+        self.config = config;
+        let depth = config.depth.unwrap_or(DEFAULT_DEPTH);
+        let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(4e6 as u64);
+
+        // byte size calculations
+        let max_num_nodes = (SUBDIVISIONS as i64).pow(3 * depth as u32) as usize;
+        let max_byte_size = std::mem::size_of::<Node>() * max_num_nodes;
+        let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
+
+        let ring_buffer_length = 2;
+
+        self.instance_data_buffer = Vec::with_capacity(ring_buffer_length);
+        for _ in 0..ring_buffer_length {
+            let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(
+                &dev,
+                &adapter,
+                max_gpu_byte_size,
+                buffer::Usage::STORAGE | buffer::Usage::VERTEX,
+            ));
+
+            self.instance_data_buffer.push(buffer);
+        }
     }
 
     pub fn get_instance_buffer(&self) -> Option<&Arc<Mutex<GPUBuffer<Backend::Backend>>>> {
@@ -648,7 +680,7 @@ pub struct OctreeSystem {
 
     data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
     last_viewpoint: Matrix4<f32>,
-    debounce_delay: i64,
+    dirty: bool,
 }
 
 unsafe impl Send for OctreeSystem {}
@@ -715,7 +747,7 @@ impl OctreeSystem {
 
             data_queue: Arc::new(MpscQueue::new()),
             last_viewpoint: Matrix4::identity(),
-            debounce_delay: 500
+            dirty: true
         }))
     }
 
@@ -891,7 +923,12 @@ impl System for OctreeSystem {
             let mut settings_modified = false;
             if self.update_config.is_some() {
                 let conf = self.update_config.take().unwrap();
-                octree = Octree::new(&self.render_sys, conf);
+                if conf.fractal.unwrap() != octree.config.fractal.unwrap() {
+                    // need to create new octree
+                    octree = Octree::new(&self.render_sys, conf);
+                } else {
+                    octree.reconfigure(&self.render_sys, conf);
+                }
                 settings_modified = true;
             }
 
@@ -940,20 +977,11 @@ impl System for OctreeSystem {
 
                 let instance_data_start = Instant::now();
 
-                let mut debounced = false;
-                if self.debounce_delay > 0 {
-                    self.debounce_delay -= _delta_time.as_millis() as i64;
-
-                    if self.debounce_delay <= 0 {
-                        debounced = true;
-                    }
-                } else {
-                    if view_changed {
-                        self.debounce_delay = 150;
-                    }
+                if view_changed {
+                    self.dirty = true;
                 }
 
-                let gen_data = (debounced && octree.config.continuous_update.unwrap_or(true))
+                let gen_data = (!view_changed && self.dirty && octree.config.continuous_update.unwrap_or(true))
                     || settings_modified;
 
                 if settings_modified && self.generate_handle.is_some() {
@@ -969,6 +997,8 @@ impl System for OctreeSystem {
                 }
 
                 if gen_data { //|| !self.collecting_data.load(Ordering::SeqCst) {
+
+                    self.dirty = false;
 
                     if self.generate_handle.is_some() {
                         self.collecting_data.store(false, Ordering::SeqCst);
@@ -1012,18 +1042,31 @@ impl System for OctreeSystem {
                         let mut exit = false;
 
                         loop {
-                            sleep(Duration::from_millis(25));
+                            sleep(Duration::from_millis(50));
 
                             while let Some(data) = data_queue.dequeue() {
                                 match data {
                                     Ok(data) => {
                                         since_empty += data.len();
 
+                                        let mut val = block_sizes.pop_front().unwrap_or(0);
+
                                         for i in 0..data.len() {
                                             upload_buffer.push_back(data[i]);
                                         }
+
+                                        if val > data.len() {
+                                            for _ in 0..data.len() {
+                                                upload_buffer.pop_front();
+                                            }
+                                            val -= data.len();
+                                        }
+
+                                        if val > 0 {
+                                            block_sizes.push_front(val);
+                                        }
                                     }
-                                    Err(0) => {
+                                    Err(0) => { // complete
                                         for _i in 0 .. block_sizes.pop_front().unwrap_or(0) {
                                             upload_buffer.pop_front();
                                         }

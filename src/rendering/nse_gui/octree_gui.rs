@@ -162,21 +162,21 @@ impl OctreeGuiSystem {
             }
 
             if Slider::new(im_str!("Subdivision Threshold (px)"))
-                .range(RangeInclusive::new(2.0, 50.0))
+                .range(RangeInclusive::new(1.0, 50.0))
                 .flags(SliderFlags::LOGARITHMIC)
                 .build(&ui, &mut self.octree_config.subdiv_threshold.as_mut().unwrap())
             {
                 modified = true;
             }
             if Slider::new(im_str!("Distance Scale"))
-                .range(RangeInclusive::new(1.0 as f64, 2.0 as f64))
+                .range(RangeInclusive::new(1.0 as f64, 4.0 as f64))
                 .flags(SliderFlags::LOGARITHMIC)
                 .build(&ui, self.octree_config.threshold_scale.as_mut().unwrap())
             {
                 modified = true;
             }
             if Slider::new(im_str!("Max. Octree Nodes"))
-                .range(RangeInclusive::new(1e4 as u64, 1e7 as u64))
+                .range(RangeInclusive::new(1e4 as u64, 2e7 as u64))
                 .build(&ui, self.octree_config.max_rendered_nodes.as_mut().unwrap())
             {
                 modified = true;
