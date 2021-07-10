@@ -128,7 +128,7 @@ impl RenderSystem {
     fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
         winit::window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
-            .with_inner_size(winit::dpi::LogicalSize::new(
+            .with_inner_size(winit::dpi::PhysicalSize::new(
                 WINDOW_DIMENSIONS.width,
                 WINDOW_DIMENSIONS.height,
             ))

@@ -85,6 +85,13 @@ impl System for FPSCameraSystem {
                         }
                         _ => (),
                     },
+                    WindowEvent::MouseWheel { delta, .. } => match delta {
+                        MouseScrollDelta::LineDelta(_x, y) => {
+                            let change = 0.1;
+                            self.movement_speed = self.movement_speed * (1.0 - y.signum() * change);
+                        }
+                        _ => ()
+                    },
                     WindowEvent::Resized(size) => {
                         self.update_camera_resolution = Some(size.clone());
                     }
@@ -115,13 +122,6 @@ impl System for FPSCameraSystem {
                             }
                             _ => {}
                         }
-                    },
-                    MouseWheel { delta, .. } => match delta {
-                        MouseScrollDelta::LineDelta(_x, y) => {
-                            let change = 0.1;
-                            self.movement_speed = self.movement_speed * (1.0 - y.signum() * change);
-                        }
-                        _ => ()
                     },
                     MouseMotion { delta, .. } => {
                         // sum up delta. Per frame there might be more than one MouseMotion event
