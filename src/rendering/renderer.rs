@@ -522,10 +522,10 @@ impl<B> Drop for Renderer<B>
             }
 
             if let Some(instance) = &self.instance {
-                let surface = ManuallyDrop::into_inner(ptr::read(&self.surface));
+                let mut surface = ManuallyDrop::into_inner(ptr::read(&self.surface));
+                surface.unconfigure_swapchain(self.device.as_ref());
                 instance.destroy_surface(surface);
             }
         }
-        println!("DROPPED!");
     }
 }

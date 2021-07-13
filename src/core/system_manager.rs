@@ -125,3 +125,12 @@ impl SystemManager {
         self.filter.get(&typeid)
     }
 }
+
+impl Drop for SystemManager {
+    fn drop(&mut self) {
+        // drop systems in reverse order
+        while let Some(system) = self.systems.pop() {
+            std::mem::drop(system);
+        }
+    }
+}

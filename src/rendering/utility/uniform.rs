@@ -13,6 +13,8 @@ use gfx_hal::memory::Segment;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 
 use crate::rendering::renderer::Renderer;
+use async_std::io::_print;
+use std::fs::read_to_string;
 
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,
@@ -119,7 +121,7 @@ impl<B: Backend> GPUBuffer<B> {
                     offset: offset as u64,
                     size: Some(self.size as u64),
                 })
-                .unwrap();
+                .expect("Could not map GPU memory!");
             ptr::copy_nonoverlapping(data_source.as_ptr() as *const u8, mapping, upload_size);
             device.unmap_memory(memory);
         }

@@ -16,6 +16,7 @@ use crate::core::{EntityManager, EntityRef, Exit, Message, System};
 use crate::core::MessageManager;
 use crate::core::SystemManager;
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
+use winit::platform::run_return::EventLoopExtRunReturn;
 
 //use winit::{Event, EventsLoop, WindowEvent};
 
@@ -64,7 +65,8 @@ impl NSE {
         let mut profiling_data = ProfilingData::default();
         let mut frame_start = Instant::now();
 
-        self.event_loop.run(move |event, _, control_flow| {
+        let mut event_loop = self.event_loop;
+        event_loop.run_return(move |event, _, control_flow| {
             let system_manager_lock = system_manager.lock().unwrap();
 
             let mut exit = false;
