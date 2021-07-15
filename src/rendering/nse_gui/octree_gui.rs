@@ -169,8 +169,8 @@ impl OctreeGuiSystem {
                 modified = true;
             }
             if Slider::new(im_str!("Distance Scale"))
-                .range(RangeInclusive::new(1.0 as f64, 4.0 as f64))
-                .flags(SliderFlags::LOGARITHMIC)
+                .range(RangeInclusive::new(0.05 as f64, 1.0 as f64))
+                // .flags(SliderFlags::LOGARITHMIC)
                 .build(&ui, self.octree_config.threshold_scale.as_mut().unwrap())
             {
                 modified = true;

@@ -860,6 +860,10 @@ impl OctreeSystem {
                 let continue_traversal = intersect_frustum && !limit_depth_reached;
 
                 if continue_traversal {
+                    if child.is_leaf() {
+                        Octree::build_tree(child, config,0, 1);
+                    }
+
                     traverse_children.push(child);
                 } else {
                     child.children.take(); // drop children
@@ -873,20 +877,15 @@ impl OctreeSystem {
 
         traverse_children
             .par_iter_mut()
-            .for_each(|child| {
-                if child.is_leaf() {
-                    Octree::build_tree(child, config,0, 1);
-                }
-
-                &mut OctreeSystem::generate_instance_data(
+            .for_each(|child| OctreeSystem::generate_instance_data(
                     optimization_data,
                     config,
                     child,
                     atomic_counter,
                     collecting_data,
                     data_queue
-                );
-            });
+                )
+            );
     }
 }
 
@@ -1191,8 +1190,14 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Node) -> b
 
     // let mut projected_scale = node.scale / projected_position.w; // fixed linear scaling
     let exponent = optimization_data.config.threshold_scale.unwrap(); // 1 = linear scaling
-    let mut projected_scale = node.scale / projected_position.w.pow(exponent as f32);
+    let mut projected_scale = node.scale / projected_position.w; // * 2.0.pow(1.0/exponent as f32) as f32);
+    let depth = (projected_position.z / projected_position.w).max(0.0);
+    // let dist = (projected_position.truncate() / projected_position.w).magnitude().max(0.0);
+    // let exp = (dist as f32 / exponent as f32).max(1.0);
+    let exp = (depth as f32 / exponent as f32).max(1.0);
+    projected_scale = projected_scale.pow(exp as f32);
     projected_scale *= optimization_data.camera.resolution[0] / 2.0;
+
 
     let target_size = optimization_data.config.subdiv_threshold.unwrap() as f32 / optimization_data.octree_scale;
     return if projected_scale.abs() < target_size as f32 {
