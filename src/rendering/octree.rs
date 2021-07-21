@@ -38,6 +38,8 @@ use std::fmt;
 use crate::rendering::FractalSelection::MandelBulb;
 use std::fs::read;
 use self::rand::random;
+use std::ops::{Deref, DerefMut};
+use shared_arena::{SharedArena, ArenaBox, ArenaArc, ArenaRc};
 
 const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -52,6 +54,8 @@ pub struct Octree {
 
     pub config: OctreeConfig,
     pub info: OctreeInfo,
+
+    pub node_pool: Arc<SharedArena<NodeChildren>>
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, FromPrimitive, ToPrimitive)]
@@ -157,24 +161,28 @@ impl Octree {
             gpu_byte_size: max_gpu_byte_size * ring_buffer_length,
         };
 
+        let arena = Arc::new(SharedArena::new());
         let mut oct = Octree {
-            root: Arc::new(Mutex::new(
-                Node::new_inner(vec3(0.0, 0.0, 0.0), 1.0)
-            )),
+            root: Arc::new(Mutex::new(Node::new_inner(vec3(0.0, 0.0, 0.0), 1.0))),
             instance_data_buffer,
             active_instance_buffer_idx: Arc::new(AtomicUsize::new(0)),
 
             config,
             info: octree_info,
+
+            node_pool: arena
         };
 
         let start = std::time::Instant::now();
-        Octree::build_tree(
-            &mut oct.root.lock().unwrap(),
-            oct.config,
-            0,
-            1,
-        );
+        {
+            Octree::build_tree(
+                &mut oct.root.lock().unwrap(),
+                oct.config,
+                0,
+                1,
+                &oct.node_pool
+            );
+        }
         let end = std::time::Instant::now();
 
         println!("Octree build time: {:?}", end - start);
@@ -234,8 +242,7 @@ impl Octree {
         let mut count = 0;
 
         if node.children.is_some() {
-            node.children.as_ref().unwrap()
-                .iter()
+            node.children.as_ref().unwrap().iter()
                 .for_each(|child| {
                     count += self.count_nodes(child);
                 });
@@ -244,35 +251,35 @@ impl Octree {
         count + 1
     }
 
-    fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, target_depth: u64) {
-        if node.children.is_none() {
-            node.populate();
-        }
+    fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, target_depth: u64, node_pool: &SharedArena<NodeChildren>) {
+        node.populate(node_pool);
 
-        node.children.as_mut().unwrap()
+        node.children.as_mut().unwrap().as_mut()
             .iter_mut()
-            .enumerate()
-            .for_each(|(_idx, child)| {
+            .for_each(|child| {
                 let new_depth = current_depth + 1;
 
-                let zoom = 2.5;
+                let traverse = {
+                    // let child = id; //node_pool.get_mut(*id).unwrap();
 
-                let traverse = match config.fractal {
-                    Some(FractalSelection::MandelBulb) =>
-                        Octree::generate_mandelbulb(child, zoom, current_depth + 1),
-                    Some(FractalSelection::MandelBrot) =>
-                        Octree::generate_mandelbrot(child, zoom, current_depth + 1),
-                    Some(FractalSelection::SierpinskyPyramid) =>
-                        Octree::generate_sierpinsky(child, zoom, current_depth),
-                    Some(FractalSelection::MengerSponge) =>
-                        Octree::generate_menger(child, zoom, current_depth),
-                    None => false,
-                    _ => false,
+                    let zoom = 2.5;
+
+                    match config.fractal {
+                        Some(FractalSelection::MandelBulb) =>
+                            Octree::generate_mandelbulb(child, zoom, current_depth + 1),
+                        Some(FractalSelection::MandelBrot) =>
+                            Octree::generate_mandelbrot(child, zoom, current_depth + 1),
+                        Some(FractalSelection::SierpinskyPyramid) =>
+                            Octree::generate_sierpinsky(child, zoom, current_depth),
+                        Some(FractalSelection::MengerSponge) =>
+                            Octree::generate_menger(child, zoom, current_depth),
+                        None => false,
+                        _ => false,
+                    }
                 };
 
                 if current_depth < target_depth && traverse {
-                    child.populate();
-                    Octree::build_tree(child, config, new_depth, target_depth)
+                    Octree::build_tree(child, config, new_depth, target_depth, node_pool)
                 }
             });
     }
@@ -571,14 +578,27 @@ impl Octree {
     }
 }
 
-#[derive(Clone, Debug)]
+type NodeChildren = [Node; SUBDIVISIONS * SUBDIVISIONS * SUBDIVISIONS];
+
+#[derive(Debug)]
 pub struct Node {
-    children: Option<Vec<Node>>,
+    children: Option<ArenaBox<NodeChildren>>,
     position: Vector3<f32>,
     // position of the node
     scale: f32,
     // length of a side of the node
     solid: bool,
+}
+
+impl Clone for Node {
+    fn clone(&self) -> Self {
+        Node {
+            position: self.position,
+            scale: self.scale,
+            solid: self.solid,
+            children: None // never clone children!
+        }
+    }
 }
 
 impl Node {
@@ -605,14 +625,14 @@ impl Node {
         tmp
     }
 
-    pub fn populate(&mut self) {
+    pub fn populate(&mut self, node_pool: &SharedArena<NodeChildren>) {
         if self.children.is_some() {
-            panic!("Repopulating a octree cell is currently not supported");
+            return; // nothing to do
         }
 
         let scale_factor = 1.0 / SUBDIVISIONS as f32;
 
-        self.children = Some(Vec::with_capacity(SUBDIVISIONS.pow(3)));
+        let mut chil = node_pool.alloc(Default::default());
 
         for id_x in 0..SUBDIVISIONS {
             for id_y in 0..SUBDIVISIONS {
@@ -623,10 +643,20 @@ impl Node {
                     t -= Vector3::from_value(self.scale * 0.5 - s * 0.5);
                     t += vec3(s * id_x as f32, s * id_y as f32, s * id_z as f32);
 
-                    self.children.as_mut().unwrap().push(Node::new_inner(t, s));
+                    let idx = SUBDIVISIONS.pow(0) * id_x
+                        + SUBDIVISIONS.pow(1) * id_y
+                        + SUBDIVISIONS.pow(2) * id_z;
+
+                    chil[idx].solid = false;
+                    chil[idx].children = None;
+                    chil[idx].position = t;
+                    chil[idx].scale = s;
                 }
             }
         }
+
+        self.children = Some(chil);
+
     }
 
     pub fn count_nodes(&self) -> usize {
@@ -692,7 +722,7 @@ pub struct OctreeSystem {
     generate_handle: Option<JoinHandle<()>>,
     upload_handle: Option<JoinHandle<()>>,
 
-    data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
+    data_queue: Arc<MpscQueue<Result<InstanceData, i8>>>,
     last_viewpoint: Matrix4<f32>,
     dirty: bool,
 }
@@ -771,18 +801,11 @@ impl OctreeSystem {
                             config: OctreeConfig,
                             root: Arc<Mutex<Node>>,
                             collected_nodes: Arc<AtomicUsize>,
-                            data_queue: Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>,
-                            _view_changed: bool) {
-        // if view_changed {
-        //     sleep(Duration::from_millis(25));
-        // } else {
-        // }
-
+                            data_queue: Arc<MpscQueue<Result<InstanceData, i8>>>,
+                            node_pool: &SharedArena<NodeChildren>
+    ) {
         let mut root_lock = root.lock().unwrap();
 
-        // building matrices
-        // let mut node_count = std::sync::atomic::AtomicUsize::new(0);
-        // collected_nodes.store(0, Ordering::SeqCst);
         collecting_data.store(true, Ordering::SeqCst);
 
         OctreeSystem::generate_instance_data(
@@ -791,7 +814,8 @@ impl OctreeSystem {
             &mut root_lock,
             &collected_nodes,
             &collecting_data,
-            &data_queue
+            &data_queue,
+            node_pool
         );
 
         if collecting_data.load(Ordering::SeqCst) { // really finished
@@ -800,7 +824,10 @@ impl OctreeSystem {
             data_queue.enqueue(Err(1)); // cancelled traversal
         }
 
-        // println!("{:?}", root_lock.count_nodes() as usize * std::mem::size_of::<Node>());
+        // let stats = node_pool.stats();
+        // let allocation = stats.0 + stats.1;
+        // let b = allocation * std::mem::size_of::<Node>();
+        // println!("Arena stats: {:?}; Arena size: {:?}mb", stats,  b / (1024*1024));
         collecting_data.store(false, Ordering::SeqCst);
     }
 
@@ -810,7 +837,8 @@ impl OctreeSystem {
         node: &mut Node,
         atomic_counter: &AtomicUsize,
         collecting_data: &AtomicBool,
-        data_queue: &Arc<MpscQueue<Result<Vec<InstanceData>, i8>>>
+        data_queue: &Arc<MpscQueue<Result<InstanceData, i8>>>,
+        node_pool: &SharedArena<NodeChildren>
     ) {
         if node.children.is_none() { return; }
 
@@ -819,13 +847,13 @@ impl OctreeSystem {
         }
 
         let mut traverse_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
-        let mut render_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
 
         let camera_pos = optimization_data.camera_transform.position;
         let camera_mag = camera_pos.magnitude();
         let camera_dir = optimization_data.camera_transform.rotation.rotate_vector(-Vector3::unit_z());
 
-        node.children.as_mut().unwrap().sort_unstable_by(|a, b| {
+        node.children.as_mut().unwrap().as_mut()
+            .sort_unstable_by(|a, b| {
             let dist_a = camera_dir.extend(camera_mag)
                 .dot((a.position).extend(1.0));
             let dist_b = camera_dir.extend(camera_mag)
@@ -834,21 +862,20 @@ impl OctreeSystem {
             dist_a.partial_cmp(&dist_b).unwrap()
         });
 
-        node.children
+        node.children.as_mut().unwrap()
             .as_mut()
-            .unwrap()
             .iter_mut()
             .for_each(|child| {
                 let limit_depth_reached = limit_depth_traversal(optimization_data, child);
 
                 // add transformation data
                 let include = limit_depth_reached && child.solid;
-                // include = include || (child.is_leaf() && child.solid);
 
                 if include {
-                    render_children.push(InstanceData {
+
+                    data_queue.enqueue(Ok(InstanceData {
                         transformation: child.position.extend(child.scale).into(),
-                    });
+                    }));
                 }
 
                 // check weather to traverse further
@@ -861,7 +888,7 @@ impl OctreeSystem {
 
                 if continue_traversal {
                     if child.is_leaf() {
-                        Octree::build_tree(child, config,0, 1);
+                        Octree::build_tree(child, config,0, 1, node_pool);
                     }
 
                     traverse_children.push(child);
@@ -869,11 +896,6 @@ impl OctreeSystem {
                     child.children.take(); // drop children
                 }
             });
-
-        if render_children.len() > 0 {
-            // atomic_counter.fetch_add(render_children.len(), Ordering::SeqCst);
-            data_queue.enqueue(Ok(render_children));
-        }
 
         traverse_children
             .par_iter_mut()
@@ -883,7 +905,8 @@ impl OctreeSystem {
                     child,
                     atomic_counter,
                     collecting_data,
-                    data_queue
+                    data_queue,
+                    node_pool
                 )
             );
     }
@@ -1016,6 +1039,7 @@ impl System for OctreeSystem {
                     let data_queue = self.data_queue.clone();
                     let octree_root = octree.root.clone();
                     let octree_config = octree.config.clone();
+                    let mut node_pool = octree.node_pool.clone();
 
                     self.generate_handle = Some(std::thread::spawn(move || {
                         OctreeSystem::init_data_generation(
@@ -1025,7 +1049,7 @@ impl System for OctreeSystem {
                             octree_root,
                             collected_nodes,
                             data_queue,
-                            view_changed
+                            &node_pool
                         )
                     }));
 
@@ -1054,19 +1078,15 @@ impl System for OctreeSystem {
                             while let Some(data) = data_queue.dequeue() {
                                 match data {
                                     Ok(data) => {
-                                        since_empty += data.len();
+                                        since_empty += 1;
 
                                         let mut val = block_sizes.pop_front().unwrap_or(0);
 
-                                        for i in 0..data.len() {
-                                            upload_buffer.push_back(data[i]);
-                                        }
+                                        upload_buffer.push_back(data);
 
-                                        if val > data.len() {
-                                            for _ in 0..data.len() {
-                                                upload_buffer.pop_front();
-                                            }
-                                            val -= data.len();
+                                        if val > 1 {
+                                            upload_buffer.pop_front();
+                                            val -= 1;
                                         }
 
                                         if val > 0 {
