@@ -144,6 +144,7 @@ impl OctreeGuiSystem {
                     &ui,
                     &mut selected_fractal,
                     &fractal_names) {
+                self.octree_config = OctreeConfig::default();
                 self.octree_config.fractal = FromPrimitive::from_usize(selected_fractal);
                 modified = true;
             }

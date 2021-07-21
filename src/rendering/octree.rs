@@ -951,14 +951,29 @@ impl System for OctreeSystem {
 
             let mut settings_modified = false;
             if self.update_config.is_some() {
+
+                if self.generate_handle.is_some() {
+                    self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
+                    let handle = self.generate_handle.take().unwrap();
+                    handle.join();
+                }
+
+                if self.upload_handle.is_some() {
+                    let handle = self.upload_handle.take().unwrap();
+                    self.data_queue.enqueue(Err(127)); // exit code
+                    handle.join();
+                }
+
                 let conf = self.update_config.take().unwrap();
                 if conf.fractal.unwrap() != octree.config.fractal.unwrap() {
                     // need to create new octree
+                    std::mem::drop(octree.node_pool);
                     octree = Octree::new(&self.render_sys, conf);
                 } else {
                     // octree = Octree::new(&self.render_sys, conf);
                     octree.reconfigure(&self.render_sys, conf);
                 }
+
                 settings_modified = true;
             }
 
@@ -1013,18 +1028,6 @@ impl System for OctreeSystem {
 
                 let gen_data = (!view_changed && self.dirty && octree.config.continuous_update.unwrap_or(true))
                     || settings_modified;
-
-                if settings_modified && self.generate_handle.is_some() {
-                    self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
-                    let handle = self.generate_handle.take().unwrap();
-                    handle.join();
-                }
-
-                if settings_modified && self.upload_handle.is_some() {
-                    let handle = self.upload_handle.take().unwrap();
-                    self.data_queue.enqueue(Err(127)); // exit code
-                    handle.join();
-                }
 
                 if gen_data { //|| !self.collecting_data.load(Ordering::SeqCst) {
 
