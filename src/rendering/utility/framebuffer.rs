@@ -1,5 +1,4 @@
 use std::mem::ManuallyDrop;
-use std::ptr;
 use std::sync::Arc;
 
 use gfx_hal::{Backend, image};
@@ -36,8 +35,8 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
         render_pass: &B::RenderPass,
         extent: Extent2D,
         usage: Usage,
-        colorFormat: Format,
-        depthFormat: Format,
+        color_format: Format,
+        depth_format: Format,
         frames: usize,
     ) -> Result<Self, &'static str> {
         let extend_2d = extent;
@@ -59,7 +58,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
 
         for _ in 0..frames {
             unsafe {
-                let fb_image = Image::new(adapter, device, extend_2d, usage, colorFormat)
+                let fb_image = Image::new(adapter, device, extend_2d, usage, color_format)
                     .expect("Image creation failed!");
 
                 let fb_depth_image =
@@ -72,12 +71,12 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
                             image::FramebufferAttachment {
                                 usage: usage,
                                 view_caps: ViewCapabilities::MUTABLE_FORMAT,
-                                format: colorFormat,
+                                format: color_format,
                             },
                             image::FramebufferAttachment {
                                 usage: Usage::DEPTH_STENCIL_ATTACHMENT,
                                 view_caps: ViewCapabilities::MUTABLE_FORMAT,
-                                format: depthFormat,
+                                format: depth_format,
                             }
                         ].into_iter(),
                         extent,
@@ -151,34 +150,27 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
     }
 }
 
-impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
+impl<B: Backend, D: Device<B>> Drop for Framebuffer<B, D> {
     fn drop(&mut self) {
-        let device = &self.device;
 
         unsafe {
-            for fence in self.framebuffer_fences.iter() {
-                device.wait_for_fence(fence, !0).unwrap();
-                device.destroy_fence(ManuallyDrop::into_inner(ptr::read(fence)));
-            }
-
             for idx in 0..self.command_pools.len() {
+                self.device.wait_for_fence(&mut self.framebuffer_fences[idx], !0).unwrap();
+
+                self.device.destroy_fence(ManuallyDrop::take(&mut self.framebuffer_fences[idx]));
+                self.device.destroy_semaphore(ManuallyDrop::take(&mut self.acquire_semaphores[idx]));
+                self.device.destroy_semaphore(ManuallyDrop::take(&mut self.present_semaphores[idx]));
+                self.device.destroy_framebuffer(ManuallyDrop::take(&mut self.framebuffers[idx]));
+
                 let cmds = self.command_buffer_lists[idx].drain(..);
-                self.command_pools[idx].free(cmds);
-                device.destroy_command_pool(ManuallyDrop::into_inner(ptr::read(
-                    &self.command_pools[idx],
-                )));
-            }
+                if cmds.len() > 0 {
+                    self.command_pools[idx].reset(true);
+                    self.command_pools[idx].free(cmds);
 
-            for acquire_semaphore in self.acquire_semaphores.iter() {
-                device.destroy_semaphore(ManuallyDrop::into_inner(ptr::read(acquire_semaphore)));
-            }
-
-            for present_semaphore in self.present_semaphores.iter() {
-                device.destroy_semaphore(ManuallyDrop::into_inner(ptr::read(present_semaphore)));
-            }
-
-            for framebuffer in self.framebuffers.iter() {
-                device.destroy_framebuffer(ManuallyDrop::into_inner(ptr::read(framebuffer)));
+                    // destroying the command pool outside of this condition results in a segfault
+                    // during device deletion. Further investigation is required.
+                    self.device.destroy_command_pool(ManuallyDrop::take(&mut self.command_pools[idx]));
+                }
             }
         }
     }

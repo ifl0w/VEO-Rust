@@ -13,8 +13,6 @@ use gfx_hal::memory::Segment;
 use gfx_hal::pso::{Descriptor, DescriptorSetWrite};
 
 use crate::rendering::renderer::Renderer;
-use async_std::io::_print;
-use std::fs::read_to_string;
 
 pub struct GPUBuffer<B: Backend> {
     device: Arc<B::Device>,

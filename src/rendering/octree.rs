@@ -23,7 +23,6 @@ use rayon::prelude::*;
 use winit::event::Event;
 
 use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::core::{Component, Filter, Message, Payload, System};
 use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
@@ -36,10 +35,10 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::fmt;
 use crate::rendering::FractalSelection::MandelBulb;
-use std::fs::read;
-use self::rand::random;
-use std::ops::{Deref, DerefMut};
-use shared_arena::{SharedArena, ArenaBox, ArenaArc, ArenaRc};
+
+
+
+use shared_arena::{SharedArena, ArenaBox};
 
 const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -206,7 +205,7 @@ impl Octree {
 
         // byte size calculations
         let max_num_nodes = (SUBDIVISIONS as i64).pow(3 * depth as u32) as usize;
-        let max_byte_size = std::mem::size_of::<Node>() * max_num_nodes;
+        let _max_byte_size = std::mem::size_of::<Node>() * max_num_nodes;
         let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
 
         let ring_buffer_length = 2;
@@ -440,7 +439,7 @@ impl Octree {
         return traverse;
     }
 
-    fn generate_menger(child: &mut Node, _zoom: f32, depth: u64) -> bool {
+    fn generate_menger(child: &mut Node, _zoom: f32, _depth: u64) -> bool {
         let s = child.scale;
         let p = child.position;
 
@@ -755,13 +754,13 @@ impl Payload for OctreeOptimizations {}
 impl Drop for OctreeSystem {
     fn drop(&mut self) {
         match self.generate_handle.take() {
-            Some(handle) => { handle.join(); },
+            Some(handle) => { handle.join().unwrap(); },
             _ => {}
         }
 
-        self.data_queue.enqueue(Err(127)); // inform thread to exit
+        self.data_queue.enqueue(Err(127)).unwrap(); // inform thread to exit
         match self.upload_handle.take() {
-            Some(handle) => { handle.join(); },
+            Some(handle) => { handle.join().unwrap(); },
             _ => {}
         }
 
@@ -819,9 +818,9 @@ impl OctreeSystem {
         );
 
         if collecting_data.load(Ordering::SeqCst) { // really finished
-            data_queue.enqueue(Err(0)); // completely finished traversal
+            data_queue.enqueue(Err(0)).unwrap(); // completely finished traversal
         } else {
-            data_queue.enqueue(Err(1)); // cancelled traversal
+            data_queue.enqueue(Err(1)).unwrap(); // cancelled traversal
         }
 
         // let stats = node_pool.stats();
@@ -875,7 +874,7 @@ impl OctreeSystem {
 
                     data_queue.enqueue(Ok(InstanceData {
                         transformation: child.position.extend(child.scale).into(),
-                    }));
+                    })).unwrap();
                 }
 
                 // check weather to traverse further
@@ -955,13 +954,13 @@ impl System for OctreeSystem {
                 if self.generate_handle.is_some() {
                     self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
                     let handle = self.generate_handle.take().unwrap();
-                    handle.join();
+                    handle.join().unwrap();
                 }
 
                 if self.upload_handle.is_some() {
                     let handle = self.upload_handle.take().unwrap();
-                    self.data_queue.enqueue(Err(127)); // exit code
-                    handle.join();
+                    self.data_queue.enqueue(Err(127)).unwrap(); // exit code
+                    handle.join().unwrap();
                 }
 
                 let conf = self.update_config.take().unwrap();
@@ -1042,7 +1041,7 @@ impl System for OctreeSystem {
                     let data_queue = self.data_queue.clone();
                     let octree_root = octree.root.clone();
                     let octree_config = octree.config.clone();
-                    let mut node_pool = octree.node_pool.clone();
+                    let node_pool = octree.node_pool.clone();
 
                     self.generate_handle = Some(std::thread::spawn(move || {
                         OctreeSystem::init_data_generation(
@@ -1228,14 +1227,6 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Node) -> b
     } else {
         false
     };
-}
-
-fn limit_solid_traversal(_: &OptimizationData, node: &Node) -> bool {
-    return !node.solid;
-}
-
-fn generate_leaf_model_matrix(_: &OptimizationData, node: &Node) -> bool {
-    node.is_leaf()
 }
 
 fn filter_is_solid(_: &OptimizationData, node: &Node) -> bool {

@@ -9,10 +9,8 @@ use glium::glutin;
 use glium::glutin::event::WindowEvent;
 use glium::glutin::window::WindowBuilder;
 use imgui::*;
-use imgui::{Context, FontConfig, FontGlyphRanges, FontSource, ImStr};
-//use imgui_gfx_renderer::Shaders;
-//use imgui_rs_vulkan_renderer::Renderer;
-//use imgui_glium_renderer::glium::Display;
+use imgui::{Context, FontConfig, FontGlyphRanges, FontSource};
+
 use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use winit::event::{ElementState, Event, VirtualKeyCode};
@@ -106,7 +104,7 @@ impl OctreeGuiSystem {
         }))
     }
 
-    fn display_octree_ui(&mut self, ui: &Ui, config: &OctreeConfig, info: &OctreeInfo) {
+    fn display_octree_ui(&mut self, ui: &Ui, _config: &OctreeConfig, info: &OctreeInfo) {
         if CollapsingHeader::new(im_str!("Settings"))
             .default_open(true)
             .build(&ui)

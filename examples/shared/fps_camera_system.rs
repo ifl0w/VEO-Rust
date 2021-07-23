@@ -5,7 +5,7 @@ use cgmath::{Deg, Matrix3, Quaternion, Rotation, Vector3};
 
 use winit::dpi::{PhysicalSize};
 use winit::event::{Event, KeyboardInput, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent};
-use winit::event::DeviceEvent::{MouseMotion, Key, MouseWheel};
+use winit::event::DeviceEvent::{MouseMotion, Key};
 use winit::event::ElementState::Pressed;
 use winit::window::WindowId;
 

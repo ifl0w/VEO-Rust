@@ -88,9 +88,9 @@ impl<B: Backend> ForwardPipeline<B> {
                     entry: ENTRY_NAME,
                     module: &vs_module,
                     specialization: if enable_instancing {
-                        gfx_hal::spec_const_list![true]
+                        gfx_hal::spec_const_list![true as u32]
                     } else {
-                        pso::Specialization::default()
+                        gfx_hal::spec_const_list![false as u32]
                     },
                 };
 
