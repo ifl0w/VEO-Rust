@@ -251,36 +251,36 @@ impl Octree {
     }
 
     fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, target_depth: u64, node_pool: &SharedArena<NodeChildren>) {
-        node.populate(node_pool);
+        let traverse = {
 
-        node.children.as_mut().unwrap().as_mut()
+            let zoom = 3.0;
+
+            match config.fractal {
+                Some(FractalSelection::MandelBulb) =>
+                    Octree::generate_mandelbulb(node, zoom, current_depth + 1),
+                Some(FractalSelection::MandelBrot) => {
+                    let zoom = 4.0;
+                    Octree::generate_mandelbrot(node, zoom, current_depth + 1)
+                },
+                Some(FractalSelection::SierpinskyPyramid) =>
+                    Octree::generate_sierpinsky(node, zoom, current_depth),
+                Some(FractalSelection::MengerSponge) =>
+                    Octree::generate_menger(node, zoom, current_depth),
+                None => false,
+                _ => false,
+            }
+        };
+
+        if current_depth < target_depth && traverse {
+            node.populate(node_pool);
+
+            node.children.as_mut().unwrap().as_mut()
             .iter_mut()
             .for_each(|child| {
                 let new_depth = current_depth + 1;
-
-                let traverse = {
-                    // let child = id; //node_pool.get_mut(*id).unwrap();
-
-                    let zoom = 2.5;
-
-                    match config.fractal {
-                        Some(FractalSelection::MandelBulb) =>
-                            Octree::generate_mandelbulb(child, zoom, current_depth + 1),
-                        Some(FractalSelection::MandelBrot) =>
-                            Octree::generate_mandelbrot(child, zoom, current_depth + 1),
-                        Some(FractalSelection::SierpinskyPyramid) =>
-                            Octree::generate_sierpinsky(child, zoom, current_depth),
-                        Some(FractalSelection::MengerSponge) =>
-                            Octree::generate_menger(child, zoom, current_depth),
-                        None => false,
-                        _ => false,
-                    }
-                };
-
-                if current_depth < target_depth && traverse {
-                    Octree::build_tree(child, config, new_depth, target_depth, node_pool)
-                }
+                Octree::build_tree(child, config, new_depth, target_depth, node_pool)
             });
+        }
     }
 
     fn generate_mandelbulb(child: &mut Node, zoom: f32, depth: u64) -> bool {
@@ -289,8 +289,16 @@ impl Octree {
 
         let position = origin * zoom;
 
+        // NOTE: For sample point (0, 0, 0) the iteration would be stuck and the distance estimation
+        // would be NaN.
+        if position == Vector3::from_value(0.0) {
+            child.solid = true;
+            return true;
+        }
+
         let escape_radius = 3.0 as f64;
-        let mut iter = 10 * ((depth as f64).log2() as i32 + 1);
+        let iter_start = 40 * ((depth as f64).log2() as i32 + 1);
+        let mut iter = iter_start;
 
         fn to_spherical(a: Vector3<f64>) -> Vector3<f64> {
             let r = a.magnitude();
@@ -303,7 +311,6 @@ impl Octree {
 
             return vec3(r, phi, theta);
         }
-        ;
 
         fn to_cartesian(a: Vector3<f64>) -> Vector3<f64> {
             let x = a.z.sin() * a.y.cos();
@@ -312,7 +319,6 @@ impl Octree {
 
             return a.x * vec3(x, y, z);
         }
-        ;
 
         // nth power in polar coordinates
         fn spherical_pow(a: Vector3<f64>, n: f64) -> Vector3<f64> {
@@ -353,25 +359,32 @@ impl Octree {
         // values
         let distance = 0.5 * r * r.ln() / dr;
 
-        let half_length = (scale * 0.5 * zoom) as f64;
-        let radius = (half_length * half_length * 3.0).sqrt();
+        let half_length = (scale * 0.5) as f64;
+        let radius = (half_length * half_length * 3.0).sqrt() * zoom as f64;
 
         let mut traverse = false;
 
         if distance.abs() <= radius {
             traverse = true;
             child.solid = true;
+            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
+        }
+
+        // NOTE: not enough iterations to decide that the block does not intersect the bulb and
+        // the distance estimation indicates that the the bulb might not intersect the block.
+        // Hence we need to further traverse to be sure that no intersection exists.
+        if iter <= 0 && distance.abs() > radius  {
+            traverse = true;
         }
 
         return traverse;
     }
 
-    fn generate_mandelbrot(child: &mut Node, zoom: f32, _depth: u64) -> bool {
+    fn generate_mandelbrot(child: &mut Node, zoom: f32, depth: u64) -> bool {
         let origin = &child.position;
         let scale = child.scale;
 
-        // only a slice
-        let thickness = 0.0;
+        let thickness = 0.0; // only a slice
         if origin.y + child.scale * 0.5 < -thickness
             || origin.y - child.scale * 0.5 > thickness {
             return false;
@@ -379,8 +392,9 @@ impl Octree {
 
         let position = origin * zoom - vec3(0.5, 0.0, 0.0);
 
-        let escape_radius = 4.0 * 10000.0 as f64;
-        let mut iter = 100;
+        let escape_radius = 4.0 as f64;
+        let iter_start = 100 * ((depth as f64).log2() as i32 + 1);
+        let mut iter = iter_start;
 
         let c_re = position.x as f64;
         let c_im = position.z as f64;
@@ -409,7 +423,9 @@ impl Octree {
             let val2: f64 = z_re2 + z_im2;
 
             if val2 > (escape_radius * escape_radius) {
-                return false;
+                // return false;
+                // esc_reached = iter;
+                break;
             }
 
             iter -= 1;
@@ -419,22 +435,60 @@ impl Octree {
         let z_val = (z_re2 + z_im2).sqrt();
         let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
 
-        // let dist = 2.0 * z_val * z_val.ln() / zp_val;
-        // let dist = z_val * z_val.ln() / zp_val;
-        let distance = 0.5 * z_val * z_val.ln() / zp_val;
+        let distance = 2.0 * z_val * z_val.ln() / zp_val;
+        // let distance = z_val * z_val.ln() / zp_val;
+        // let distance = 0.5 * z_val * z_val.ln() / zp_val;
 
-        let half_length: f64 = (scale * 0.5 * zoom) as f64;
-        let radius = (half_length * half_length * 2.0).sqrt() as f64;
+        let half_length: f64 = (scale * 0.5) as f64;
+        let radius = (half_length * half_length * 2.0).sqrt() * zoom as f64;
 
         let mut traverse = false;
 
-        if distance <= radius as f64 {
-            traverse = true;
+        // if distance.abs() <= radius as f64 {
+        //     child.solid = true;
+        //     child.color = Vector3::new(iter as f32 / iter_start as f32, 0.0, 0.0);
+        //     if distance < - radius {
+        //         traverse = false;
+        //     } else {
+        //         traverse = true;
+        //     }
+        // }
+        //
+        // if iter <= 0 {
+        //     child.color = Vector3::from_value(0.0);
+        // }
+        //
+        // if iter <= 0 && distance.abs() > radius  {
+        //     traverse = true;
+        //     child.color = Vector3::from_value(0.0);
+        // }
 
-            if distance <= 0.0 {
-                child.solid = true;
-            }
+        if distance <= radius {
+            traverse = true;
+            child.solid = true;
+            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
         }
+
+        // NOTE: not enough iterations to decide that the block does not intersect the bulb and
+        // the distance estimation indicates that the the bulb might not intersect the block.
+        // Hence we need to further traverse to be sure that no intersection exists.
+        if iter <= 0 && distance.abs() > radius  {
+            child.solid = true;
+            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
+            traverse = true;
+        }
+
+        if distance <= 0.0 {
+            child.solid = true;
+            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
+            traverse = true;
+        }
+
+        if distance.is_nan() {
+            println!("wat");
+        }
+
+        traverse = true;
 
         return traverse;
     }
@@ -583,6 +637,7 @@ type NodeChildren = [Node; SUBDIVISIONS * SUBDIVISIONS * SUBDIVISIONS];
 pub struct Node {
     children: Option<ArenaBox<NodeChildren>>,
     position: Vector3<f32>,
+    color: Vector3<f32>,
     // position of the node
     scale: f32,
     // length of a side of the node
@@ -593,6 +648,7 @@ impl Clone for Node {
     fn clone(&self) -> Self {
         Node {
             position: self.position,
+            color: self.color,
             scale: self.scale,
             solid: self.solid,
             children: None // never clone children!
@@ -602,21 +658,14 @@ impl Clone for Node {
 
 impl Node {
     pub fn new() -> Self {
-        let tmp = Node {
-            children: None,
-            position: vec3(0.0, 0.0, 0.0),
-            scale: 1.0,
-            solid: false,
-        };
-
-
-        tmp
+        Default::default()
     }
 
     pub fn new_inner(position: Vector3<f32>, scale: f32) -> Self {
         let tmp = Node {
             children: None,
             position,
+            color: vec3(1.0, 1.0, 1.0),
             scale,
             solid: false,
         };
@@ -698,6 +747,7 @@ impl Default for Node {
         Node {
             children: None,
             position: vec3(0.0, 0.0, 0.0),
+            color: vec3(0.0, 0.0, 0.0),
             scale: 1.0,
             // aabb: None,
             solid: false,
@@ -814,7 +864,8 @@ impl OctreeSystem {
             &collected_nodes,
             &collecting_data,
             &data_queue,
-            node_pool
+            node_pool,
+            1
         );
 
         if collecting_data.load(Ordering::SeqCst) { // really finished
@@ -837,7 +888,8 @@ impl OctreeSystem {
         atomic_counter: &AtomicUsize,
         collecting_data: &AtomicBool,
         data_queue: &Arc<MpscQueue<Result<InstanceData, i8>>>,
-        node_pool: &SharedArena<NodeChildren>
+        node_pool: &SharedArena<NodeChildren>,
+        depth: u64
     ) {
         if node.children.is_none() { return; }
 
@@ -858,7 +910,7 @@ impl OctreeSystem {
             let dist_b = camera_dir.extend(camera_mag)
                 .dot((b.position).extend(1.0));
 
-            dist_a.partial_cmp(&dist_b).unwrap()
+            dist_b.partial_cmp(&dist_a).unwrap()
         });
 
         node.children.as_mut().unwrap()
@@ -871,9 +923,9 @@ impl OctreeSystem {
                 let include = limit_depth_reached && child.solid;
 
                 if include {
-
                     data_queue.enqueue(Ok(InstanceData {
                         transformation: child.position.extend(child.scale).into(),
+                        color: child.color.extend(0.0).into(),
                     })).unwrap();
                 }
 
@@ -887,7 +939,7 @@ impl OctreeSystem {
 
                 if continue_traversal {
                     if child.is_leaf() {
-                        Octree::build_tree(child, config,0, 1, node_pool);
+                        Octree::build_tree(child, config,depth, depth+1, node_pool);
                     }
 
                     traverse_children.push(child);
@@ -905,7 +957,8 @@ impl OctreeSystem {
                     atomic_counter,
                     collecting_data,
                     data_queue,
-                    node_pool
+                    node_pool,
+                    depth + 1
                 )
             );
     }

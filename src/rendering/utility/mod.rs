@@ -23,15 +23,13 @@ pub type Index = u32;
 pub struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
-    color: [f32; 3],
 }
 
 impl Vertex {
-    pub fn new(position: [f32; 3], normal: [f32; 3], color: [f32; 3]) -> Self {
+    pub fn new(position: [f32; 3], normal: [f32; 3], _color: [f32; 3]) -> Self {
         Self {
             position,
             normal,
-            color,
         }
     }
 }
@@ -39,4 +37,5 @@ impl Vertex {
 #[derive(Default, Debug, Copy, Clone)]
 pub struct InstanceData {
     pub transformation: [f32; 4], // x,y,z: position, w: scale
+    pub color: [f32; 4], // x,y,z: color, w: unused
 }

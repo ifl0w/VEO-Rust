@@ -159,11 +159,10 @@ float distance, // camera to point distance
 vec3 rayDir, // camera to point vector
 vec3 sunDir)// sun light direction
 {
-    float globalDensity = 0.001;
-    float elevationFalloff = 0.1;
+    float globalDensity = 1.0;
     float cameraElevation = camera_ubo.position.y;
 
-    float fogAmount = clamp(distance * globalDensity, 0, 1);
+    float fogAmount = clamp(distance * globalDensity, 0, .75);
 
     float sunAmount = max(dot(rayDir, sunDir)/2, 0.0);
     vec3  fogColor  = mix(
@@ -189,7 +188,7 @@ void main() {
     camlight.direction = camera_ubo.position.xyz;
 
     Material defaultMat;
-    defaultMat.albedo = vec3(0.15) + abs(fragNormal) * 0.25;
+    defaultMat.albedo = fragColor;
     defaultMat.metallic = 0;
     defaultMat.roughness = 0.6;
 

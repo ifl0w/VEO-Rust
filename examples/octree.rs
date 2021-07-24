@@ -37,8 +37,8 @@ fn main() {
         .add_component(Camera::new(0.0001, 10.0, 90.0, [1600.0, 900.0]))
         .add_component(
             Transformation::new()
-                .position(vec3(0.0, 1.0, 2.0))
-                .rotation(Quaternion::from(Euler::new(Deg(-30.0), Deg(0.0), Deg(0.0)))),
+                .position(vec3(0.0, 0.5, 1.0))
+                .rotation(Quaternion::from(Euler::new(Deg(-27.5), Deg(0.0), Deg(0.0)))),
         );
     engine.add_entity(camera);
 
