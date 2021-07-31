@@ -359,22 +359,28 @@ impl Octree {
         let half_length = (scale * 0.5) as f64 * zoom;
         let radius = (half_length * half_length * 3.0).sqrt() as f64;
 
-        let mut traverse = false;
+        if distance.abs() <= radius || iter == 0 {
+            if distance > -radius {
+                child.solid = true;
 
-        if distance.abs() <= radius {
-            traverse = true;
-            child.solid = true;
-            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
+                // same runaway factor as for the mandelbrot. But only used for color here.
+                let runaway = (depth) as f64 / ((iter_start - iter) as f64);
+
+                // color transfer
+                child.color = Vector3::new(
+                    (runaway) as f32,
+                    (1.0 - (distance / radius).ln() as f32) as f32,
+                    ((iter_start - iter) as f32 / iter_start as f32) as f32
+                );
+
+                // pseudo occlusion factor
+                let dampening = position.magnitude() * (scale).exp2();
+                child.color *= dampening;
+            }
+            return true;
         }
 
-        // NOTE: not enough iterations to decide that the block does not intersect the bulb and
-        // the distance estimation indicates that the the bulb might not intersect the block.
-        // Hence we need to further traverse to be sure that no intersection exists.
-        if iter <= 0 && distance.abs() > radius  {
-            traverse = true;
-        }
-
-        return traverse;
+        return false;
     }
 
     fn generate_mandelbrot(child: &mut Node, zoom: f64, depth: u64) -> bool {
@@ -451,7 +457,7 @@ impl Octree {
         // relation to the current octree depth. This works since the required iteration number
         // increases the closer we get to the border. However, I did not proofe this statement and
         // it is only backed by experimental
-        let runaway = ((depth) as f64) / (((iter_start - iter) as f64) * chaos_factor);
+        let runaway = (depth as f64) / (((iter_start - iter) as f64) * chaos_factor);
         if runaway < 1.0 {
             child.color = Vector3::new(
                 (runaway * chaos_factor) as f32,
