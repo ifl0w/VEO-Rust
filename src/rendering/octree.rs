@@ -253,12 +253,10 @@ impl Octree {
     fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, target_depth: u64, node_pool: &SharedArena<NodeChildren>) {
         let traverse = {
             let zoom = 3.0;
-
             match config.fractal {
                 Some(FractalSelection::MandelBulb) =>
                     Octree::generate_mandelbulb(node, zoom, current_depth + 1),
                 Some(FractalSelection::MandelBrot) => {
-                    let zoom = 4.0;
                     Octree::generate_mandelbrot(node, zoom, current_depth + 1)
                 },
                 Some(FractalSelection::SierpinskyPyramid) =>
@@ -389,10 +387,10 @@ impl Octree {
             return false;
         };
 
-        let position = origin * zoom as f32 - vec3(0.75, 0.0, 0.0);
+        let position = origin * zoom as f32 - vec3(0.7, 0.0, 0.0);
 
-        let escape_radius = 4.0 * 10.0 * ((depth as f64).log2() + 1.0) as f64;
-        let iter_start = 100 * ((depth as f64).log2() + 1.0) as u32;
+        let escape_radius = 4.0 + 1000.0 * scale as f64;
+        let iter_start = 100 + 100 * ((depth as f64).log2() + 1.0) as u32;
         let mut iter = iter_start;
 
         let c_re = position.x as f64;
@@ -409,9 +407,11 @@ impl Octree {
         let mut zp_im = 0.0;
 
         while iter > 0 {
+            // derivative
             zp_re = 2.0 * (z_re * zp_re - z_im * zp_im) + 1.0;
             zp_im = 2.0 * (z_re * zp_im + z_im * zp_re);
 
+            // iteration
             let z_re_new = z_re2 - z_im2 + c_re;
             let z_im_new = 2.0 * z_re * z_im + c_im;
             z_re = z_re_new;
@@ -420,7 +420,6 @@ impl Octree {
             z_im2 = z_im * z_im;
 
             let val2: f64 = z_re2 + z_im2;
-
             if val2 > (escape_radius * escape_radius) {
                 break;
             }
@@ -428,35 +427,42 @@ impl Octree {
             iter -= 1;
         }
 
-        // values
+        // magnitude
         let z_val = (z_re2 + z_im2).sqrt();
         let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
 
         let mut distance = 0.5 * z_val * z_val.ln() / zp_val;
-        let upper_bound = distance * 4.0;
 
         let half_length: f64 = (scale * 0.5) as f64 * zoom;
         let radius = (half_length * half_length * 2.0).sqrt() as f64;
 
-        let mut traverse = true;
-
-        if radius >= upper_bound {
-            traverse = true;
-            child.solid = true;
-            child.color = Vector3::new(
-                0.0,
-                1.0 - (distance / radius).ln() as f32 / (1.0 / scale).ln(),
-                iter as f32 / iter_start as f32
-            );
-        }
-
+        // inner of mandelbrot
         if distance <= 0.0 || iter == 0 {
             child.solid = true;
             child.color = Vector3::new(0.0, 0.0, 0.0);
-            traverse = true;
+            return true;
         }
 
-        return traverse;
+        // the further away from the zero point, the more chaotic the behaviour.
+        // this value is used for normalization of colors and the runaway.
+        let chaos_factor = ((c_re * c_re + c_im * c_im).sqrt() / zoom) + 1.0;
+        // Limit octree depth by "runaway". The octree is only refined if the runaway is < 1.
+        // This metric describes the number of iterations required to reach the escape radius in
+        // relation to the current octree depth. This works since the required iteration number
+        // increases the closer we get to the border. However, I did not proofe this statement and
+        // it is only backed by experimental
+        let runaway = ((depth) as f64) / (((iter_start - iter) as f64) * chaos_factor);
+        if runaway < 1.0 {
+            child.color = Vector3::new(
+                (runaway * chaos_factor) as f32,
+                (1.0 - (distance / radius).ln() as f32 / (1.0 / scale).ln()) * chaos_factor as f32,
+                ((iter_start - iter) as f32 / iter_start as f32) * chaos_factor as f32
+            );
+            child.solid = true;
+            return true;
+        }
+
+        return false;
     }
 
     fn generate_menger(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
@@ -898,7 +904,7 @@ impl OctreeSystem {
                 let continue_traversal = intersect_frustum && !limit_depth_reached;
 
                 if continue_traversal {
-                    if child.is_leaf() { // && child.solid { // TODO: should be possible to get it working with additional condition
+                    if child.is_leaf() {
                         Octree::build_tree(child, config,depth, depth+1, node_pool);
                     }
 
