@@ -252,7 +252,6 @@ impl Octree {
 
     fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, target_depth: u64, node_pool: &SharedArena<NodeChildren>) {
         let traverse = {
-
             let zoom = 3.0;
 
             match config.fractal {
@@ -283,11 +282,11 @@ impl Octree {
         }
     }
 
-    fn generate_mandelbulb(child: &mut Node, zoom: f32, depth: u64) -> bool {
+    fn generate_mandelbulb(child: &mut Node, zoom: f64, depth: u64) -> bool {
         let origin = &child.position;
         let scale = child.scale;
 
-        let position = origin * zoom;
+        let position = origin * zoom as f32;
 
         // NOTE: For sample point (0, 0, 0) the iteration would be stuck and the distance estimation
         // would be NaN.
@@ -297,7 +296,7 @@ impl Octree {
         }
 
         let escape_radius = 3.0 as f64;
-        let iter_start = 40 * ((depth as f64).log2() as i32 + 1);
+        let iter_start = 10 * ((depth as f64).log2() as i32 + 1);
         let mut iter = iter_start;
 
         fn to_spherical(a: Vector3<f64>) -> Vector3<f64> {
@@ -359,8 +358,8 @@ impl Octree {
         // values
         let distance = 0.5 * r * r.ln() / dr;
 
-        let half_length = (scale * 0.5) as f64;
-        let radius = (half_length * half_length * 3.0).sqrt() * zoom as f64;
+        let half_length = (scale * 0.5) as f64 * zoom;
+        let radius = (half_length * half_length * 3.0).sqrt() as f64;
 
         let mut traverse = false;
 
@@ -380,7 +379,7 @@ impl Octree {
         return traverse;
     }
 
-    fn generate_mandelbrot(child: &mut Node, zoom: f32, depth: u64) -> bool {
+    fn generate_mandelbrot(child: &mut Node, zoom: f64, depth: u64) -> bool {
         let origin = &child.position;
         let scale = child.scale;
 
@@ -390,10 +389,10 @@ impl Octree {
             return false;
         };
 
-        let position = origin * zoom - vec3(0.5, 0.0, 0.0);
+        let position = origin * zoom as f32 - vec3(0.75, 0.0, 0.0);
 
-        let escape_radius = 4.0 as f64;
-        let iter_start = 100 * ((depth as f64).log2() as i32 + 1);
+        let escape_radius = 4.0 * 10.0 * ((depth as f64).log2() + 1.0) as f64;
+        let iter_start = 100 * ((depth as f64).log2() + 1.0) as u32;
         let mut iter = iter_start;
 
         let c_re = position.x as f64;
@@ -423,8 +422,6 @@ impl Octree {
             let val2: f64 = z_re2 + z_im2;
 
             if val2 > (escape_radius * escape_radius) {
-                // return false;
-                // esc_reached = iter;
                 break;
             }
 
@@ -435,65 +432,34 @@ impl Octree {
         let z_val = (z_re2 + z_im2).sqrt();
         let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
 
-        let distance = 2.0 * z_val * z_val.ln() / zp_val;
-        // let distance = z_val * z_val.ln() / zp_val;
-        // let distance = 0.5 * z_val * z_val.ln() / zp_val;
+        let mut distance = 0.5 * z_val * z_val.ln() / zp_val;
+        let upper_bound = distance * 4.0;
 
-        let half_length: f64 = (scale * 0.5) as f64;
-        let radius = (half_length * half_length * 2.0).sqrt() * zoom as f64;
+        let half_length: f64 = (scale * 0.5) as f64 * zoom;
+        let radius = (half_length * half_length * 2.0).sqrt() as f64;
 
-        let mut traverse = false;
+        let mut traverse = true;
 
-        // if distance.abs() <= radius as f64 {
-        //     child.solid = true;
-        //     child.color = Vector3::new(iter as f32 / iter_start as f32, 0.0, 0.0);
-        //     if distance < - radius {
-        //         traverse = false;
-        //     } else {
-        //         traverse = true;
-        //     }
-        // }
-        //
-        // if iter <= 0 {
-        //     child.color = Vector3::from_value(0.0);
-        // }
-        //
-        // if iter <= 0 && distance.abs() > radius  {
-        //     traverse = true;
-        //     child.color = Vector3::from_value(0.0);
-        // }
-
-        if distance <= radius {
+        if radius >= upper_bound {
             traverse = true;
             child.solid = true;
-            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
+            child.color = Vector3::new(
+                0.0,
+                1.0 - (distance / radius).ln() as f32 / (1.0 / scale).ln(),
+                iter as f32 / iter_start as f32
+            );
         }
 
-        // NOTE: not enough iterations to decide that the block does not intersect the bulb and
-        // the distance estimation indicates that the the bulb might not intersect the block.
-        // Hence we need to further traverse to be sure that no intersection exists.
-        if iter <= 0 && distance.abs() > radius  {
+        if distance <= 0.0 || iter == 0 {
             child.solid = true;
-            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
+            child.color = Vector3::new(0.0, 0.0, 0.0);
             traverse = true;
         }
-
-        if distance <= 0.0 {
-            child.solid = true;
-            child.color = Vector3::new(0.0, distance as f32 / radius as f32, iter as f32 / iter_start as f32);
-            traverse = true;
-        }
-
-        if distance.is_nan() {
-            println!("wat");
-        }
-
-        traverse = true;
 
         return traverse;
     }
 
-    fn generate_menger(child: &mut Node, _zoom: f32, _depth: u64) -> bool {
+    fn generate_menger(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
         let s = child.scale;
         let p = child.position;
 
@@ -565,7 +531,7 @@ impl Octree {
         return inside;
     }
 
-    fn generate_sierpinsky(child: &mut Node, _zoom: f32, _depth: u64) -> bool {
+    fn generate_sierpinsky(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
         let s = child.scale;
         let p = child.position;
 
@@ -868,11 +834,7 @@ impl OctreeSystem {
             1
         );
 
-        if collecting_data.load(Ordering::SeqCst) { // really finished
-            data_queue.enqueue(Err(0)).unwrap(); // completely finished traversal
-        } else {
-            data_queue.enqueue(Err(1)).unwrap(); // cancelled traversal
-        }
+        data_queue.enqueue(Err(0)).unwrap(); // finished or canceled traversal
 
         // let stats = node_pool.stats();
         // let allocation = stats.0 + stats.1;
@@ -897,8 +859,6 @@ impl OctreeSystem {
             return;
         }
 
-        let mut traverse_children = Vec::with_capacity(SUBDIVISIONS.pow(3));
-
         let camera_pos = optimization_data.camera_transform.position;
         let camera_mag = camera_pos.magnitude();
         let camera_dir = optimization_data.camera_transform.rotation.rotate_vector(-Vector3::unit_z());
@@ -910,12 +870,12 @@ impl OctreeSystem {
             let dist_b = camera_dir.extend(camera_mag)
                 .dot((b.position).extend(1.0));
 
-            dist_b.partial_cmp(&dist_a).unwrap()
+            dist_a.partial_cmp(&dist_b).unwrap()
         });
 
-        node.children.as_mut().unwrap()
-            .as_mut()
-            .iter_mut()
+        let children = node.children.as_mut().unwrap().as_mut();
+        children
+            .par_iter_mut()
             .for_each(|child| {
                 let limit_depth_reached = limit_depth_traversal(optimization_data, child);
 
@@ -938,29 +898,24 @@ impl OctreeSystem {
                 let continue_traversal = intersect_frustum && !limit_depth_reached;
 
                 if continue_traversal {
-                    if child.is_leaf() {
+                    if child.is_leaf() { // && child.solid { // TODO: should be possible to get it working with additional condition
                         Octree::build_tree(child, config,depth, depth+1, node_pool);
                     }
 
-                    traverse_children.push(child);
+                    OctreeSystem::generate_instance_data(
+                        optimization_data,
+                        config,
+                        child,
+                        atomic_counter,
+                        collecting_data,
+                        data_queue,
+                        node_pool,
+                        depth + 1
+                    );
                 } else {
                     child.children.take(); // drop children
                 }
             });
-
-        traverse_children
-            .par_iter_mut()
-            .for_each(|child| OctreeSystem::generate_instance_data(
-                    optimization_data,
-                    config,
-                    child,
-                    atomic_counter,
-                    collecting_data,
-                    data_queue,
-                    node_pool,
-                    depth + 1
-                )
-            );
     }
 }
 
@@ -1114,7 +1069,6 @@ impl System for OctreeSystem {
                     let active_buffer = octree.active_instance_buffer_idx.clone();
                     let ring_buffer = octree.instance_data_buffer.clone();
                     let ring_buffer_len = octree.instance_data_buffer.len();
-                    let _collecting_data = self.collecting_data.clone();
                     let collected_nodes = self.collected_nodes.clone();
                     let max_len = octree.config.max_rendered_nodes.unwrap_or(1e6 as u64) as usize;
 
@@ -1124,8 +1078,7 @@ impl System for OctreeSystem {
 
                         let mut upload_buffer = VecDeque::new();
                         let mut since_empty = 0;
-                        let mut block_sizes = VecDeque::new();
-                        let mut exit = false;
+                        let mut prev_blocks = 0;
 
                         loop {
                             sleep(Duration::from_millis(50));
@@ -1135,41 +1088,31 @@ impl System for OctreeSystem {
                                     Ok(data) => {
                                         since_empty += 1;
 
-                                        let mut val = block_sizes.pop_front().unwrap_or(0);
-
                                         upload_buffer.push_back(data);
 
-                                        if val > 1 {
+                                        if prev_blocks > 0 {
                                             upload_buffer.pop_front();
-                                            val -= 1;
-                                        }
-
-                                        if val > 0 {
-                                            block_sizes.push_front(val);
+                                            prev_blocks -= 1;
                                         }
                                     }
-                                    Err(0) => { // complete
-                                        for _i in 0 .. block_sizes.pop_front().unwrap_or(0) {
+                                    Err(0) => { // complete or canceled
+                                        for _i in 0 .. prev_blocks {
                                             upload_buffer.pop_front();
                                         }
 
-                                        block_sizes.push_back(since_empty);
-                                        since_empty = 0;
-                                    }
-                                    Err(1) => {
-                                        let val = block_sizes.pop_front().unwrap_or(0);
-                                        block_sizes.push_front(val + since_empty);
+                                        prev_blocks = since_empty;
                                         since_empty = 0;
                                     }
                                     Err(127) => {
-                                        exit = true; // special thread exit code
+                                        return; // special thread exit code
                                     }
                                     _ => ()
                                 }
                             }
 
                             while upload_buffer.len() > max_len {
-                                upload_buffer.pop_front();
+                                upload_buffer.pop_back();
+                                since_empty -= 1;
                             }
 
                             let buffer_idx = (active_buffer.load(Ordering::SeqCst) + 1)
@@ -1182,10 +1125,6 @@ impl System for OctreeSystem {
 
                             active_buffer.store(buffer_idx, Ordering::SeqCst);
                             collected_nodes.store(upload_len, Ordering::SeqCst);
-
-                            if exit {
-                                return;
-                            }
                         }
                     }));
                 }
