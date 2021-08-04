@@ -22,25 +22,19 @@ use gfx_hal::buffer;
 use rayon::prelude::*;
 use winit::event::Event;
 
-use num_derive::{FromPrimitive, ToPrimitive};
-
 use crate::core::{Component, Filter, Message, Payload, System};
-use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
+use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation, fractal_generators};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 
 use std::thread::{sleep, JoinHandle};
 use riffy::MpscQueue;
 
 use std::collections::VecDeque;
-use std::fmt::Debug;
-use std::fmt;
-use crate::rendering::FractalSelection::MandelBulb;
-
-
 
 use shared_arena::{SharedArena, ArenaBox};
+use crate::rendering::fractal_generators::FractalSelection;
 
-const SUBDIVISIONS: usize = 2;
+pub const SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
 
 #[derive(Clone)]
@@ -55,20 +49,6 @@ pub struct Octree {
     pub info: OctreeInfo,
 
     pub node_pool: Arc<SharedArena<NodeChildren>>
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, FromPrimitive, ToPrimitive)]
-pub enum FractalSelection {
-    MandelBulb = 0,
-    MandelBrot,
-    SierpinskyPyramid,
-    MengerSponge
-}
-
-impl fmt::Display for FractalSelection {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Debug::fmt(self, f)
-    }
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -88,7 +68,7 @@ impl Default for OctreeConfig {
             subdiv_threshold: Some(20.0),
             threshold_scale: Some(1.0),
             depth: Some(DEFAULT_DEPTH),
-            fractal: Some(MandelBulb),
+            fractal: Some(FractalSelection::MandelBulb),
             continuous_update: Some(true)
         }
     }
@@ -172,55 +152,17 @@ impl Octree {
             node_pool: arena
         };
 
-        let start = std::time::Instant::now();
-        {
-            Octree::build_tree(
-                &mut oct.root.lock().unwrap(),
-                oct.config,
-                0,
-                1,
-                &oct.node_pool
-            );
-        }
-        let end = std::time::Instant::now();
-
-        println!("Octree build time: {:?}", end - start);
+        fractal_generators::build_tree(
+            &mut oct.root.lock().unwrap(),
+            oct.config,
+            0,
+            1,
+            &oct.node_pool
+        );
 
         oct.info.byte_size = self::Octree::size_in_bytes(&oct);
 
         oct
-    }
-
-    pub fn reconfigure(&mut self, render_system: &Arc<Mutex<RenderSystem>>, config: OctreeConfig) {
-        let rm = render_system.lock().unwrap().resource_manager.clone();
-        let mut rm_lock = rm.lock().unwrap();
-
-        let dev = render_system.lock().unwrap().renderer.device.clone();
-        let adapter = render_system.lock().unwrap().renderer.adapter.clone();
-
-        // read config
-        self.config = config;
-        let depth = config.depth.unwrap_or(DEFAULT_DEPTH);
-        let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(4e6 as u64);
-
-        // byte size calculations
-        let max_num_nodes = (SUBDIVISIONS as i64).pow(3 * depth as u32) as usize;
-        let _max_byte_size = std::mem::size_of::<Node>() * max_num_nodes;
-        let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
-
-        let ring_buffer_length = 2;
-
-        self.instance_data_buffer = Vec::with_capacity(ring_buffer_length);
-        for _ in 0..ring_buffer_length {
-            let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(
-                &dev,
-                &adapter,
-                max_gpu_byte_size,
-                buffer::Usage::STORAGE | buffer::Usage::VERTEX,
-            ));
-
-            self.instance_data_buffer.push(buffer);
-        }
     }
 
     pub fn get_instance_buffer(&self) -> Option<&Arc<Mutex<GPUBuffer<Backend::Backend>>>> {
@@ -249,377 +191,22 @@ impl Octree {
 
         count + 1
     }
-
-    fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, target_depth: u64, node_pool: &SharedArena<NodeChildren>) {
-        let traverse = {
-            let zoom = 3.0;
-            match config.fractal {
-                Some(FractalSelection::MandelBulb) =>
-                    Octree::generate_mandelbulb(node, zoom, current_depth + 1),
-                Some(FractalSelection::MandelBrot) => {
-                    Octree::generate_mandelbrot(node, zoom, current_depth + 1)
-                },
-                Some(FractalSelection::SierpinskyPyramid) =>
-                    Octree::generate_sierpinsky(node, zoom, current_depth),
-                Some(FractalSelection::MengerSponge) =>
-                    Octree::generate_menger(node, zoom, current_depth),
-                None => false,
-                _ => false,
-            }
-        };
-
-        if current_depth < target_depth && traverse {
-            node.populate(node_pool);
-
-            node.children.as_mut().unwrap().as_mut()
-            .iter_mut()
-            .for_each(|child| {
-                let new_depth = current_depth + 1;
-                Octree::build_tree(child, config, new_depth, target_depth, node_pool)
-            });
-        }
-    }
-
-    fn generate_mandelbulb(child: &mut Node, zoom: f64, depth: u64) -> bool {
-        let origin = &child.position;
-        let scale = child.scale;
-
-        let position = origin * zoom as f32;
-
-        // NOTE: For sample point (0, 0, 0) the iteration would be stuck and the distance estimation
-        // would be NaN.
-        if position == Vector3::from_value(0.0) {
-            child.solid = true;
-            return true;
-        }
-
-        let escape_radius = 3.0 as f64;
-        let iter_start = 10 * ((depth as f64).log2() as i32 + 1);
-        let mut iter = iter_start;
-
-        fn to_spherical(a: Vector3<f64>) -> Vector3<f64> {
-            let r = a.magnitude();
-            let mut phi = (a.y / a.x).atan();
-            let mut theta = (a.z / r).acos();
-
-            // handle 0/0
-            if a.y == 0.0 && a.x == 0.0 { phi = 0.0; };
-            if a.z == 0.0 && r == 0.0 { theta = 0.0; };
-
-            return vec3(r, phi, theta);
-        }
-
-        fn to_cartesian(a: Vector3<f64>) -> Vector3<f64> {
-            let x = a.z.sin() * a.y.cos();
-            let y = a.y.sin() * a.z.sin();
-            let z = a.z.cos();
-
-            return a.x * vec3(x, y, z);
-        }
-
-        // nth power in polar coordinates
-        fn spherical_pow(a: Vector3<f64>, n: f64) -> Vector3<f64> {
-            let r = a.x.pow(n);
-            let phi = n * a.y;
-            let theta = n * a.z;
-            return vec3(r, phi, theta);
-        }
-
-        let c = vec3(position.x as f64, position.y as f64, position.z as f64);
-
-        // z_0 = 0 + i0
-        let mut v = vec3(0.0, 0.0, 0.0);
-        let mut r = 0.0;
-
-        // z_0' = 1 + 0i
-        let mut dr = 1.0;
-
-        let n = 8.0;
-        while iter > 0 {
-            let v_p = to_spherical(v);
-
-            r = v_p.x;
-            if r as f64 > escape_radius {
-                break;
-            }
-
-            // scalar distance estimation
-            // source: http://blog.hvidtfeldts.net/index.php/2011/09/distance-estimated-3d-fractals-v-the-mandelbulb-different-de-approximations/
-            dr = r.pow(n - 1.0) * n * dr + 1.0;
-
-            let v_next = spherical_pow(v_p, n);
-            v = to_cartesian(v_next) + c;
-
-            iter -= 1;
-        }
-
-        // values
-        let distance = 0.5 * r * r.ln() / dr;
-
-        let half_length = (scale * 0.5) as f64 * zoom;
-        let radius = (half_length * half_length * 3.0).sqrt() as f64;
-
-        if distance.abs() <= radius || iter == 0 {
-            if distance > -radius {
-                child.solid = true;
-
-                // same runaway factor as for the mandelbrot. But only used for color here.
-                let runaway = (depth) as f64 / ((iter_start - iter) as f64);
-
-                // color transfer
-                child.color = Vector3::new(
-                    (runaway) as f32,
-                    (1.0 - (distance / radius).ln() as f32) as f32,
-                    ((iter_start - iter) as f32 / iter_start as f32) as f32
-                );
-
-                // pseudo occlusion factor
-                let dampening = position.magnitude() * (scale).exp2();
-                child.color *= dampening;
-            }
-            return true;
-        }
-
-        return false;
-    }
-
-    fn generate_mandelbrot(child: &mut Node, zoom: f64, depth: u64) -> bool {
-        let origin = &child.position;
-        let scale = child.scale;
-
-        let thickness = 0.0; // only a slice
-        if origin.y + child.scale * 0.5 < -thickness
-            || origin.y - child.scale * 0.5 > thickness {
-            return false;
-        };
-
-        let position = origin * zoom as f32 - vec3(0.7, 0.0, 0.0);
-
-        let escape_radius = 4.0 + 1000.0 * scale as f64;
-        let iter_start = 100 + 100 * ((depth as f64).log2() + 1.0) as u32;
-        let mut iter = iter_start;
-
-        let c_re = position.x as f64;
-        let c_im = position.z as f64;
-
-        // z_0 = 0 + i0
-        let mut z_re = 0.0;
-        let mut z_im = 0.0;
-        let mut z_re2 = z_re * z_re;
-        let mut z_im2 = z_im * z_im;
-
-        // z_0' = 1 + 0i
-        let mut zp_re = 1.0;
-        let mut zp_im = 0.0;
-
-        while iter > 0 {
-            // derivative
-            zp_re = 2.0 * (z_re * zp_re - z_im * zp_im) + 1.0;
-            zp_im = 2.0 * (z_re * zp_im + z_im * zp_re);
-
-            // iteration
-            let z_re_new = z_re2 - z_im2 + c_re;
-            let z_im_new = 2.0 * z_re * z_im + c_im;
-            z_re = z_re_new;
-            z_im = z_im_new;
-            z_re2 = z_re * z_re;
-            z_im2 = z_im * z_im;
-
-            let val2: f64 = z_re2 + z_im2;
-            if val2 > (escape_radius * escape_radius) {
-                break;
-            }
-
-            iter -= 1;
-        }
-
-        // magnitude
-        let z_val = (z_re2 + z_im2).sqrt();
-        let zp_val = (zp_re * zp_re + zp_im * zp_im).sqrt();
-
-        let mut distance = 0.5 * z_val * z_val.ln() / zp_val;
-
-        let half_length: f64 = (scale * 0.5) as f64 * zoom;
-        let radius = (half_length * half_length * 2.0).sqrt() as f64;
-
-        // inner of mandelbrot
-        if distance <= 0.0 || iter == 0 {
-            child.solid = true;
-            child.color = Vector3::new(0.0, 0.0, 0.0);
-            return true;
-        }
-
-        // the further away from the zero point, the more chaotic the behaviour.
-        // this value is used for normalization of colors and the runaway.
-        let chaos_factor = ((c_re * c_re + c_im * c_im).sqrt() / zoom) + 1.0;
-        // Limit octree depth by "runaway". The octree is only refined if the runaway is < 1.
-        // This metric describes the number of iterations required to reach the escape radius in
-        // relation to the current octree depth. This works since the required iteration number
-        // increases the closer we get to the border. However, I did not proofe this statement and
-        // it is only backed by experimental
-        let runaway = (depth as f64) / (((iter_start - iter) as f64) * chaos_factor);
-        if runaway < 1.0 {
-            child.color = Vector3::new(
-                (runaway * chaos_factor) as f32,
-                (1.0 - (distance / radius).ln() as f32 / (1.0 / scale).ln()) * chaos_factor as f32,
-                ((iter_start - iter) as f32 / iter_start as f32) * chaos_factor as f32
-            );
-            child.solid = true;
-            return true;
-        }
-
-        return false;
-    }
-
-    fn generate_menger(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
-        let s = child.scale;
-        let p = child.position;
-
-        fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
-            if n == 0 { return true; }
-
-            // bounding box of the current iteration/contraction
-            let bb_min = bb_center - Vector3::from_value(bb_size);
-            let bb_max = bb_center + Vector3::from_value(bb_size);
-
-            // bounding box of node
-            let node_min = p - Vector3::from_value(s);
-            let node_max = p + Vector3::from_value(s);
-
-            // test node bb and iteration bb intersection
-            if node_max.x > bb_min.x && node_min.x < bb_max.x
-                && node_max.y > bb_min.y && node_min.y < bb_max.y
-                && node_max.z > bb_min.z && node_min.z < bb_max.z {
-
-                // calculate contraction bounding size
-                let c_size = bb_size * 1.0 / 3.0;
-                let offset = bb_size * 2.0 / 3.0;
-
-                // calculate next contraction
-                // note: the actual iteration of the IFS
-                let mut bounding = [vec3(0.0,0.0,0.0); 20];
-
-                let mut i = 0;
-                for x in -1..=1 {
-                    for y in -1..=1 {
-                        for z in -1..=1 {
-                            let mut axis_count = 0;
-                            if x == 0 { axis_count += 1; }
-                            if y == 0 { axis_count += 1; }
-                            if z == 0 { axis_count += 1; }
-
-                            if axis_count != 2 && axis_count != 3 {
-                                bounding[i] = bb_center + vec3(
-                                    x as f32 * offset,
-                                    y as f32 * offset,
-                                    z as f32 * offset
-                                );
-                                i += 1;
-                            }
-                        }
-                    }
-                }
-
-                // check if any of the next bounding volumes intersects with the node
-                // if none does then we definitely have a node that we do not need
-                // to consider anymore
-                let inside = bounding.iter().any(|bb| {
-                    iterate(p, s, *bb, c_size, n - 1)
-                });
-
-                return inside;
-            }
-
-            // they do not intersect
-            return false;
-        }
-
-        let inside = iterate(p, s / SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 15);
-
-        if inside {
-            child.solid = true;
-        }
-
-        return inside;
-    }
-
-    fn generate_sierpinsky(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
-        let s = child.scale;
-        let p = child.position;
-
-        fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
-            if n == 0 { return true; }
-
-            // bounding box of the current iteration/contraction
-            let bb_min = bb_center - Vector3::from_value(bb_size);
-            let bb_max = bb_center + Vector3::from_value(bb_size);
-
-            // bounding box of node
-            let node_min = p - Vector3::from_value(s);
-            let node_max = p + Vector3::from_value(s);
-
-            // test node bb and iteration bb intersection
-            if node_max.x >= bb_min.x && node_min.x <= bb_max.x
-                && node_max.y >= bb_min.y && node_min.y <= bb_max.y
-                && node_max.z >= bb_min.z && node_min.z <= bb_max.z {
-
-                // calculate contraction bounding size
-                let c_size = bb_size * 0.5;
-
-                // calculate next contraction positions
-                // note: the actual iteration of the IFS
-                // Pyramid (numerically more stable in octree)
-                let bounding = [
-                    bb_center + vec3(-c_size, -c_size, c_size),
-                    bb_center + vec3(-c_size, -c_size, -c_size),
-                    bb_center + vec3(c_size, -c_size, -c_size),
-                    bb_center + vec3(c_size, -c_size, c_size),
-                    bb_center + vec3(0.0, c_size, 0.0),
-                ];
-                // Tetrahedron (less stable in octree)
-                /*let c_size_diag = (c_size * c_size * 0.5).sqrt();
-                let bounding = [
-                    bb_center + vec3(-c_size_diag, -c_size, c_size_diag),
-                    bb_center + vec3(c_size_diag, -c_size, c_size_diag),
-                    bb_center + vec3(0.0, -c_size, -c_size),
-                    bb_center + vec3(0.0, c_size, 0.0),
-                ];*/
-
-                // check if any of the next bounding volumes intersects with the node
-                // if none does then we definitely have a node that we do not need
-                // to consider anymore
-                let inside = bounding.iter().any(|bb| {
-                    iterate(p, s, *bb, c_size, n - 1)
-                });
-
-                return inside;
-            }
-
-            // they do not intersect
-            return false;
-        }
-
-        let d = iterate(p, s / SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 15);
-
-        if d {
-            child.solid = true;
-        }
-
-        return d;
-    }
 }
 
-type NodeChildren = [Node; SUBDIVISIONS * SUBDIVISIONS * SUBDIVISIONS];
+pub type NodeChildren = [Node; SUBDIVISIONS * SUBDIVISIONS * SUBDIVISIONS];
 
 #[derive(Debug)]
 pub struct Node {
-    children: Option<ArenaBox<NodeChildren>>,
-    position: Vector3<f32>,
-    color: Vector3<f32>,
+    pub children: Option<ArenaBox<NodeChildren>>,
     // position of the node
-    scale: f32,
+    pub position: Vector3<f32>,
     // length of a side of the node
-    solid: bool,
+    pub scale: f32,
+    // whether this node should be refined further
+    pub refine: Option<bool>,
+    pub solid: bool,
+    pub color: Vector3<f32>,
+    pub height_values: [f32; 4], // only used for terrain generation
 }
 
 impl Clone for Node {
@@ -629,7 +216,9 @@ impl Clone for Node {
             color: self.color,
             scale: self.scale,
             solid: self.solid,
-            children: None // never clone children!
+            height_values: self.height_values,
+            refine: self.refine,
+            children: None, // never clone children!,
         }
     }
 }
@@ -646,6 +235,8 @@ impl Node {
             color: vec3(1.0, 1.0, 1.0),
             scale,
             solid: false,
+            refine: None,
+            height_values: [0.0; 4],
         };
 
         tmp
@@ -677,6 +268,7 @@ impl Node {
                     chil[idx].children = None;
                     chil[idx].position = t;
                     chil[idx].scale = s;
+                    chil[idx].refine = None;
                 }
             }
         }
@@ -726,9 +318,10 @@ impl Default for Node {
             children: None,
             position: vec3(0.0, 0.0, 0.0),
             color: vec3(0.0, 0.0, 0.0),
+            height_values: [0.0; 4],
             scale: 1.0,
-            // aabb: None,
             solid: false,
+            refine: None
         }
     }
 }
@@ -848,10 +441,6 @@ impl OctreeSystem {
 
         data_queue.enqueue(Err(0)).unwrap(); // finished or canceled traversal
 
-        // let stats = node_pool.stats();
-        // let allocation = stats.0 + stats.1;
-        // let b = allocation * std::mem::size_of::<Node>();
-        // println!("Arena stats: {:?}; Arena size: {:?}mb", stats,  b / (1024*1024));
         collecting_data.store(false, Ordering::SeqCst);
     }
 
@@ -892,7 +481,7 @@ impl OctreeSystem {
                 let limit_depth_reached = limit_depth_traversal(optimization_data, child);
 
                 // add transformation data
-                let include = limit_depth_reached && child.solid;
+                let include = (limit_depth_reached || !child.refine.unwrap_or(false)) && child.solid;
 
                 if include {
                     data_queue.enqueue(Ok(InstanceData {
@@ -911,7 +500,7 @@ impl OctreeSystem {
 
                 if continue_traversal {
                     if child.is_leaf() {
-                        Octree::build_tree(child, config,depth, depth+1, node_pool);
+                        fractal_generators::build_tree(child, config,depth, depth+1, node_pool);
                     }
 
                     OctreeSystem::generate_instance_data(
@@ -984,14 +573,8 @@ impl System for OctreeSystem {
                 }
 
                 let conf = self.update_config.take().unwrap();
-                if conf.fractal.unwrap() != octree.config.fractal.unwrap() {
-                    // need to create new octree
-                    std::mem::drop(octree.node_pool);
-                    octree = Octree::new(&self.render_sys, conf);
-                } else {
-                    // octree = Octree::new(&self.render_sys, conf);
-                    octree.reconfigure(&self.render_sys, conf);
-                }
+                std::mem::drop(octree.node_pool);
+                octree = Octree::new(&self.render_sys, conf);
 
                 settings_modified = true;
             }

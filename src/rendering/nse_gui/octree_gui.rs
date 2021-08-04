@@ -15,10 +15,12 @@ use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use winit::event::{ElementState, Event, VirtualKeyCode};
 
+use num_traits::{FromPrimitive, ToPrimitive};
+
 use crate::core::{Filter, Message, Payload, System};
 use crate::NSE;
-use crate::rendering::{Camera, Mesh, Octree, OctreeConfig, OctreeInfo, OctreeOptimizations, RenderSystem, Transformation, FractalSelection};
-use num_traits::{FromPrimitive, ToPrimitive};
+use crate::rendering::{Camera, Mesh, Octree, OctreeConfig, OctreeInfo, OctreeOptimizations, RenderSystem, Transformation};
+use crate::rendering::fractal_generators::FractalSelection;
 
 pub struct OctreeGuiSystem {
     imgui: Arc<Mutex<Context>>,
@@ -133,6 +135,7 @@ impl OctreeGuiSystem {
                     Some(FractalSelection::MandelBrot) => fractal_names.push(im_str!("Mandel Brot")),
                     Some(FractalSelection::SierpinskyPyramid) => fractal_names.push(im_str!("Sierpinsky Pyramid")),
                     Some(FractalSelection::MengerSponge) => fractal_names.push(im_str!("Menger Sponge")),
+                    Some(FractalSelection::MidpointDisplacement) => fractal_names.push(im_str!("Midpoint Displacement")),
                     Some(_) => fractal_names.push(im_str!("Unknown Fractal")),
                     _ => break, // leave loop
                 }
@@ -186,7 +189,9 @@ impl OctreeGuiSystem {
             }
 
             if ui.button(im_str!("Reset Octree"), [0.0, 0.0]) {
+                let prev_selection = self.octree_config.fractal;
                 self.octree_config = OctreeConfig::default();
+                self.octree_config.fractal = prev_selection;
                 self.messages.push(Message::new(self.octree_config.clone()));
             };
         }

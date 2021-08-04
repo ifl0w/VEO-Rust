@@ -18,6 +18,7 @@ riffy = "0.1.1"
 num-traits = "0.2"
 num-derive = "0.3"
 shared_arena = "0.8.4"
+rand_seeder = "0.2.2"
 
 winit = { version = "0.24.0", features = ["web-sys"]}
 

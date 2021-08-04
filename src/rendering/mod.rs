@@ -13,7 +13,7 @@ mod aabb;
 mod camera;
 mod mesh;
 mod octree;
-// mod renderer;
+mod fractal_generators;
 
 pub mod images;
 pub mod nse_gui;
