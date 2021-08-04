@@ -122,6 +122,9 @@ impl OctreeGuiSystem {
 
             ui.separator();
 
+            // reset the reset flag
+            self.octree_config.reset = None;
+
             let mut modified = false;
 
             ui.text(format!("Fractal Selection"));
@@ -147,6 +150,7 @@ impl OctreeGuiSystem {
                     &fractal_names) {
                 self.octree_config = OctreeConfig::default();
                 self.octree_config.fractal = FromPrimitive::from_usize(selected_fractal);
+                self.octree_config.reset = Some(true);
                 modified = true;
             }
 
@@ -190,8 +194,11 @@ impl OctreeGuiSystem {
 
             if ui.button(im_str!("Reset Octree"), [0.0, 0.0]) {
                 let prev_selection = self.octree_config.fractal;
+
                 self.octree_config = OctreeConfig::default();
+                self.octree_config.reset = Some(true);
                 self.octree_config.fractal = prev_selection;
+
                 self.messages.push(Message::new(self.octree_config.clone()));
             };
         }

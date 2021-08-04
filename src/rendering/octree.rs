@@ -34,7 +34,7 @@ use std::collections::VecDeque;
 use shared_arena::{SharedArena, ArenaBox};
 use crate::rendering::fractal_generators::FractalSelection;
 
-pub const SUBDIVISIONS: usize = 2;
+pub const TREE_SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
 
 #[derive(Clone)]
@@ -59,6 +59,7 @@ pub struct OctreeConfig {
     pub depth: Option<u64>,
     pub fractal: Option<FractalSelection>,
     pub continuous_update: Option<bool>,
+    pub reset: Option<bool>,
 }
 
 impl Default for OctreeConfig {
@@ -69,7 +70,8 @@ impl Default for OctreeConfig {
             threshold_scale: Some(1.0),
             depth: Some(DEFAULT_DEPTH),
             fractal: Some(FractalSelection::MandelBulb),
-            continuous_update: Some(true)
+            continuous_update: Some(true),
+            reset: None,
         }
     }
 }
@@ -105,24 +107,20 @@ impl Component for Octree {}
 impl Octree {
     pub fn new(render_system: &Arc<Mutex<RenderSystem>>, config: OctreeConfig) -> Self {
         let rm = render_system.lock().unwrap().resource_manager.clone();
-        let mut rm_lock = rm.lock().unwrap();
 
         let dev = render_system.lock().unwrap().renderer.device.clone();
         let adapter = render_system.lock().unwrap().renderer.adapter.clone();
 
         // read config
-        let depth = config.depth.unwrap_or(DEFAULT_DEPTH);
         let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(4e6 as u64);
 
         // byte size calculations
-        let max_num_nodes = (SUBDIVISIONS as i64).pow(3 * depth as u32) as usize;
-        let max_byte_size = std::mem::size_of::<Node>() * max_num_nodes;
         let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
 
         let ring_buffer_length = 2;
         let mut instance_data_buffer = Vec::with_capacity(ring_buffer_length);
         for _ in 0..ring_buffer_length {
-            let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(
+            let (_, buffer) = rm.lock().unwrap().add_buffer(GPUBuffer::new_with_size(
                 &dev,
                 &adapter,
                 max_gpu_byte_size,
@@ -132,14 +130,6 @@ impl Octree {
             instance_data_buffer.push(buffer);
         }
 
-        let octree_info = OctreeInfo {
-            render_count: 0,
-            byte_size: 0,
-            max_num_nodes,
-            max_byte_size,
-            gpu_byte_size: max_gpu_byte_size * ring_buffer_length,
-        };
-
         let arena = Arc::new(SharedArena::new());
         let mut oct = Octree {
             root: Arc::new(Mutex::new(Node::new_inner(vec3(0.0, 0.0, 0.0), 1.0))),
@@ -147,10 +137,12 @@ impl Octree {
             active_instance_buffer_idx: Arc::new(AtomicUsize::new(0)),
 
             config,
-            info: octree_info,
+            info: OctreeInfo::default(),
 
             node_pool: arena
         };
+
+        oct.reconfigure(render_system, config);
 
         fractal_generators::build_tree(
             &mut oct.root.lock().unwrap(),
@@ -163,6 +155,48 @@ impl Octree {
         oct.info.byte_size = self::Octree::size_in_bytes(&oct);
 
         oct
+    }
+
+    pub fn reconfigure(&mut self, render_system: &Arc<Mutex<RenderSystem>>, config: OctreeConfig) {
+        let rm = render_system.lock().unwrap().resource_manager.clone();
+        let mut rm_lock = rm.lock().unwrap();
+
+        let dev = render_system.lock().unwrap().renderer.device.clone();
+        let adapter = render_system.lock().unwrap().renderer.adapter.clone();
+
+        // read config
+        self.config = config;
+        let depth = config.depth.unwrap_or(DEFAULT_DEPTH);
+        let max_rendered_nodes = config.max_rendered_nodes.unwrap_or(4e6 as u64);
+
+        // byte size calculations
+        let max_num_nodes = (TREE_SUBDIVISIONS as i64).pow(3 * depth as u32) as usize;
+        let _max_byte_size = std::mem::size_of::<Node>() * max_num_nodes;
+        let max_gpu_byte_size = std::mem::size_of::<InstanceData>() * max_rendered_nodes as usize;
+
+        let ring_buffer_length = 2;
+
+        self.instance_data_buffer = Vec::with_capacity(ring_buffer_length);
+        for _ in 0..ring_buffer_length {
+            let (_, buffer) = rm_lock.add_buffer(GPUBuffer::new_with_size(
+                &dev,
+                &adapter,
+                max_gpu_byte_size,
+                buffer::Usage::STORAGE | buffer::Usage::VERTEX,
+            ));
+
+            self.instance_data_buffer.push(buffer);
+        }
+
+        let octree_info = OctreeInfo {
+            render_count: 0,
+            byte_size: 0,
+            max_num_nodes,
+            max_byte_size: 0,
+            gpu_byte_size: max_gpu_byte_size * ring_buffer_length,
+        };
+
+        self.info = octree_info;
     }
 
     pub fn get_instance_buffer(&self) -> Option<&Arc<Mutex<GPUBuffer<Backend::Backend>>>> {
@@ -193,7 +227,7 @@ impl Octree {
     }
 }
 
-pub type NodeChildren = [Node; SUBDIVISIONS * SUBDIVISIONS * SUBDIVISIONS];
+pub type NodeChildren = [Node; TREE_SUBDIVISIONS * TREE_SUBDIVISIONS * TREE_SUBDIVISIONS];
 
 #[derive(Debug)]
 pub struct Node {
@@ -247,22 +281,22 @@ impl Node {
             return; // nothing to do
         }
 
-        let scale_factor = 1.0 / SUBDIVISIONS as f32;
+        let scale_factor = 1.0 / TREE_SUBDIVISIONS as f32;
 
         let mut chil = node_pool.alloc(Default::default());
 
-        for id_x in 0..SUBDIVISIONS {
-            for id_y in 0..SUBDIVISIONS {
-                for id_z in 0..SUBDIVISIONS {
+        for id_x in 0..TREE_SUBDIVISIONS {
+            for id_y in 0..TREE_SUBDIVISIONS {
+                for id_z in 0..TREE_SUBDIVISIONS {
                     let s = self.scale * scale_factor;
 
                     let mut t = self.position;
                     t -= Vector3::from_value(self.scale * 0.5 - s * 0.5);
                     t += vec3(s * id_x as f32, s * id_y as f32, s * id_z as f32);
 
-                    let idx = SUBDIVISIONS.pow(0) * id_x
-                        + SUBDIVISIONS.pow(1) * id_y
-                        + SUBDIVISIONS.pow(2) * id_z;
+                    let idx = TREE_SUBDIVISIONS.pow(0) * id_x
+                        + TREE_SUBDIVISIONS.pow(1) * id_y
+                        + TREE_SUBDIVISIONS.pow(2) * id_z;
 
                     chil[idx].solid = false;
                     chil[idx].children = None;
@@ -441,6 +475,10 @@ impl OctreeSystem {
 
         data_queue.enqueue(Err(0)).unwrap(); // finished or canceled traversal
 
+        // let stats = node_pool.stats();
+        // let allocation = stats.0 + stats.1;
+        // let b = allocation * std::mem::size_of::<Node>();
+        // println!("Arena stats: {:?}; Arena size: {:?}mb", stats,  b / (1024*1024));
         collecting_data.store(false, Ordering::SeqCst);
     }
 
@@ -572,9 +610,15 @@ impl System for OctreeSystem {
                     handle.join().unwrap();
                 }
 
-                let conf = self.update_config.take().unwrap();
-                std::mem::drop(octree.node_pool);
-                octree = Octree::new(&self.render_sys, conf);
+                let mut conf = self.update_config.take().unwrap();
+                let reset = conf.reset.take().unwrap_or(false);
+                if reset {
+                    // need to create new octree
+                    octree = Octree::new(&self.render_sys, conf);
+                } else {
+                    // replacing root to initialize clean traversal
+                    octree.reconfigure(&self.render_sys, conf);
+                }
 
                 settings_modified = true;
             }

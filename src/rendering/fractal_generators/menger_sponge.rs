@@ -1,11 +1,11 @@
-use crate::rendering::{Node, SUBDIVISIONS};
+use crate::rendering::{Node, TREE_SUBDIVISIONS};
 use cgmath::{Vector3, vec3, Array};
 
-pub fn generate_menger(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
+pub fn generate_menger(child: &mut Node, _zoom: f64, depth: u64) -> bool {
     let s = child.scale;
     let p = child.position;
 
-    fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
+    fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: u64) -> bool {
         if n == 0 { return true; }
 
         // bounding box of the current iteration/contraction
@@ -27,18 +27,20 @@ pub fn generate_menger(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
 
             // calculate next contraction
             // note: the actual iteration of the IFS
+            // There are 27 blocks and only 20 are potentially "solid"
             let mut bounding = [vec3(0.0,0.0,0.0); 20];
-
             let mut i = 0;
             for x in -1..=1 {
                 for y in -1..=1 {
                     for z in -1..=1 {
-                        let mut axis_count = 0;
-                        if x == 0 { axis_count += 1; }
-                        if y == 0 { axis_count += 1; }
-                        if z == 0 { axis_count += 1; }
+                        let mut num_zero_axis = 0;
+                        if x == 0 { num_zero_axis += 1; }
+                        if y == 0 { num_zero_axis += 1; }
+                        if z == 0 { num_zero_axis += 1; }
 
-                        if axis_count != 2 && axis_count != 3 {
+                        // if 2 or 3 coordinates are 0, then the block is one of the 7 blocks
+                        // building the cross in the middle.
+                        if num_zero_axis != 2 && num_zero_axis != 3 {
                             bounding[i] = bb_center + vec3(
                                 x as f32 * offset,
                                 y as f32 * offset,
@@ -64,10 +66,10 @@ pub fn generate_menger(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
         return false;
     }
 
-    let inside = iterate(p, s / SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 15);
+    let inside = iterate(p, s / TREE_SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, depth + 3);
 
     if inside {
-        child.color = Vector3::from_value(1.0);
+        child.color = Vector3::new(1.0 - (1.0 / s.log2()).abs(), 0.25, 0.25);
         child.solid = true;
     }
 

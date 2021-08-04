@@ -1,11 +1,11 @@
-use crate::rendering::{Node, SUBDIVISIONS};
+use crate::rendering::{Node, TREE_SUBDIVISIONS};
 use cgmath::{Vector3, vec3, Array};
 
-pub fn generate_sierpinsky(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
-    let s = child.scale;
-    let p = child.position;
+pub fn generate_sierpinsky(node: &mut Node, _zoom: f64, depth: u64) -> bool {
+    let s = node.scale;
+    let p = node.position;
 
-    fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: i32) -> bool {
+    fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: u64) -> bool {
         if n == 0 { return true; }
 
         // bounding box of the current iteration/contraction
@@ -35,13 +35,13 @@ pub fn generate_sierpinsky(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
                 bb_center + vec3(0.0, c_size, 0.0),
             ];
             // Tetrahedron (less stable in octree)
-            /*let c_size_diag = (c_size * c_size * 0.5).sqrt();
-            let bounding = [
-                bb_center + vec3(-c_size_diag, -c_size, c_size_diag),
-                bb_center + vec3(c_size_diag, -c_size, c_size_diag),
-                bb_center + vec3(0.0, -c_size, -c_size),
-                bb_center + vec3(0.0, c_size, 0.0),
-            ];*/
+            // let c_size_diag = (c_size * c_size * 0.5).sqrt();
+            // let bounding = [
+            //     bb_center + vec3(-c_size_diag, -c_size/2.0, c_size_diag),
+            //     bb_center + vec3(c_size_diag, -c_size/2.0, c_size_diag),
+            //     bb_center + vec3(0.0, -c_size/2.0, -c_size),
+            //     bb_center + vec3(0.0, -c_size/2.0 + c_size_diag, 0.0),
+            // ];
 
             // check if any of the next bounding volumes intersects with the node
             // if none does then we definitely have a node that we do not need
@@ -57,11 +57,11 @@ pub fn generate_sierpinsky(child: &mut Node, _zoom: f64, _depth: u64) -> bool {
         return false;
     }
 
-    let d = iterate(p, s / SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 15);
+    let d = iterate(p, s / TREE_SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 5 + depth);
 
     if d {
-        child.color = Vector3::from_value(1.0);
-        child.solid = true;
+        node.color = Vector3::new(0.25, 0.25,1.0 + (1.0 / s.log2()).abs());
+        node.solid = true;
     }
 
     return d;

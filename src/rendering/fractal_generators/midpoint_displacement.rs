@@ -1,5 +1,5 @@
-use crate::rendering::{Node, SUBDIVISIONS, NodeChildren};
-use cgmath::{Vector3, Array};
+use crate::rendering::{Node, TREE_SUBDIVISIONS, NodeChildren};
+use cgmath::{Vector3};
 use rand::{random, Rng, RngCore};
 use shared_arena::SharedArena;
 use rand::rngs::StdRng;
@@ -49,7 +49,7 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
                 if offset.x > 0.0 { (1,0) } else { (0,0) }
             };
 
-            let h_idx = SUBDIVISIONS.pow(0) * x + SUBDIVISIONS.pow(1) * z;
+            let h_idx = TREE_SUBDIVISIONS.pow(0) * x + TREE_SUBDIVISIONS.pow(1) * z;
             let idx_1 = (h_idx + 1) % 4;
             let mid_idx = (h_idx + 2) % 4;
             let idx_3 = (h_idx + 3) % 4;
@@ -147,7 +147,7 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
                 return *val < min;
             });
 
-            child.color = Vector3::from_value(1.0);
+            child.color = Vector3::new(midpoint, 1.0 - midpoint, 0.0);
             child.solid = true;
             if refine || (higher_max && lower_max) || (lower_min && higher_min) {
                 child.refine = Some(true);
@@ -156,7 +156,7 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
             }
 
             if all_lower {
-                child.color = Vector3::from_value(0.5);
+                child.color = Vector3::new(0.25, 0.25, 0.0);
             }
 
             if all_higher {
