@@ -111,17 +111,6 @@ impl OctreeGuiSystem {
             .default_open(true)
             .build(&ui)
         {
-            ui.text(format!(
-                "RAM Allocation: {:.2} MB",
-                info.byte_size as f64 / (1024f64 * 1024f64)
-            ));
-            ui.text(format!(
-                "GPU Allocation: {:.2} MB",
-                info.gpu_byte_size as f64 / (1024f64 * 1024f64)
-            ));
-
-            ui.separator();
-
             // reset the reset flag
             self.octree_config.reset = None;
 
@@ -364,7 +353,7 @@ impl System for OctreeGuiSystem {
             .collapsible(false)
             .movable(false)
             .position([10.0, 10.0], Condition::FirstUseEver)
-            .size([400.0, 0.0], Condition::FirstUseEver);
+            .size([400.0, 740.0], Condition::FirstUseEver);
         let window_token = window.begin(&ui).unwrap();
 
         for entity in octree_entities {
