@@ -153,8 +153,8 @@ impl<B: Backend> Drop for GPUBuffer<B> {
 pub type UniformID = u64;
 
 pub struct Uniform<B: Backend> {
-    device: Arc<B::Device>,
-    adapter: Arc<Adapter<B>>,
+    _device: Arc<B::Device>,
+    _adapter: Arc<Adapter<B>>,
 
     pub(in crate::rendering) buffers: Vec<GPUBuffer<B>>,
 }
@@ -196,8 +196,8 @@ impl<B: Backend> Uniform<B> {
         }
 
         Uniform {
-            device: renderer.device.clone(),
-            adapter: renderer.adapter.clone(),
+            _device: renderer.device.clone(),
+            _adapter: renderer.adapter.clone(),
             buffers,
         }
     }
