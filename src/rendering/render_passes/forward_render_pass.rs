@@ -20,7 +20,7 @@ use gfx_hal::pass::SubpassDependency;
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{BufferDescriptorFormat, BufferDescriptorType, Descriptor, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, ShaderStageFlags};
 use gfx_hal::query::Query;
-use gfx_hal::queue::CommandQueue;
+use gfx_hal::queue::Queue;
 use gfx_hal::window::Extent2D;
 
 use crate::rendering::{
@@ -29,6 +29,7 @@ use crate::rendering::{
 };
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
+use std::borrow::BorrowMut;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -458,13 +459,18 @@ impl<B: Backend> Drop for ForwardRenderPass<B> {
 
 impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     fn sync(&mut self, frame_idx: usize) {
-        let (fe, _fi, _di, _framebuffer, pool, _command_buffers, _semaphore) =
+        let (fe,
+            _fi, _di, _framebuffer,
+            pool,
+            _command_buffers, _s1, _s2) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
-            self.device
-                .wait_for_fence(fe, !0)
-                .expect("Failed to wait for fence");
+            if !self.device.get_fence_status(fe).unwrap() {
+                self.device
+                    .wait_for_fence(fe, !0)
+                    .expect("Failed to wait for fence");
+            }
             self.device.reset_fence(fe).expect("Failed to reset fence");
             pool.reset(false);
         }
@@ -473,10 +479,14 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     fn submit(
         &mut self,
         frame_idx: usize,
-        queue: &mut B::CommandQueue,
+        queue: &mut B::Queue,
         wait_semaphores: Vec<&B::Semaphore>,
-    ) -> &B::Semaphore {
-        let (fe, _fi, _di, _framebuffer, _pool, command_buffers, semaphore) =
+    ) -> &mut B::Semaphore {
+        let (fe,
+            _fi, _di, _framebuffer, _pool,
+            command_buffers,
+            semaphore,
+            sem_present) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -491,7 +501,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                          Some(fe));
         }
 
-        semaphore
+        sem_present
     }
 
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass> {
@@ -504,14 +514,20 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
     fn blit_to_surface(
         &mut self,
-        queue: &mut B::CommandQueue,
+        queue: &mut B::Queue,
         surface_image: &B::Image,
         frame_idx: usize,
         // acquire_semaphore: &B::Semaphore,
     ) -> &mut B::Semaphore {
         self.sync(frame_idx);
 
-        let (fe, fi, _di, _framebuffer, pool, command_buffers, semaphore) =
+        let (fe,
+            fi,
+            _di, _framebuffer,
+            pool,
+            command_buffers,
+            semaphore,
+            present_sem) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -647,15 +663,15 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
                              (&*semaphore, pso::PipelineStage::TRANSFER),
                              // (acquire_semaphore, pso::PipelineStage::TRANSFER),
                          ].into_iter(),
-                         vec![&*semaphore].into_iter(),
+                         vec![&*present_sem].into_iter(),
                          Some(fe));
         }
 
-        semaphore
+        present_sem
     }
 
     fn record(&mut self, frame_idx: usize) {
-        let (_fe, fi, di, framebuffer, pool, command_buffers, _semaphore) =
+        let (_fe, fi, di, framebuffer, pool, command_buffers, _s1, _s2) =
             self.framebuffer.get_frame_data(frame_idx);
 
         unsafe {
@@ -864,6 +880,10 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
         let start = Bytes::copy_from_slice(&data[0..8]).get_u64_le();
         let end = Bytes::copy_from_slice(&data[8..16]).get_u64_le();
 
-        return end - start;
+        return if start < end {
+            end - start
+        } else {
+            0
+        };
     }
 }

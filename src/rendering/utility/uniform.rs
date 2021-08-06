@@ -63,7 +63,9 @@ impl<B: Backend> GPUBuffer<B> {
         let upload_size = byte_size;
 
         unsafe {
-            buffer = device.create_buffer(upload_size as u64, usage).unwrap();
+            buffer = device.create_buffer(upload_size as u64,
+                                          usage,
+                                          gfx_hal::memory::SparseFlags::empty()).unwrap();
             let mem_req = device.get_buffer_requirements(&buffer);
 
             // A note about performance: Using CPU_VISIBLE memory is convenient because it can be

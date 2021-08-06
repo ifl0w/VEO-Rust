@@ -48,7 +48,7 @@ impl<B: Backend, D: Device<B>> SwapchainWrapper<B, D> {
 
         println!("Surface format: {:?}", format);
         let mut swap_config = SwapchainConfig::from_caps(&caps, format, extent)
-            .with_present_mode(gfx_hal::window::PresentMode::IMMEDIATE);
+            .with_present_mode(gfx_hal::window::PresentMode::MAILBOX);
         swap_config.image_usage = swap_config.image_usage | Usage::TRANSFER_DST;
 
         let extent = swap_config.extent.to_extent();

@@ -133,6 +133,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
         &mut B::CommandPool,
         &mut Vec<B::CommandBuffer>,
         &mut B::Semaphore,
+        &mut B::Semaphore,
     ) {
         (
             &mut self.framebuffer_fences[frame_id],
@@ -141,6 +142,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
             &mut self.framebuffers[frame_id],
             &mut self.command_pools[frame_id],
             &mut self.command_buffer_lists[frame_id],
+            &mut self.acquire_semaphores[frame_id],
             &mut self.present_semaphores[frame_id],
         )
     }

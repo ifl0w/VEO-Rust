@@ -37,6 +37,7 @@ impl<B: Backend, D: Device<B>> DepthImage<B, D> {
                     Format::D24UnormS8Uint,
                     gfx_hal::image::Tiling::Optimal,
                     gfx_hal::image::Usage::DEPTH_STENCIL_ATTACHMENT,
+                    gfx_hal::memory::SparseFlags::empty(),
                     gfx_hal::image::ViewCapabilities::MUTABLE_FORMAT,
                 )
                 .map_err(|_| "Couldn't crate the image!")?;
@@ -71,6 +72,7 @@ impl<B: Backend, D: Device<B>> DepthImage<B, D> {
                     gfx_hal::image::ViewKind::D2,
                     Format::D24UnormS8Uint,
                     gfx_hal::format::Swizzle::NO,
+                    gfx_hal::image::Usage::DEPTH_STENCIL_ATTACHMENT,
                     SubresourceRange {
                         aspects: Aspects::DEPTH,
                         level_start: 0,
