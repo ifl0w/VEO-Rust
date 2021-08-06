@@ -42,12 +42,11 @@ fn main() {
     let octree = Entity::new();
     let octree_config = OctreeConfig::default();
     let scale = vec3(1.0, 1.0, 1.0);
-    // let scale = vec3(250.0, 250.0, 250.0);
     octree
         .lock()
         .unwrap()
         .add_component(Octree::new(&render_system, octree_config))
-        .add_component(Transformation::new().scale(scale)) //.position(size / 2.0))
+        .add_component(Transformation::new().scale(scale))
         .add_component(Mesh::new::<Cube>(&render_system));
     engine.add_entity(octree);
 
