@@ -11,13 +11,10 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
     let scale = node.scale;
 
     if depth == 0 {
-        unsafe {
-            SEED_OFFSET = random::<f32>();
-        }
+        // initialization only for the root node
+        unsafe { SEED_OFFSET = random::<f32>(); }
         node.height_values = rand::thread_rng().gen::<[f32; 4]>();
-        node.height_values.iter_mut().for_each(|v| {
-            *v = *v - scale * 0.5;
-        });
+        node.height_values.iter_mut().for_each(|v| { *v = *v - scale * 0.5; });
     }
 
     if node.refine.is_some() && !node.refine.unwrap() {
@@ -33,6 +30,7 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
     let mut rng: StdRng = rand_seeder::Seeder::from(seed).make_rng();
     let rng_offset =  rng.next_u32() as f64 / u32::max_value() as f64;
 
+    // displace mid point
     let mut midpoint: f32 = node.height_values.iter().sum::<f32>() / 4.0 as f32;
     midpoint += (rng_offset as f32 - 0.5) * node.scale;
 
@@ -43,12 +41,14 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
         .for_each(|child| {
             let offset = child.position - origin;
 
+            // calculate cyclical indexing of height values of the child
             let (x, z) = if offset.z > 0.0 {
                 if offset.x > 0.0 { (0,1) } else { (1,1) }
             } else {
                 if offset.x > 0.0 { (1,0) } else { (0,0) }
             };
 
+            // map cyclical indices to child indices
             let h_idx = TREE_SUBDIVISIONS.pow(0) * x + TREE_SUBDIVISIONS.pow(1) * z;
             let idx_1 = (h_idx + 1) % 4;
             let mid_idx = (h_idx + 2) % 4;
@@ -56,60 +56,11 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
 
             child.height_values[h_idx] = height_vals[h_idx];
             child.height_values[mid_idx] = midpoint;
-
-            let off_coords = match (x,z) {
-
-                (0,0) => (origin.x - 0.5 * scale, origin.z - 0.5 * scale),
-                (1,0) => (origin.x + 0.5 * scale, origin.z - 0.5 * scale),
-                (0,1) => (origin.x + 0.5 * scale, origin.z + 0.5 * scale),
-                (1,1) => (origin.x - 0.5 * scale, origin.z + 0.5 * scale),
-                _ => (0.0, 0.0)
-            };
-
-            // HACK!!: generate same random value for same vertical position
-            // let mut rng_x: StdRng = rand_seeder::Seeder::from(((child.position.x + fu.x).to_ne_bytes(), child.position.z.to_ne_bytes())).make_rng();
-            let mut rng_x: StdRng = rand_seeder::Seeder::from((off_coords.0.to_ne_bytes(), origin.z.to_ne_bytes())).make_rng();
-            let _rng_offset_x = ((rng_x.next_u32() as f64 / u32::max_value() as f64) as f32 - 0.5) * child.scale;
-
-            let mut rng_z: StdRng = rand_seeder::Seeder::from((origin.x.to_ne_bytes(), off_coords.1.to_ne_bytes())).make_rng();
-            let _rng_offset_z = ((rng_z.next_u32() as f64 / u32::max_value() as f64) as f32 - 0.5) * child.scale;
-
-            // match h_idx {
-            //     0 => {
-            //         // child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_z;
-            //         // child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_x;
-            //         //
-            //         child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx]) / 2.0 + rng_offset_z;
-            //         child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx]) / 2.0 + rng_offset_x;
-            //     }
-            //     1 => {
-            //         // child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_x;
-            //         // child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_z;
-            //         //
-            //         child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx]) / 2.0 + rng_offset_x;
-            //         child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx]) / 2.0 + rng_offset_z;
-            //     }
-            //     2 => {
-            //         // child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_z;
-            //         // child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_x;
-            //         //
-            //         child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx]) / 2.0 + rng_offset_z;
-            //         child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx]) / 2.0 + rng_offset_x;
-            //     }
-            //     3 => {
-            //         // child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_x;
-            //         // child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx] + midpoint) / 3.0 + rng_offset_z;
-            //         //
-            //         child.height_values[idx_1] = (hvals[idx_1] + hvals[h_idx]) / 2.0 + rng_offset_x;
-            //         child.height_values[idx_3] = (hvals[idx_3] + hvals[h_idx]) / 2.0 + rng_offset_z;
-            //     }
-            //     _ => ()
-            // }
             child.height_values[idx_1] = (height_vals[idx_1] + height_vals[h_idx]) / 2.0;
             child.height_values[idx_3] = (height_vals[idx_3] + height_vals[h_idx]) / 2.0;
 
-            // one of the height values intersects with this child's bounding box
-            let refine = child.height_values.iter().any(|val| {
+            // Helper values for finding nodes that intersect the surface
+            let surface_in_node = child.height_values.iter().any(|val| {
                 let min = child.position.y - child.scale * 0.5;
                 let max = child.position.y + child.scale * 0.5;
 
@@ -126,6 +77,7 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
                 return *val < max;
             });
 
+
             let lower_min = child.height_values.iter().any(|val| {
                 let min = child.position.y - child.scale * 0.5;
                 return *val < min;
@@ -136,30 +88,35 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
                 return *val > min;
             });
 
-            // all height values are over this node. We do not need to refine further.
-            let all_lower = child.height_values.iter().all(|val| {
+            // Test whether all height values are above the node.
+            let node_below_surface = child.height_values.iter().all(|val| {
                 let max = child.position.y + child.scale * 0.5;
                 return *val > max;
             });
 
-            let all_higher = child.height_values.iter().all(|val| {
+            // Test whether all height values are below the node.
+            let node_above_surface = child.height_values.iter().all(|val| {
                 let min = child.position.y - child.scale * 0.5;
                 return *val < min;
             });
 
             child.color = Vector3::new(midpoint, 1.0 - midpoint, 0.0);
             child.solid = true;
-            if refine || (higher_max && lower_max) || (lower_min && higher_min) {
+
+            // surface blocks need to be refined
+            if surface_in_node || (higher_max && lower_max) || (lower_min && higher_min) {
                 child.refine = Some(true);
             } else {
                 child.refine = Some(false);
             }
 
-            if all_lower {
+            // "earth" blocks
+            if node_below_surface {
                 child.color = Vector3::new(0.25, 0.25, 0.0);
             }
 
-            if all_higher {
+            // "air" blocks
+            if node_above_surface {
                 child.solid = false;
             }
         });

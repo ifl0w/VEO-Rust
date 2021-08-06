@@ -88,7 +88,7 @@ impl System for FPSCameraSystem {
                     WindowEvent::MouseWheel { delta, .. } => match delta {
                         MouseScrollDelta::LineDelta(_x, y) => {
                             let change = 0.1;
-                            self.movement_speed = self.movement_speed * (1.0 - y.signum() * change);
+                            self.movement_speed = self.movement_speed * (1.0 + y.signum() * change);
                         }
                         _ => ()
                     },

@@ -22,7 +22,7 @@ use gfx_hal::buffer;
 use rayon::prelude::*;
 use winit::event::Event;
 
-use crate::core::{Component, Filter, Message, Payload, System};
+use crate::core::{Component, Filter, Message, Payload, System, Exit};
 use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation, fractal_generators};
 use crate::rendering::nse_gui::octree_gui::ProfilingData;
 
@@ -55,7 +55,7 @@ pub struct Octree {
 pub struct OctreeConfig {
     pub max_rendered_nodes: Option<u64>,
     pub subdiv_threshold: Option<f64>,
-    pub threshold_scale: Option<f64>,
+    pub distance_scale: Option<f64>,
     pub depth: Option<u64>,
     pub fractal: Option<FractalSelection>,
     pub continuous_update: Option<bool>,
@@ -67,7 +67,7 @@ impl Default for OctreeConfig {
         OctreeConfig {
             max_rendered_nodes: Some(4e6 as u64),
             subdiv_threshold: Some(20.0),
-            threshold_scale: Some(1.0),
+            distance_scale: Some(1.0),
             depth: Some(DEFAULT_DEPTH),
             fractal: Some(FractalSelection::MandelBulb),
             continuous_update: Some(true),
@@ -576,6 +576,19 @@ impl System for OctreeSystem {
             if msg.is_type::<OctreeOptimizations>() {
                 self.optimizations = msg.get_payload::<OctreeOptimizations>().unwrap().clone();
             }
+            if msg.is_type::<Exit>() {
+                if self.generate_handle.is_some() {
+                    self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
+                    let handle = self.generate_handle.take().unwrap();
+                    handle.join().unwrap();
+                }
+
+                if self.upload_handle.is_some() {
+                    let handle = self.upload_handle.take().unwrap();
+                    self.data_queue.enqueue(Err(127)).unwrap(); // exit code
+                    handle.join().unwrap();
+                }
+            }
         });
     }
 
@@ -842,7 +855,7 @@ fn limit_depth_traversal(optimization_data: &OptimizationData, node: &Node) -> b
     }
 
     // let mut projected_scale = node.scale / projected_position.w; // fixed linear scaling
-    let exponent = optimization_data.config.threshold_scale.unwrap(); // 1 = linear scaling
+    let exponent = optimization_data.config.distance_scale.unwrap(); // 1 = linear scaling
     let mut projected_scale = node.scale / projected_position.w; // * 2.0.pow(1.0/exponent as f32) as f32);
     let depth = (projected_position.z / projected_position.w).max(0.0);
     // let dist = (projected_position.truncate() / projected_position.w).magnitude().max(0.0);

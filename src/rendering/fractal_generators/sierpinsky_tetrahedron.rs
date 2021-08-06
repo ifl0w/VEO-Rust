@@ -1,7 +1,7 @@
 use crate::rendering::{Node, TREE_SUBDIVISIONS};
 use cgmath::{Vector3, vec3, Array};
 
-pub fn generate_sierpinsky_pyramid(node: &mut Node, _zoom: f64, depth: u64) -> bool {
+pub fn generate_sierpinsky_tetrahedron(node: &mut Node, _zoom: f64, depth: u64) -> bool {
     let s = node.scale;
     let p = node.position;
 
@@ -26,13 +26,13 @@ pub fn generate_sierpinsky_pyramid(node: &mut Node, _zoom: f64, depth: u64) -> b
 
             // calculate next contraction positions
             // note: the actual iteration of the IFS
-            // Pyramid (numerically more stable in octree)
+            // Tetrahedron (less stable in octree)
+            let c_size_diag = (c_size * c_size * 1.0).sqrt();
             let bounding = [
-                bb_center + vec3(-c_size, -c_size, c_size),
-                bb_center + vec3(-c_size, -c_size, -c_size),
-                bb_center + vec3(c_size, -c_size, -c_size),
-                bb_center + vec3(c_size, -c_size, c_size),
-                bb_center + vec3(0.0, c_size, 0.0),
+                bb_center + vec3(-c_size_diag, -c_size, c_size_diag),
+                bb_center + vec3(c_size_diag, -c_size, c_size_diag),
+                bb_center + vec3(0.0, -c_size, -c_size),
+                bb_center + vec3(0.0, c_size, c_size / 4.0),
             ];
 
             // check if any of the next bounding volumes intersects with the node

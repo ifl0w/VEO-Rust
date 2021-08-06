@@ -1,9 +1,9 @@
 use crate::rendering::{Node, TREE_SUBDIVISIONS};
 use cgmath::{Vector3, vec3, Array};
 
-pub fn generate_menger(child: &mut Node, _zoom: f64, depth: u64) -> bool {
-    let s = child.scale;
-    let p = child.position;
+pub fn generate_menger(node: &mut Node, _zoom: f64, depth: u64) -> bool {
+    let s = node.scale;
+    let p = node.position;
 
     fn iterate(p: Vector3<f32>, s: f32, bb_center: Vector3<f32>, bb_size: f32, n: u64) -> bool {
         if n == 0 { return true; }
@@ -69,8 +69,8 @@ pub fn generate_menger(child: &mut Node, _zoom: f64, depth: u64) -> bool {
     let inside = iterate(p, s / TREE_SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, depth + 3);
 
     if inside {
-        child.color = Vector3::new(1.0 - (1.0 / s.log2()).abs(), 0.25, 0.25);
-        child.solid = true;
+        node.color = Vector3::new(1.0 - (1.0 / s.log2()).abs(), 0.25, 0.25);
+        node.solid = true;
     }
 
     return inside;

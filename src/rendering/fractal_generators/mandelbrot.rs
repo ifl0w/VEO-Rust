@@ -1,13 +1,13 @@
 use crate::rendering::Node;
 use cgmath::{Vector3, vec3};
 
-pub fn generate_mandelbrot(child: &mut Node, zoom: f64, depth: u64) -> bool {
-    let origin = &child.position;
-    let scale = child.scale;
+pub fn generate_mandelbrot(node: &mut Node, zoom: f64, depth: u64) -> bool {
+    let origin = &node.position;
+    let scale = node.scale;
 
     let thickness = 0.0; // only a slice
-    if origin.y + child.scale * 0.5 < -thickness
-        || origin.y - child.scale * 0.5 > thickness {
+    if origin.y + node.scale * 0.5 < -thickness
+        || origin.y - node.scale * 0.5 > thickness {
         return false;
     };
 
@@ -62,8 +62,8 @@ pub fn generate_mandelbrot(child: &mut Node, zoom: f64, depth: u64) -> bool {
 
     // inner of mandelbrot
     if distance <= 0.0 || iter == 0 {
-        child.solid = true;
-        child.color = Vector3::new(0.0, 0.0, 0.0);
+        node.solid = true;
+        node.color = Vector3::new(0.0, 0.0, 0.0);
         return true;
     }
 
@@ -77,12 +77,12 @@ pub fn generate_mandelbrot(child: &mut Node, zoom: f64, depth: u64) -> bool {
     // it is only backed by experimental
     let runaway = (depth as f64) / (((iter_start - iter) as f64) * chaos_factor);
     if runaway < 1.0 {
-        child.color = Vector3::new(
+        node.color = Vector3::new(
             (runaway * chaos_factor) as f32,
             (1.0 - (distance / radius).ln() as f32 / (1.0 / scale).ln()) * chaos_factor as f32,
             ((iter_start - iter) as f32 / iter_start as f32) * chaos_factor as f32
         );
-        child.solid = true;
+        node.solid = true;
         return true;
     }
 

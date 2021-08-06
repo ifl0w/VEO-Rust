@@ -8,7 +8,8 @@ use mandelbrot::generate_mandelbrot;
 use mandelbulb::generate_mandelbulb;
 use menger_sponge::generate_menger;
 use midpoint_displacement::generate_terrain;
-use sierpinsky_pyramid::generate_sierpinsky;
+use sierpinsky_pyramid::generate_sierpinsky_pyramid;
+use sierpinsky_tetrahedron::generate_sierpinsky_tetrahedron;
 
 use crate::rendering::{Node, NodeChildren, OctreeConfig};
 
@@ -16,6 +17,7 @@ mod mandelbrot;
 mod mandelbulb;
 mod menger_sponge;
 mod sierpinsky_pyramid;
+mod sierpinsky_tetrahedron;
 mod midpoint_displacement;
 
 #[derive(Clone, Copy, Debug, PartialEq, FromPrimitive, ToPrimitive)]
@@ -23,6 +25,7 @@ pub enum FractalSelection {
     MandelBulb = 0,
     MandelBrot,
     SierpinskyPyramid,
+    SierpinskyTetrahedron,
     MengerSponge,
     MidpointDisplacement,
 }
@@ -41,13 +44,14 @@ pub fn build_tree(node: &mut Node, config: OctreeConfig, current_depth: u64, tar
         Some(FractalSelection::MandelBrot) =>
             generate_mandelbrot(node, zoom, current_depth),
         Some(FractalSelection::SierpinskyPyramid) =>
-            generate_sierpinsky(node, zoom, current_depth),
+            generate_sierpinsky_pyramid(node, zoom, current_depth),
+        Some(FractalSelection::SierpinskyTetrahedron) =>
+            generate_sierpinsky_tetrahedron(node, zoom, current_depth),
         Some(FractalSelection::MengerSponge) =>
             generate_menger(node, zoom, current_depth),
         Some(FractalSelection::MidpointDisplacement) =>
             generate_terrain(node, node_pool, current_depth),
         None => false,
-        _ => false,
     };
 
     if node.refine.is_none() {

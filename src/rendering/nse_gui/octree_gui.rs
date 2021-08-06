@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cgmath::Vector4;
+use cgmath::{Rotation, Vector3};
 use glium::{Display, Surface};
 use glium::glutin;
 use glium::glutin::event::WindowEvent;
@@ -126,9 +126,9 @@ impl OctreeGuiSystem {
                     Some(FractalSelection::MandelBulb) => fractal_names.push(im_str!("Mandel Bulb")),
                     Some(FractalSelection::MandelBrot) => fractal_names.push(im_str!("Mandel Brot")),
                     Some(FractalSelection::SierpinskyPyramid) => fractal_names.push(im_str!("Sierpinsky Pyramid")),
+                    Some(FractalSelection::SierpinskyTetrahedron) => fractal_names.push(im_str!("Sierpinsky Tetrahedron")),
                     Some(FractalSelection::MengerSponge) => fractal_names.push(im_str!("Menger Sponge")),
                     Some(FractalSelection::MidpointDisplacement) => fractal_names.push(im_str!("Midpoint Displacement")),
-                    Some(_) => fractal_names.push(im_str!("Unknown Fractal")),
                     _ => break, // leave loop
                 }
             }
@@ -166,7 +166,7 @@ impl OctreeGuiSystem {
             if Slider::new(im_str!("Distance Scale"))
                 .range(RangeInclusive::new(0.05 as f64, 1.0 as f64))
                 // .flags(SliderFlags::LOGARITHMIC)
-                .build(&ui, self.octree_config.threshold_scale.as_mut().unwrap())
+                .build(&ui, self.octree_config.distance_scale.as_mut().unwrap())
             {
                 modified = true;
             }
@@ -224,45 +224,29 @@ impl OctreeGuiSystem {
             ui.separator();
 
             ui.text(im_str!("Rendered Nodes: {}", rendered_nodes));
-
-            ui.text(im_str!("Render Time Nodes: {:.2} ms", render_time));
-
-            ui.separator();
-
-            let mouse_pos = &ui.io().mouse_pos;
-            ui.text(format!(
-                "Mouse Position: ({:.1},{:.1})",
-                mouse_pos[0], mouse_pos[1]
-            ));
+            ui.text(im_str!("Render Time: {:.2} ms", render_time));
         }
     }
 
-    fn display_camera_ui(&mut self, ui: &Ui, _camera: &Camera, camera_transform: &Transformation) {
+    fn display_camera_ui(&mut self, ui: &Ui, _camera: &Camera, camera_transform: &mut Transformation) {
         if CollapsingHeader::new(im_str!("Camera"))
             .default_open(true)
             .build(&ui)
         {
-            let view_dir = camera_transform.get_model_matrix() * (-Vector4::unit_z());
-
+            let mut view_dir = camera_transform.rotation.rotate_vector(-Vector3::unit_z());
             InputFloat3::new(
                 &ui,
-                im_str!("View Direction"),
-                &mut [view_dir.x, view_dir.y, view_dir.z],
-            )
-                .read_only(true)
-                .build();
+                im_str!("View Direction (read only)"),
+                view_dir.as_mut()
+            ).read_only(true).build();
 
             InputFloat3::new(
                 &ui,
                 im_str!("Camera Position"),
-                &mut [
-                    camera_transform.position.x,
-                    camera_transform.position.y,
-                    camera_transform.position.z,
-                ],
-            )
-                .read_only(true)
-                .build();
+                camera_transform.position.as_mut(),
+            ).build();
+
+            camera_transform.update();
         }
     }
 }
@@ -374,14 +358,16 @@ impl System for OctreeGuiSystem {
         }
 
         for entity in camera_entities {
-            let entitiy_mutex = entity.lock().unwrap();
-            let camera_transform = entitiy_mutex
+            let mut entitiy_mutex = entity.lock().unwrap();
+            let mut camera_transform = entitiy_mutex
                 .get_component::<Transformation>()
                 .ok()
-                .unwrap();
+                .unwrap().clone();
             let camera = entitiy_mutex.get_component::<Camera>().ok().unwrap();
 
-            self.display_camera_ui(&ui, camera, camera_transform);
+            self.display_camera_ui(&ui, camera, &mut camera_transform);
+
+            entitiy_mutex.add_component(camera_transform);
         }
 
         window_token.end(&ui);
