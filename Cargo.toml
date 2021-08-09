@@ -42,4 +42,5 @@ optional = true
 version = "0.7.0"
 
 [features]
+default = ["vulkan"]
 vulkan = ["gfx-backend-vulkan"]

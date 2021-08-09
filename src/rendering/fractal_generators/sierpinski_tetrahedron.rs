@@ -2,7 +2,7 @@ use cgmath::{Array, vec3, Vector3};
 
 use crate::rendering::{Node, TREE_SUBDIVISIONS};
 
-pub fn generate_sierpinsky_tetrahedron(node: &mut Node, _zoom: f64, depth: u64) -> bool {
+pub fn generate_sierpinski_tetrahedron(node: &mut Node, _zoom: f64, depth: u64) -> bool {
     let s = node.scale;
     let p = node.position;
 

@@ -123,8 +123,8 @@ impl OctreeGuiSystem {
                 match FromPrimitive::from_i32(x) {
                     Some(FractalSelection::MandelBulb) => fractal_names.push(im_str!("Mandel Bulb")),
                     Some(FractalSelection::MandelBrot) => fractal_names.push(im_str!("Mandel Brot")),
-                    Some(FractalSelection::SierpinskyPyramid) => fractal_names.push(im_str!("Sierpinsky Pyramid")),
-                    Some(FractalSelection::SierpinskyTetrahedron) => fractal_names.push(im_str!("Sierpinsky Tetrahedron")),
+                    Some(FractalSelection::SierpinskiPyramid) => fractal_names.push(im_str!("Sierpinski Pyramid")),
+                    Some(FractalSelection::SierpinskiTetrahedron) => fractal_names.push(im_str!("Sierpinski Tetrahedron")),
                     Some(FractalSelection::MengerSponge) => fractal_names.push(im_str!("Menger Sponge")),
                     Some(FractalSelection::MidpointDisplacement) => fractal_names.push(im_str!("Midpoint Displacement")),
                     _ => break, // leave loop
