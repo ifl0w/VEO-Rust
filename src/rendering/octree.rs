@@ -379,6 +379,7 @@ pub struct OctreeSystem {
     data_queue: Arc<MpscQueue<Result<InstanceData, i8>>>,
     last_viewpoint: Matrix4<f32>,
     dirty: bool,
+    exit: bool,
 }
 
 unsafe impl Send for OctreeSystem {}
@@ -408,18 +409,7 @@ impl Payload for OctreeOptimizations {}
 
 impl Drop for OctreeSystem {
     fn drop(&mut self) {
-        match self.generate_handle.take() {
-            Some(handle) => { handle.join().unwrap(); },
-            _ => {}
-        }
-
-        self.data_queue.enqueue(Err(127)).unwrap(); // inform thread to exit
-        match self.upload_handle.take() {
-            Some(handle) => { handle.join().unwrap(); },
-            _ => {}
-        }
-
-        return;
+        self.join_child_threads();
     }
 }
 
@@ -446,7 +436,8 @@ impl OctreeSystem {
 
             data_queue: Arc::new(MpscQueue::new()),
             last_viewpoint: Matrix4::identity(),
-            dirty: true
+            dirty: true,
+            exit: false
         }))
     }
 
@@ -556,6 +547,20 @@ impl OctreeSystem {
                 }
             });
     }
+
+    fn join_child_threads(&mut self) {
+        if self.generate_handle.is_some() {
+            self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
+            let handle = self.generate_handle.take().unwrap();
+            handle.join().unwrap();
+        }
+
+        if self.upload_handle.is_some() {
+            let handle = self.upload_handle.take().unwrap();
+            self.data_queue.enqueue(Err(127)).unwrap(); // exit code
+            handle.join().unwrap();
+        }
+    }
 }
 
 impl System for OctreeSystem {
@@ -577,17 +582,7 @@ impl System for OctreeSystem {
                 self.optimizations = msg.get_payload::<OctreeOptimizations>().unwrap().clone();
             }
             if msg.is_type::<Exit>() {
-                if self.generate_handle.is_some() {
-                    self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
-                    let handle = self.generate_handle.take().unwrap();
-                    handle.join().unwrap();
-                }
-
-                if self.upload_handle.is_some() {
-                    let handle = self.upload_handle.take().unwrap();
-                    self.data_queue.enqueue(Err(127)).unwrap(); // exit code
-                    handle.join().unwrap();
-                }
+                self.exit = true;
             }
         });
     }
@@ -595,6 +590,11 @@ impl System for OctreeSystem {
     fn execute(&mut self, filter: &Vec<Arc<Mutex<Filter>>>, _delta_time: Duration) {
         let octree_entities = &filter[0].lock().unwrap().entities;
         let camera_entities = &filter[1].lock().unwrap().entities;
+
+        if self.exit {
+            self.join_child_threads();
+            return;
+        }
 
         for entity in octree_entities {
             let mut entitiy_mutex = entity.lock().unwrap();
@@ -610,18 +610,7 @@ impl System for OctreeSystem {
 
             let mut settings_modified = false;
             if self.update_config.is_some() {
-
-                if self.generate_handle.is_some() {
-                    self.collecting_data.store(false, Ordering::SeqCst); // stop generating nodes
-                    let handle = self.generate_handle.take().unwrap();
-                    handle.join().unwrap();
-                }
-
-                if self.upload_handle.is_some() {
-                    let handle = self.upload_handle.take().unwrap();
-                    self.data_queue.enqueue(Err(127)).unwrap(); // exit code
-                    handle.join().unwrap();
-                }
+                self.join_child_threads();
 
                 let mut conf = self.update_config.take().unwrap();
                 let reset = conf.reset.take().unwrap_or(false);
