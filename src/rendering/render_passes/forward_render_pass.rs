@@ -20,7 +20,7 @@ use gfx_hal::pass::SubpassDependency;
 use gfx_hal::pool::CommandPool;
 use gfx_hal::pso::{BufferDescriptorFormat, BufferDescriptorType, Descriptor, DescriptorPool, DescriptorPoolCreateFlags, DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorSetWrite, DescriptorType, ShaderStageFlags};
 use gfx_hal::query::Query;
-use gfx_hal::queue::Queue;
+use gfx_hal::queue::CommandQueue;
 use gfx_hal::window::Extent2D;
 
 use crate::rendering::{
@@ -29,7 +29,6 @@ use crate::rendering::{
 };
 use crate::rendering::framebuffer::Framebuffer;
 use crate::rendering::renderer::Renderer;
-use std::borrow::BorrowMut;
 
 //use crate::rendering::pipelines::{ResolvePipeline, ForwardPipeline, Pipeline};
 
@@ -479,7 +478,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
     fn submit(
         &mut self,
         frame_idx: usize,
-        queue: &mut B::Queue,
+        queue: &mut B::CommandQueue,
         wait_semaphores: Vec<&B::Semaphore>,
     ) -> &mut B::Semaphore {
         let (fe,
@@ -514,7 +513,7 @@ impl<B: Backend> RenderPass<B> for ForwardRenderPass<B> {
 
     fn blit_to_surface(
         &mut self,
-        queue: &mut B::Queue,
+        queue: &mut B::CommandQueue,
         surface_image: &B::Image,
         frame_idx: usize,
         // acquire_semaphore: &B::Semaphore,

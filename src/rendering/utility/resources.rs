@@ -178,7 +178,7 @@ impl<B> GPUMesh<B>
         vertices: &Vec<Vertex>,
     ) -> (u32, ManuallyDrop<B::Buffer>, ManuallyDrop<B::Memory>) {
         let memory_types = adapter.physical_device.memory_properties().memory_types;
-        let limits = adapter.physical_device.properties().limits;
+        let limits = adapter.physical_device.limits();
 
         let non_coherent_alignment = limits.non_coherent_atom_size as u64;
 
@@ -190,11 +190,8 @@ impl<B> GPUMesh<B>
             * non_coherent_alignment;
 
         let mut vertex_buffer = ManuallyDrop::new(
-            unsafe {
-                device.create_buffer(padded_buffer_len,
-                                          gfx_hal::buffer::Usage::VERTEX,
-                                          gfx_hal::memory::SparseFlags::empty())
-            }.unwrap(),
+            unsafe { device.create_buffer(padded_buffer_len, gfx_hal::buffer::Usage::VERTEX) }
+                .unwrap(),
         );
 
         let buffer_req = unsafe { device.get_buffer_requirements(&vertex_buffer) };
@@ -246,7 +243,7 @@ impl<B> GPUMesh<B>
         indices: &Vec<Index>,
     ) -> (u32, ManuallyDrop<B::Buffer>, ManuallyDrop<B::Memory>) {
         let memory_types = adapter.physical_device.memory_properties().memory_types;
-        let limits = adapter.physical_device.properties().limits;
+        let limits = adapter.physical_device.limits();
 
         println!("Memory types: {:?}", memory_types);
         let non_coherent_alignment = limits.non_coherent_atom_size as u64;
@@ -259,11 +256,8 @@ impl<B> GPUMesh<B>
             * non_coherent_alignment;
 
         let mut index_buffer = ManuallyDrop::new(
-            unsafe {
-                device.create_buffer(padded_buffer_len,
-                                     gfx_hal::buffer::Usage::INDEX,
-                                     gfx_hal::memory::SparseFlags::empty())
-            }.unwrap(),
+            unsafe { device.create_buffer(padded_buffer_len, gfx_hal::buffer::Usage::INDEX) }
+                .unwrap(),
         );
 
         let buffer_req = unsafe { device.get_buffer_requirements(&index_buffer) };

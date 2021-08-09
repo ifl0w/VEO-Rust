@@ -16,14 +16,14 @@ pub trait RenderPass<B: Backend> {
     fn submit(
         &mut self,
         frame_idx: usize,
-        queue: &mut B::Queue,
+        queue: &mut B::CommandQueue,
         wait_semaphores: Vec<&B::Semaphore>,
     ) -> &mut B::Semaphore;
     fn get_render_pass(&self) -> &ManuallyDrop<B::RenderPass>;
     fn get_descriptor_set(&self, frame_index: usize) -> &B::DescriptorSet;
     fn blit_to_surface(
         &mut self,
-        queue: &mut B::Queue,
+        queue: &mut B::CommandQueue,
         surface_image: &B::Image,
         frame_idx: usize,
     ) -> &mut B::Semaphore;

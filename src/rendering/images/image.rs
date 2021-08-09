@@ -42,7 +42,6 @@ impl<B: Backend, D: Device<B>> Image<B, D> {
                     format,
                     gfx_hal::image::Tiling::Optimal,
                     usage,
-                    gfx_hal::memory::SparseFlags::empty(),
                     gfx_hal::image::ViewCapabilities::MUTABLE_FORMAT,
                 )
                 .map_err(|_| "Couldn't crate the image!")?;
@@ -77,7 +76,6 @@ impl<B: Backend, D: Device<B>> Image<B, D> {
                     gfx_hal::image::ViewKind::D2,
                     format,
                     gfx_hal::format::Swizzle::NO,
-                    usage,
                     SubresourceRange {
                         aspects: Aspects::COLOR,
                         level_start: 0,
