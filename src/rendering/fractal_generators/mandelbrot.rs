@@ -1,5 +1,6 @@
+use cgmath::{vec3, Vector3};
+
 use crate::rendering::Node;
-use cgmath::{Vector3, vec3};
 
 pub fn generate_mandelbrot(node: &mut Node, zoom: f64, depth: u64) -> bool {
     let origin = &node.position;
@@ -80,7 +81,7 @@ pub fn generate_mandelbrot(node: &mut Node, zoom: f64, depth: u64) -> bool {
         node.color = Vector3::new(
             (runaway * chaos_factor) as f32,
             (1.0 - (distance / radius).ln() as f32 / (1.0 / scale).ln()) * chaos_factor as f32,
-            ((iter_start - iter) as f32 / iter_start as f32) * chaos_factor as f32
+            ((iter_start - iter) as f32 / iter_start as f32) * chaos_factor as f32,
         );
         node.solid = true;
         return true;

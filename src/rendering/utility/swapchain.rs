@@ -1,8 +1,5 @@
 use std::marker::PhantomData;
-
-
-
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use gfx_hal::adapter::Adapter;
 use gfx_hal::Backend;

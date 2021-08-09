@@ -124,8 +124,8 @@ impl NSE {
 
                     *delta_time.lock().unwrap() = frame_end - frame_start;
                     frame_start = frame_end;
-                },
-                _ => { },
+                }
+                _ => {}
             }
         });
     }

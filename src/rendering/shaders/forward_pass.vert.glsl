@@ -12,8 +12,8 @@ layout(binding = 0) uniform UniformBufferObject {
 } camera_ubo;
 
 struct InstanceData {
-    vec4 transform; // w = uniform scale value
-    vec4 color;  // w = unused
+    vec4 transform;// w = uniform scale value
+    vec4 color;// w = unused
 };
 
 layout(binding = 1) buffer InstanceDataBuffer {

@@ -12,27 +12,24 @@ pub extern crate gfx_backend_gl as Backend;
 pub extern crate gfx_backend_vulkan as Backend;
 extern crate rand;
 
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, Instant};
 
-use cgmath::{Array, InnerSpace, Matrix4, Rotation, Transform, vec3, Vector3, SquareMatrix};
+use cgmath::{Array, InnerSpace, Matrix4, Rotation, SquareMatrix, Transform, vec3, Vector3};
 use cgmath::num_traits::Pow;
 use gfx_hal::buffer;
 use rayon::prelude::*;
+use riffy::MpscQueue;
+use shared_arena::{ArenaBox, SharedArena};
 use winit::event::Event;
 
-use crate::core::{Component, Filter, Message, Payload, System, Exit};
-use crate::rendering::{Camera, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation, fractal_generators};
-use crate::rendering::nse_gui::octree_gui::ProfilingData;
-
-use std::thread::{sleep, JoinHandle};
-use riffy::MpscQueue;
-
-use std::collections::VecDeque;
-
-use shared_arena::{SharedArena, ArenaBox};
+use crate::core::{Component, Exit, Filter, Message, Payload, System};
+use crate::rendering::{Camera, fractal_generators, Frustum, GPUBuffer, InstanceData, Mesh, RenderSystem, Transformation};
 use crate::rendering::fractal_generators::FractalSelection;
+use crate::rendering::nse_gui::octree_gui::ProfilingData;
 
 pub const TREE_SUBDIVISIONS: usize = 2;
 const DEFAULT_DEPTH: u64 = 4;
@@ -48,7 +45,7 @@ pub struct Octree {
     pub config: OctreeConfig,
     pub info: OctreeInfo,
 
-    pub node_pool: Arc<SharedArena<NodeChildren>>
+    pub node_pool: Arc<SharedArena<NodeChildren>>,
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -139,7 +136,7 @@ impl Octree {
             config,
             info: OctreeInfo::default(),
 
-            node_pool: arena
+            node_pool: arena,
         };
 
         oct.reconfigure(render_system, config);
@@ -149,7 +146,7 @@ impl Octree {
             oct.config,
             0,
             1,
-            &oct.node_pool
+            &oct.node_pool,
         );
 
         oct.info.byte_size = self::Octree::size_in_bytes(&oct);
@@ -308,7 +305,6 @@ impl Node {
         }
 
         self.children = Some(chil);
-
     }
 
     pub fn count_nodes(&self) -> usize {
@@ -355,7 +351,7 @@ impl Default for Node {
             height_values: [0.0; 4],
             scale: 1.0,
             solid: false,
-            refine: None
+            refine: None,
         }
     }
 }
@@ -437,7 +433,7 @@ impl OctreeSystem {
             data_queue: Arc::new(MpscQueue::new()),
             last_viewpoint: Matrix4::identity(),
             dirty: true,
-            exit: false
+            exit: false,
         }))
     }
 
@@ -447,7 +443,7 @@ impl OctreeSystem {
                             root: Arc<Mutex<Node>>,
                             collected_nodes: Arc<AtomicUsize>,
                             data_queue: Arc<MpscQueue<Result<InstanceData, i8>>>,
-                            node_pool: &SharedArena<NodeChildren>
+                            node_pool: &SharedArena<NodeChildren>,
     ) {
         let mut root_lock = root.lock().unwrap();
 
@@ -461,7 +457,7 @@ impl OctreeSystem {
             &collecting_data,
             &data_queue,
             node_pool,
-            1
+            1,
         );
 
         data_queue.enqueue(Err(0)).unwrap(); // finished or canceled traversal
@@ -481,7 +477,7 @@ impl OctreeSystem {
         collecting_data: &AtomicBool,
         data_queue: &Arc<MpscQueue<Result<InstanceData, i8>>>,
         node_pool: &SharedArena<NodeChildren>,
-        depth: u64
+        depth: u64,
     ) {
         if node.children.is_none() { return; }
 
@@ -495,13 +491,13 @@ impl OctreeSystem {
 
         node.children.as_mut().unwrap().as_mut()
             .sort_unstable_by(|a, b| {
-            let dist_a = camera_dir.extend(camera_mag)
-                .dot((a.position).extend(1.0));
-            let dist_b = camera_dir.extend(camera_mag)
-                .dot((b.position).extend(1.0));
+                let dist_a = camera_dir.extend(camera_mag)
+                    .dot((a.position).extend(1.0));
+                let dist_b = camera_dir.extend(camera_mag)
+                    .dot((b.position).extend(1.0));
 
-            dist_a.partial_cmp(&dist_b).unwrap()
-        });
+                dist_a.partial_cmp(&dist_b).unwrap()
+            });
 
         let children = node.children.as_mut().unwrap().as_mut();
         children
@@ -529,7 +525,7 @@ impl OctreeSystem {
 
                 if continue_traversal {
                     if child.is_leaf() {
-                        fractal_generators::build_tree(child, config,depth, depth+1, node_pool);
+                        fractal_generators::build_tree(child, config, depth, depth + 1, node_pool);
                     }
 
                     OctreeSystem::generate_instance_data(
@@ -540,7 +536,7 @@ impl OctreeSystem {
                         collecting_data,
                         data_queue,
                         node_pool,
-                        depth + 1
+                        depth + 1,
                     );
                 } else {
                     child.children.take(); // drop children
@@ -700,10 +696,9 @@ impl System for OctreeSystem {
                             octree_root,
                             collected_nodes,
                             data_queue,
-                            &node_pool
+                            &node_pool,
                         )
                     }));
-
                 }
 
                 if self.upload_handle.is_none() {
@@ -716,7 +711,6 @@ impl System for OctreeSystem {
                     let data_queue = self.data_queue.clone();
 
                     self.upload_handle = Some(std::thread::spawn(move || {
-
                         let mut upload_buffer = VecDeque::new();
                         let mut since_empty = 0;
                         let mut prev_blocks = 0;
@@ -737,7 +731,7 @@ impl System for OctreeSystem {
                                         }
                                     }
                                     Err(0) => { // complete or canceled
-                                        for _i in 0 .. prev_blocks {
+                                        for _i in 0..prev_blocks {
                                             upload_buffer.pop_front();
                                         }
 

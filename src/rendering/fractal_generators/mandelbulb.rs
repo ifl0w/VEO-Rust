@@ -1,6 +1,7 @@
-use crate::rendering::Node;
-use cgmath::{Vector3, vec3, Array, InnerSpace};
+use cgmath::{Array, InnerSpace, vec3, Vector3};
 use num_traits::Pow;
+
+use crate::rendering::Node;
 
 pub fn generate_mandelbulb(node: &mut Node, zoom: f64, depth: u64) -> bool {
     let origin = &node.position;
@@ -98,7 +99,7 @@ pub fn generate_mandelbulb(node: &mut Node, zoom: f64, depth: u64) -> bool {
             node.color = Vector3::new(
                 (runaway) as f32,
                 (1.0 - (distance / radius).ln() as f32) as f32,
-                ((iter_start - iter) as f32 / iter_start as f32) as f32
+                ((iter_start - iter) as f32 / iter_start as f32) as f32,
             );
 
             // pseudo occlusion factor

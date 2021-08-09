@@ -36,6 +36,7 @@ impl Vertex {
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct InstanceData {
-    pub transformation: [f32; 4], // x,y,z: position, w: scale
+    pub transformation: [f32; 4],
+    // x,y,z: position, w: scale
     pub color: [f32; 4], // x,y,z: color, w: unused
 }

@@ -1,8 +1,9 @@
-use crate::rendering::{Node, TREE_SUBDIVISIONS, NodeChildren};
-use cgmath::{Vector3};
+use cgmath::Vector3;
 use rand::{random, Rng, RngCore};
-use shared_arena::SharedArena;
 use rand::rngs::StdRng;
+use shared_arena::SharedArena;
+
+use crate::rendering::{Node, NodeChildren, TREE_SUBDIVISIONS};
 
 static mut SEED_OFFSET: f32 = 0.0;
 
@@ -28,7 +29,7 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
         ((origin.x + SEED_OFFSET).to_ne_bytes(), (origin.z + SEED_OFFSET).to_ne_bytes())
     };
     let mut rng: StdRng = rand_seeder::Seeder::from(seed).make_rng();
-    let rng_offset =  rng.next_u32() as f64 / u32::max_value() as f64;
+    let rng_offset = rng.next_u32() as f64 / u32::max_value() as f64;
 
     // displace mid point
     let mut midpoint: f32 = node.height_values.iter().sum::<f32>() / 4.0 as f32;
@@ -43,9 +44,9 @@ pub fn generate_terrain(node: &mut Node, node_pool: &SharedArena<NodeChildren>, 
 
             // calculate cyclical indexing of height values of the child
             let (x, z) = if offset.z > 0.0 {
-                if offset.x > 0.0 { (0,1) } else { (1,1) }
+                if offset.x > 0.0 { (0, 1) } else { (1, 1) }
             } else {
-                if offset.x > 0.0 { (1,0) } else { (0,0) }
+                if offset.x > 0.0 { (1, 0) } else { (0, 0) }
             };
 
             // map cyclical indices to child indices

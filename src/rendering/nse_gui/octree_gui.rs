@@ -10,12 +10,10 @@ use glium::glutin::event::WindowEvent;
 use glium::glutin::window::WindowBuilder;
 use imgui::*;
 use imgui::{Context, FontConfig, FontGlyphRanges, FontSource};
-
 use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use winit::event::{ElementState, Event, VirtualKeyCode};
-
 use num_traits::{FromPrimitive, ToPrimitive};
+use winit::event::{ElementState, Event, VirtualKeyCode};
 
 use crate::core::{Filter, Message, Payload, System};
 use crate::NSE;
@@ -237,7 +235,7 @@ impl OctreeGuiSystem {
             InputFloat3::new(
                 &ui,
                 im_str!("View Direction (read only)"),
-                view_dir.as_mut()
+                view_dir.as_mut(),
             ).read_only(true).build();
 
             InputFloat3::new(

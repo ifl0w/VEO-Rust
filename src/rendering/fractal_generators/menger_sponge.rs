@@ -1,5 +1,6 @@
+use cgmath::{Array, vec3, Vector3};
+
 use crate::rendering::{Node, TREE_SUBDIVISIONS};
-use cgmath::{Vector3, vec3, Array};
 
 pub fn generate_menger(node: &mut Node, _zoom: f64, depth: u64) -> bool {
     let s = node.scale;
@@ -28,7 +29,7 @@ pub fn generate_menger(node: &mut Node, _zoom: f64, depth: u64) -> bool {
             // calculate next contraction
             // note: the actual iteration of the IFS
             // There are 27 blocks and only 20 are potentially "solid"
-            let mut bounding = [vec3(0.0,0.0,0.0); 20];
+            let mut bounding = [vec3(0.0, 0.0, 0.0); 20];
             let mut i = 0;
             for x in -1..=1 {
                 for y in -1..=1 {
@@ -44,7 +45,7 @@ pub fn generate_menger(node: &mut Node, _zoom: f64, depth: u64) -> bool {
                             bounding[i] = bb_center + vec3(
                                 x as f32 * offset,
                                 y as f32 * offset,
-                                z as f32 * offset
+                                z as f32 * offset,
                             );
                             i += 1;
                         }

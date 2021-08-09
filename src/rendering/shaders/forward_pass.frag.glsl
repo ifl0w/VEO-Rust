@@ -193,7 +193,7 @@ void main() {
     defaultMat.roughness = 0.6;
 
     vec3 shadedColor = evaluateLight(sun, defaultMat, fragPosition, normalize(fragNormal));
-//    shadedColor += evaluateLight(camlight, defaultMat, fragPosition, normalize(fragNormal));
+    //    shadedColor += evaluateLight(camlight, defaultMat, fragPosition, normalize(fragNormal));
     vec3 ambient_corrected_color = (shadedColor + ambient_light * defaultMat.albedo).xyz;
 
     vec3 cam_to_frag = fragPosition.xyz - camera_ubo.position.xyz;

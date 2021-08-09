@@ -1,5 +1,6 @@
+use cgmath::{Array, vec3, Vector3};
+
 use crate::rendering::{Node, TREE_SUBDIVISIONS};
-use cgmath::{Vector3, vec3, Array};
 
 pub fn generate_sierpinsky_tetrahedron(node: &mut Node, _zoom: f64, depth: u64) -> bool {
     let s = node.scale;
@@ -52,7 +53,7 @@ pub fn generate_sierpinsky_tetrahedron(node: &mut Node, _zoom: f64, depth: u64) 
     let d = iterate(p, s / TREE_SUBDIVISIONS as f32, vec3(0.0, 0.0, 0.0), 0.5, 5 + depth);
 
     if d {
-        node.color = Vector3::new(0.25, 0.25,1.0 + (1.0 / s.log2()).abs());
+        node.color = Vector3::new(0.25, 0.25, 1.0 + (1.0 / s.log2()).abs());
         node.solid = true;
     }
 

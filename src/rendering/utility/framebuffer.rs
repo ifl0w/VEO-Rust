@@ -77,7 +77,7 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
                                 usage: Usage::DEPTH_STENCIL_ATTACHMENT,
                                 view_caps: ViewCapabilities::MUTABLE_FORMAT,
                                 format: depth_format,
-                            }
+                            },
                         ].into_iter(),
                         extent,
                     )
@@ -154,7 +154,6 @@ impl<B: Backend, D: Device<B>> Framebuffer<B, D> {
 
 impl<B: Backend, D: Device<B>> Drop for Framebuffer<B, D> {
     fn drop(&mut self) {
-
         unsafe {
             for idx in 0..self.command_pools.len() {
                 self.device.wait_for_fence(&mut self.framebuffer_fences[idx], !0).unwrap();
