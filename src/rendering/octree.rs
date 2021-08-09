@@ -538,7 +538,7 @@ impl OctreeSystem {
                         node_pool,
                         depth + 1,
                     );
-                } else {
+                } else if limit_depth_reached {
                     child.children.take(); // drop children
                 }
             });
